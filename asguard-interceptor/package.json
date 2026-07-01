@@ -1,0 +1,20 @@
+{
+  "name": "asguard-interceptor",
+  "version": "1.0.0",
+  "description": "",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "build": "tsc"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20230301.0",
+    "typescript": "^5.0.0",
+    "vitest": "^1.0.0",
+    "zod": "^3.22.0"
+  }
+}
