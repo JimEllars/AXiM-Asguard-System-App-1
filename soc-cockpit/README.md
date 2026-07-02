@@ -1,5 +1,12 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Local Setup
+
+Copy the example environment variables:
+`cp .env.example .env.local`
+
+Ensure `NEXT_PUBLIC_ASGUARD_API_KEY` matches the secret you configured for the worker.
+
 ## Getting Started
 
 First, run the development server:
