@@ -1,0 +1,71 @@
+--- soc-cockpit/src/components/LiveThreatFeed.tsx
++++ soc-cockpit/src/components/LiveThreatFeed.tsx
+@@ -14,6 +14,9 @@
+ export default function LiveThreatFeed() {
+   const [data, setData] = useState<TelemetryPayload[]>([]);
++  const [blocklist, setBlocklist] = useState<string[]>([]);
++  const [lastSynced, setLastSynced] = useState<Date | null>(null);
++  const [isLoading, setIsLoading] = useState(true);
+   const [error, setError] = useState<string | null>(null);
+
+   useEffect(() => {
+     const fetchTelemetry = async () => {
+       const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
+       const apiKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY;
+
+       if (!workerUrl) {
+         setError("NEXT_PUBLIC_INTERCEPTOR_URL is not set.");
++        setIsLoading(false);
+         return;
+       }
+       if (!apiKey) {
+         setError("NEXT_PUBLIC_ASGUARD_API_KEY is not set.");
++        setIsLoading(false);
+         return;
+       }
+
+       try {
+-        const res = await fetch(`${workerUrl}/telemetry`, {
+-          headers: {
+-            'X-Asguard-Auth': apiKey,
+-          },
+-        });
+-        if (!res.ok) {
+-          throw new Error(`Failed to fetch telemetry: ${res.statusText}`);
+-        }
+-        const jsonData = await res.json();
+-        const parsedData = z.array(TelemetryPayloadSchema).parse(jsonData);
+-        setData(parsedData);
++        const [telemetryRes, blocklistRes] = await Promise.all([
++          fetch(`${workerUrl}/telemetry`, {
++            headers: { 'X-Asguard-Auth': apiKey },
++          }),
++          fetch(`${workerUrl}/blocklist`, {
++            headers: { 'X-Asguard-Auth': apiKey },
++          })
++        ]);
++
++        if (!telemetryRes.ok) {
++          throw new Error(`Failed to fetch telemetry: ${telemetryRes.statusText}`);
++        }
++        if (!blocklistRes.ok) {
++          throw new Error(`Failed to fetch blocklist: ${blocklistRes.statusText}`);
++        }
++
++        const jsonTelemetryData = await telemetryRes.json();
++        const jsonBlocklistData = await blocklistRes.json();
++
++        const parsedData = z.array(TelemetryPayloadSchema).parse(jsonTelemetryData);
++        const parsedBlocklist = z.array(z.string()).parse(jsonBlocklistData);
++
++        setData(parsedData);
++        setBlocklist(parsedBlocklist);
++        setLastSynced(new Date());
+         setError(null);
+       } catch (err: any) {
+         console.error("Error fetching telemetry:", err);
+         setError(err.message);
++      } finally {
++        setIsLoading(false);
+       }
+     };

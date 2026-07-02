@@ -67,13 +67,9 @@ export default function LiveThreatFeed() {
         setFlash(true);
         setTimeout(() => setFlash(false), 500);
 
-      } catch (err: unknown) {
+      } catch (err: any) {
         console.error("Error fetching data:", err);
-        if (err instanceof Error) {
-          setError(err.message);
-        } else {
-          setError(String(err));
-        }
+        setError(err.message);
       } finally {
         setIsLoading(false);
       }
