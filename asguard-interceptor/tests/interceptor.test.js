@@ -7,6 +7,7 @@ const mockKV = {
 const mockTelemetryKV = {
     get: vi.fn(),
     put: vi.fn(),
+    list: vi.fn(),
 };
 describe('Asguard Interceptor', () => {
     beforeEach(() => {
@@ -16,7 +17,7 @@ describe('Asguard Interceptor', () => {
         const request = new Request('https://example.com/', {
             method: 'OPTIONS'
         });
-        const env = { ASGUARD_GLOBAL_BLOCKLIST: mockKV, ASGUARD_TELEMETRY: mockTelemetryKV };
+        const env = { ASGUARD_API_KEY: 'secret-key', ASGUARD_GLOBAL_BLOCKLIST: mockKV, ASGUARD_TELEMETRY: mockTelemetryKV };
         const ctx = { waitUntil: vi.fn() };
         const response = await worker.fetch(request, env, ctx);
         expect(response.status).toBe(200);
@@ -28,7 +29,7 @@ describe('Asguard Interceptor', () => {
         const request = new Request('https://example.com/', {
             headers: { 'cf-connecting-ip': '1.2.3.4' }
         });
-        const env = { ASGUARD_GLOBAL_BLOCKLIST: mockKV, ASGUARD_TELEMETRY: mockTelemetryKV };
+        const env = { ASGUARD_API_KEY: 'secret-key', ASGUARD_GLOBAL_BLOCKLIST: mockKV, ASGUARD_TELEMETRY: mockTelemetryKV };
         const ctx = { waitUntil: vi.fn() };
         const response = await worker.fetch(request, env, ctx);
         expect(response.status).toBe(403);
@@ -40,7 +41,7 @@ describe('Asguard Interceptor', () => {
         const request = new Request('https://example.com/', {
             headers: { 'cf-connecting-ip': '1.2.3.4' }
         });
-        const env = { ASGUARD_GLOBAL_BLOCKLIST: mockKV, ASGUARD_TELEMETRY: mockTelemetryKV };
+        const env = { ASGUARD_API_KEY: 'secret-key', ASGUARD_GLOBAL_BLOCKLIST: mockKV, ASGUARD_TELEMETRY: mockTelemetryKV };
         const ctx = { waitUntil: vi.fn() };
         const response = await worker.fetch(request, env, ctx);
         expect(response.status).toBe(200);
@@ -59,7 +60,7 @@ describe('Asguard Interceptor', () => {
             body: JSON.stringify(payload),
             headers: { 'cf-connecting-ip': '1.2.3.4' }
         });
-        const env = { ASGUARD_GLOBAL_BLOCKLIST: mockKV, ASGUARD_TELEMETRY: mockTelemetryKV };
+        const env = { ASGUARD_API_KEY: 'secret-key', ASGUARD_GLOBAL_BLOCKLIST: mockKV, ASGUARD_TELEMETRY: mockTelemetryKV };
         const ctx = { waitUntil: vi.fn() };
         const response = await worker.fetch(request, env, ctx);
         expect(response.status).toBe(202);
@@ -79,11 +80,47 @@ describe('Asguard Interceptor', () => {
             body: JSON.stringify(payload),
             headers: { 'cf-connecting-ip': '1.2.3.4' }
         });
-        const env = { ASGUARD_GLOBAL_BLOCKLIST: mockKV, ASGUARD_TELEMETRY: mockTelemetryKV };
+        const env = { ASGUARD_API_KEY: 'secret-key', ASGUARD_GLOBAL_BLOCKLIST: mockKV, ASGUARD_TELEMETRY: mockTelemetryKV };
         const ctx = { waitUntil: vi.fn() };
         const response = await worker.fetch(request, env, ctx);
         expect(response.status).toBe(400);
         expect(response.headers.get('Access-Control-Allow-Origin')).toBe('*');
+    });
+    it('rejects GET /telemetry without valid auth', async () => {
+        const request = new Request('https://example.com/telemetry');
+        const env = { ASGUARD_API_KEY: 'secret-key', ASGUARD_GLOBAL_BLOCKLIST: mockKV, ASGUARD_TELEMETRY: mockTelemetryKV };
+        const ctx = { waitUntil: vi.fn() };
+        const response = await worker.fetch(request, env, ctx);
+        expect(response.status).toBe(401);
+    });
+    it('allows GET /telemetry with valid auth', async () => {
+        mockTelemetryKV.get.mockResolvedValue([]);
+        const request = new Request('https://example.com/telemetry', {
+            headers: { 'X-Asguard-Auth': 'secret-key' }
+        });
+        const env = { ASGUARD_API_KEY: 'secret-key', ASGUARD_GLOBAL_BLOCKLIST: mockKV, ASGUARD_TELEMETRY: mockTelemetryKV };
+        const ctx = { waitUntil: vi.fn() };
+        const response = await worker.fetch(request, env, ctx);
+        expect(response.status).toBe(200);
+    });
+    it('rejects GET /blocklist without valid auth', async () => {
+        const request = new Request('https://example.com/blocklist');
+        const env = { ASGUARD_API_KEY: 'secret-key', ASGUARD_GLOBAL_BLOCKLIST: mockKV, ASGUARD_TELEMETRY: mockTelemetryKV };
+        const ctx = { waitUntil: vi.fn() };
+        const response = await worker.fetch(request, env, ctx);
+        expect(response.status).toBe(401);
+    });
+    it('allows GET /blocklist with valid auth', async () => {
+        mockKV.list = vi.fn().mockResolvedValue({ keys: [{ name: 'ip:1.2.3.4' }, { name: 'token:abc' }] });
+        const request = new Request('https://example.com/blocklist', {
+            headers: { 'X-Asguard-Auth': 'secret-key' }
+        });
+        const env = { ASGUARD_API_KEY: 'secret-key', ASGUARD_GLOBAL_BLOCKLIST: mockKV, ASGUARD_TELEMETRY: mockTelemetryKV };
+        const ctx = { waitUntil: vi.fn() };
+        const response = await worker.fetch(request, env, ctx);
+        expect(response.status).toBe(200);
+        const data = await response.json();
+        expect(data).toEqual(['ip:1.2.3.4', 'token:abc']);
     });
 });
 //# sourceMappingURL=interceptor.test.js.map

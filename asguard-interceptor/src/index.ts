@@ -3,12 +3,13 @@ import { TelemetryPayloadSchema } from './telemetry';
 export interface Env {
   ASGUARD_GLOBAL_BLOCKLIST: KVNamespace;
   ASGUARD_TELEMETRY: KVNamespace;
+  ASGUARD_API_KEY: string;
 }
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Asguard-Auth',
 };
 
 export default {
@@ -40,9 +41,30 @@ export default {
     const url = new URL(request.url);
 
     if (request.method === 'GET' && url.pathname === '/telemetry') {
+      const customAuthHeader = request.headers.get('X-Asguard-Auth');
+      if (!env.ASGUARD_API_KEY || customAuthHeader !== env.ASGUARD_API_KEY) {
+        return new Response('Unauthorized', { status: 401, headers: corsHeaders });
+      }
       try {
         const data = await env.ASGUARD_TELEMETRY.get('recent_events', { type: 'json' }) || [];
         return new Response(JSON.stringify(data), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      } catch (e) {
+        return new Response('Internal Server Error', { status: 500, headers: corsHeaders });
+      }
+    }
+
+    if (request.method === 'GET' && url.pathname === '/blocklist') {
+      const customAuthHeader = request.headers.get('X-Asguard-Auth');
+      if (!env.ASGUARD_API_KEY || customAuthHeader !== env.ASGUARD_API_KEY) {
+        return new Response('Unauthorized', { status: 401, headers: corsHeaders });
+      }
+      try {
+        const listResult = await env.ASGUARD_GLOBAL_BLOCKLIST.list();
+        const keys = listResult.keys.map(k => k.name);
+        return new Response(JSON.stringify(keys), {
           status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
