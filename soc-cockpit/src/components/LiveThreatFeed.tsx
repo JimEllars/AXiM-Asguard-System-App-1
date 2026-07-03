@@ -12,6 +12,15 @@ const TelemetryPayloadSchema = z.object({
 });
 type TelemetryPayload = z.infer<typeof TelemetryPayloadSchema>;
 
+const AuditEventSchema = z.object({
+  action: z.string(),
+  target: z.string(),
+  ttl: z.number().optional(),
+  timestamp: z.number(),
+});
+type AuditEvent = z.infer<typeof AuditEventSchema>;
+
+
 export default function LiveThreatFeed() {
   const [data, setData] = useState<TelemetryPayload[]>([]);
   const [blocklist, setBlocklist] = useState<string[]>([]);
@@ -22,6 +31,18 @@ export default function LiveThreatFeed() {
   const [severityFilter, setSeverityFilter] = useState<'all' | 'high' | 'medium' | 'low'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
+
+  const [auditLog, setAuditLog] = useState<AuditEvent[]>([]);
+  const [toasts, setToasts] = useState<{ id: string; message: string; type: 'success' | 'error' }[]>([]);
+
+  const addToast = React.useCallback((message: string, type: 'success' | 'error') => {
+    const id = Date.now().toString() + Math.floor(Math.random() * 1000).toString();
+    setToasts((prev) => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 3000);
+  }, []);
+
 
   useEffect(() => {
     const fetchTelemetry = async () => {
@@ -40,11 +61,14 @@ export default function LiveThreatFeed() {
       }
 
       try {
-        const [telemetryRes, blocklistRes] = await Promise.all([
+        const [telemetryRes, blocklistRes, auditRes] = await Promise.all([
           fetch(`${workerUrl}/telemetry`, {
             headers: { 'X-Asguard-Auth': apiKey },
           }),
           fetch(`${workerUrl}/blocklist`, {
+            headers: { 'X-Asguard-Auth': apiKey },
+          }),
+          fetch(`${workerUrl}/audit`, {
             headers: { 'X-Asguard-Auth': apiKey },
           })
         ]);
@@ -55,15 +79,21 @@ export default function LiveThreatFeed() {
         if (!blocklistRes.ok) {
           throw new Error(`Failed to fetch blocklist: ${blocklistRes.statusText}`);
         }
+        if (!auditRes.ok) {
+          throw new Error(`Failed to fetch audit: ${auditRes.statusText}`);
+        }
 
         const jsonTelemetryData = await telemetryRes.json();
         const jsonBlocklistData = await blocklistRes.json();
+        const jsonAuditData = await auditRes.json();
 
         const parsedData = z.array(TelemetryPayloadSchema).parse(jsonTelemetryData);
         const parsedBlocklist = z.array(z.string()).parse(jsonBlocklistData);
+        const parsedAudit = z.array(AuditEventSchema).parse(jsonAuditData);
 
         setData(parsedData);
         setBlocklist(parsedBlocklist);
+        setAuditLog(parsedAudit);
         setLastSynced(new Date());
         setError(null);
 
@@ -152,9 +182,11 @@ export default function LiveThreatFeed() {
       }
 
       setBlocklist(prev => prev.filter(k => k !== key));
+      addToast("Edge Rule Updated: Block Lifted", "success");
 
     } catch (err) {
       console.error("Error unblocking key:", err);
+      addToast("Error lifting block", "error");
     } finally {
       setActionLoading(prev => ({ ...prev, [key]: false }));
     }
@@ -190,9 +222,11 @@ export default function LiveThreatFeed() {
         const key = `ip:${ip}`;
         return prev.includes(key) ? prev : [...prev, key];
       });
+      addToast("Edge Rule Updated: Access Revoked", "success");
 
     } catch (err) {
       console.error("Error dropping IP:", err);
+      addToast("Error updating edge rule", "error");
     } finally {
       setActionLoading(prev => ({ ...prev, [ip]: false }));
     }
@@ -223,7 +257,22 @@ export default function LiveThreatFeed() {
   }, [data, severityFilter, searchQuery]);
 
   return (
-    <div className="flex flex-col gap-4 h-full flex-1 min-h-0">
+    <div className="flex flex-col gap-4 h-full flex-1 min-h-0 relative">
+      {/* Toasts */}
+      <div className="absolute top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            className={`px-4 py-3 rounded shadow-lg font-mono text-sm border pointer-events-auto transition-all transform slide-in-right ${
+              toast.type === 'success'
+                ? 'bg-emerald-950/90 border-emerald-500 text-emerald-200'
+                : 'bg-red-950/90 border-red-500 text-red-200'
+            }`}
+          >
+            {toast.message}
+          </div>
+        ))}
+      </div>
 
       {/* Synchronization Clock */}
       <div className="flex justify-end">
@@ -287,7 +336,8 @@ export default function LiveThreatFeed() {
            </div>
         </div>
       ) : (
-        <div className="flex-1 flex flex-col lg:flex-row gap-4 min-h-0 overflow-hidden">
+        <div className="flex-1 flex flex-col min-h-0 gap-4">
+          <div className="flex-1 flex flex-col lg:flex-row gap-4 min-h-0 overflow-hidden">
 
           {/* Left Pane: Telemetry Grid (2/3) */}
           <div className="flex-[2] bg-slate-950 border border-slate-800 rounded-lg relative overflow-hidden flex flex-col min-h-0">
@@ -307,7 +357,16 @@ export default function LiveThreatFeed() {
                {isLoading ? (
                   renderTelemetrySkeleton()
                ) : filteredData.length === 0 ? (
-                  <div className="text-center p-8 text-slate-500 font-mono text-sm">No telemetry events logged yet.</div>
+
+                  <div className="flex-1 flex items-center justify-center p-8">
+                     <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-6 max-w-lg w-full flex items-center gap-4">
+                        <div className="relative flex h-3 w-3">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                        </div>
+                        <div className="text-slate-400 font-mono text-sm tracking-wider uppercase">Perimeter Shield Active: Zero Edge Drop Anomalies Detected</div>
+                     </div>
+                  </div>
                ) : (
                  filteredData.map((event, idx) => {
                    const isHighSeverity = event.severity === 'high' || event.severity === 'critical';
@@ -363,7 +422,16 @@ export default function LiveThreatFeed() {
                {isLoading ? (
                   renderBlocklistSkeleton()
                ) : blocklist.length === 0 ? (
-                  <div className="text-center p-8 text-slate-500 font-mono text-sm">No active blocks.</div>
+
+                  <div className="flex-1 flex items-center justify-center p-8">
+                     <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-6 max-w-lg w-full flex items-center gap-4">
+                        <div className="relative flex h-3 w-3">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                        </div>
+                        <div className="text-slate-400 font-mono text-sm tracking-wider uppercase">Perimeter Shield Active: Zero Edge Drop Anomalies Detected</div>
+                     </div>
+                  </div>
                ) : (
                  blocklist.map((keyName, idx) => (
                    <div key={idx} className="flex justify-between items-center p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono">
@@ -381,6 +449,64 @@ export default function LiveThreatFeed() {
             </div>
           </div>
 
+        </div>
+
+        {/* Audit Trail Row */}
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+
+          {/* Bottom Pane: Audit Trail */}
+          <div className="flex-1 bg-slate-950 border border-slate-800 rounded-lg relative overflow-hidden flex flex-col min-h-[250px]">
+            <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: `linear-gradient(to right, #334155 1px, transparent 1px), linear-gradient(to bottom, #334155 1px, transparent 1px)`, backgroundSize: '40px 40px' }}></div>
+
+            <div className="z-10 bg-slate-900/80 backdrop-blur-sm border-b border-slate-800 p-4 sticky top-0">
+              <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                 Edge Security Audit Trail
+              </div>
+              <div className="grid grid-cols-4 gap-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mt-4">
+                 <div>Timestamp</div>
+                 <div>Action</div>
+                 <div>Target</div>
+                 <div>TTL</div>
+              </div>
+            </div>
+
+            <div className="z-10 flex-1 overflow-y-auto p-2 space-y-2">
+               {isLoading ? (
+                  renderTelemetrySkeleton()
+               ) : auditLog.length === 0 ? (
+                  <div className="flex-1 flex items-center justify-center p-8">
+                     <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-6 max-w-lg w-full flex items-center gap-4">
+                        <div className="relative flex h-3 w-3">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                        </div>
+                        <div className="text-slate-400 font-mono text-sm tracking-wider uppercase">Perimeter Shield Active: Zero Edge Drop Anomalies Detected</div>
+                     </div>
+                  </div>
+               ) : (
+                 auditLog.map((event, idx) => (
+                   <div key={idx} className="grid grid-cols-4 gap-4 items-center p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono">
+                     <div className="text-slate-500">
+                        {new Date(event.timestamp).toLocaleString('en-GB')}
+                     </div>
+                     <div>
+                        <span className={`px-2 py-1 rounded text-xs border whitespace-nowrap ${event.action === 'block' ? 'text-red-400 bg-red-950/50 border-red-900' : 'text-emerald-400 bg-emerald-950/50 border-emerald-900'}`}>
+                          {event.action.toUpperCase()}
+                        </span>
+                     </div>
+                     <div className="truncate text-slate-300">
+                        {event.target}
+                     </div>
+                     <div className="text-slate-500">
+                        {event.ttl ? `${event.ttl}s` : 'N/A'}
+                     </div>
+                   </div>
+                 ))
+               )}
+            </div>
+          </div>
+
+        </div>
         </div>
       )}
     </div>
