@@ -162,7 +162,7 @@ describe('Asguard Interceptor', () => {
 
     const response = await worker.fetch(request, env, ctx);
     expect(response.status).toBe(200);
-    expect(mockKV.put).toHaveBeenCalledWith('ip:10.0.0.1', '1');
+    expect(mockKV.put).toHaveBeenCalledWith('ip:10.0.0.1', '1', { expirationTtl: 86400 });
   });
 
   it('handles POST /blocklist to unblock an IP', async () => {

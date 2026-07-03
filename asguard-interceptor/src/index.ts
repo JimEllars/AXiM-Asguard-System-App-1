@@ -81,18 +81,25 @@ export default {
       }
 
       try {
-        const payload = await request.json() as { key?: string, action?: string };
+        const payload = await request.json() as { key?: string, action?: string, ttl?: number };
         if (!payload.key || !payload.action) {
            return new Response('Bad Request', { status: 400, headers: corsHeaders });
         }
 
         if (payload.action === 'block') {
-           await env.ASGUARD_GLOBAL_BLOCKLIST.put(payload.key, '1');
+           await env.ASGUARD_GLOBAL_BLOCKLIST.put(payload.key, '1', { expirationTtl: payload.ttl || 86400 });
         } else if (payload.action === 'unblock') {
            await env.ASGUARD_GLOBAL_BLOCKLIST.delete(payload.key);
         } else {
            return new Response('Invalid action', { status: 400, headers: corsHeaders });
         }
+
+        const timestamp = Date.now();
+        await env.ASGUARD_TELEMETRY.put(`audit:${timestamp}`, JSON.stringify({
+          action: payload.action,
+          target: payload.key,
+          timestamp: timestamp
+        }));
 
         return new Response('OK', { status: 200, headers: corsHeaders });
       } catch (e) {

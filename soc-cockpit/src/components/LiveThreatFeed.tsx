@@ -126,6 +126,40 @@ export default function LiveThreatFeed() {
   );
 
 
+  const handleUnblock = async (key: string) => {
+    setActionLoading(prev => ({ ...prev, [key]: true }));
+    const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
+    const apiKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY;
+
+    if (!workerUrl || !apiKey) {
+      console.error("Missing credentials for action");
+      setActionLoading(prev => ({ ...prev, [key]: false }));
+      return;
+    }
+
+    try {
+      const res = await fetch(`${workerUrl}/blocklist`, {
+        method: 'POST',
+        headers: {
+          'X-Asguard-Auth': apiKey,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ key, action: 'unblock' })
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to unblock key');
+      }
+
+      setBlocklist(prev => prev.filter(k => k !== key));
+
+    } catch (err) {
+      console.error("Error unblocking key:", err);
+    } finally {
+      setActionLoading(prev => ({ ...prev, [key]: false }));
+    }
+  };
+
   const handleDropIp = async (ip: string) => {
     setActionLoading(prev => ({ ...prev, [ip]: true }));
     const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
@@ -332,8 +366,15 @@ export default function LiveThreatFeed() {
                   <div className="text-center p-8 text-slate-500 font-mono text-sm">No active blocks.</div>
                ) : (
                  blocklist.map((keyName, idx) => (
-                   <div key={idx} className="p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono truncate">
-                     {keyName}
+                   <div key={idx} className="flex justify-between items-center p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono">
+                     <span className="truncate">{keyName}</span>
+                     <button
+                       onClick={() => handleUnblock(keyName)}
+                       disabled={actionLoading[keyName]}
+                       className="bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-600 px-2 py-1 rounded text-xs transition-colors disabled:opacity-50 ml-2 whitespace-nowrap"
+                     >
+                       {actionLoading[keyName] ? 'Lifting...' : 'Lift'}
+                     </button>
                    </div>
                  ))
                )}
