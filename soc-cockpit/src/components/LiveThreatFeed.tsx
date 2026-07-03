@@ -19,6 +19,9 @@ export default function LiveThreatFeed() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState(false);
+  const [severityFilter, setSeverityFilter] = useState<'all' | 'high' | 'medium' | 'low'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const fetchTelemetry = async () => {
@@ -122,6 +125,69 @@ export default function LiveThreatFeed() {
     ))
   );
 
+
+  const handleDropIp = async (ip: string) => {
+    setActionLoading(prev => ({ ...prev, [ip]: true }));
+    const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
+    const apiKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY;
+
+    if (!workerUrl || !apiKey) {
+      console.error("Missing credentials for action");
+      setActionLoading(prev => ({ ...prev, [ip]: false }));
+      return;
+    }
+
+    try {
+      const res = await fetch(`${workerUrl}/blocklist`, {
+        method: 'POST',
+        headers: {
+          'X-Asguard-Auth': apiKey,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ key: `ip:${ip}`, action: 'block' })
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to drop IP');
+      }
+
+      // Optimistically update the blocklist
+      setBlocklist(prev => {
+        const key = `ip:${ip}`;
+        return prev.includes(key) ? prev : [...prev, key];
+      });
+
+    } catch (err) {
+      console.error("Error dropping IP:", err);
+    } finally {
+      setActionLoading(prev => ({ ...prev, [ip]: false }));
+    }
+  };
+
+  const filteredData = React.useMemo(() => {
+    return data.filter(event => {
+      // 1. Filter by severity
+      let matchesSeverity = true;
+      if (severityFilter === 'high') {
+        matchesSeverity = event.severity === 'high' || event.severity === 'critical';
+      } else if (severityFilter !== 'all') {
+        matchesSeverity = event.severity === severityFilter;
+      }
+
+      // 2. Filter by search query
+      let matchesSearch = true;
+      if (searchQuery.trim() !== '') {
+        const query = searchQuery.toLowerCase();
+        matchesSearch =
+          event.sourceIp.toLowerCase().includes(query) ||
+          getEventName(event.eventType).toLowerCase().includes(query) ||
+          JSON.stringify(event.details || {}).toLowerCase().includes(query);
+      }
+
+      return matchesSeverity && matchesSearch;
+    });
+  }, [data, severityFilter, searchQuery]);
+
   return (
     <div className="flex flex-col gap-4 h-full flex-1 min-h-0">
 
@@ -152,6 +218,27 @@ export default function LiveThreatFeed() {
         </div>
       </div>
 
+      {/* Filter Bar */}
+      <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-4 flex gap-4 items-center">
+        <input
+          type="text"
+          placeholder="Search by IP or Signature..."
+          className="bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-sm text-slate-200 w-64 focus:outline-none focus:border-slate-500 font-mono"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
+        <select
+          className="bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-500 uppercase tracking-wider font-semibold"
+          value={severityFilter}
+          onChange={(e) => setSeverityFilter(e.target.value as 'all' | 'high' | 'medium' | 'low')}
+        >
+          <option value="all">Severity: ALL</option>
+          <option value="high">Severity: HIGH / CRITICAL</option>
+          <option value="medium">Severity: MEDIUM</option>
+          <option value="low">Severity: LOW</option>
+        </select>
+      </div>
+
       {/* Main Content Area */}
       {error ? (
         <div className="flex-1 bg-slate-950 border border-slate-800 rounded-lg flex items-center justify-center p-8">
@@ -173,38 +260,57 @@ export default function LiveThreatFeed() {
             <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: `linear-gradient(to right, #334155 1px, transparent 1px), linear-gradient(to bottom, #334155 1px, transparent 1px)`, backgroundSize: '40px 40px' }}></div>
 
             <div className="z-10 bg-slate-900/80 backdrop-blur-sm border-b border-slate-800 p-4 sticky top-0 flex justify-between items-center">
-              <div className="grid grid-cols-4 gap-4 text-xs font-semibold text-slate-400 uppercase tracking-wider w-full">
+              <div className="grid grid-cols-5 gap-4 text-xs font-semibold text-slate-400 uppercase tracking-wider w-full">
                  <div>Timestamp</div>
                  <div>Source IP</div>
                  <div>Event Type</div>
                  <div>Severity</div>
+                 <div>Action</div>
               </div>
             </div>
 
             <div className="z-10 flex-1 overflow-y-auto p-2 space-y-2">
                {isLoading ? (
                   renderTelemetrySkeleton()
-               ) : data.length === 0 ? (
+               ) : filteredData.length === 0 ? (
                   <div className="text-center p-8 text-slate-500 font-mono text-sm">No telemetry events logged yet.</div>
                ) : (
-                 data.map((event, idx) => (
-                   <div key={idx} className="grid grid-cols-4 gap-4 items-center p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono">
-                     <div className="text-slate-500">
-                        {new Date(event.timestamp).toLocaleTimeString('en-GB')}
+                 filteredData.map((event, idx) => {
+                   const isHighSeverity = event.severity === 'high' || event.severity === 'critical';
+                   const isBlocked = blocklist.includes(`ip:${event.sourceIp}`);
+                   return (
+                     <div key={idx} className="grid grid-cols-5 gap-4 items-center p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono">
+                       <div className="text-slate-500">
+                          {new Date(event.timestamp).toLocaleTimeString('en-GB')}
+                       </div>
+                       <div className="text-slate-300 truncate">
+                          {event.sourceIp}
+                       </div>
+                       <div className="truncate">
+                          {getEventName(event.eventType)}
+                       </div>
+                       <div>
+                          <span className={`px-2 py-1 rounded text-xs border whitespace-nowrap ${getSeverityColor(event.severity)}`}>
+                            {event.severity.toUpperCase()}
+                          </span>
+                       </div>
+                       <div>
+                          {isHighSeverity && !isBlocked && (
+                            <button
+                              onClick={() => handleDropIp(event.sourceIp)}
+                              disabled={actionLoading[event.sourceIp]}
+                              className="bg-red-900/80 hover:bg-red-800 text-red-200 border border-red-700 px-2 py-1 rounded text-xs transition-colors disabled:opacity-50"
+                            >
+                              {actionLoading[event.sourceIp] ? 'Dropping...' : 'Drop IP'}
+                            </button>
+                          )}
+                          {isBlocked && (
+                            <span className="text-xs text-slate-500 italic">Dropped</span>
+                          )}
+                       </div>
                      </div>
-                     <div className="text-slate-300 truncate">
-                        {event.sourceIp}
-                     </div>
-                     <div className="truncate">
-                        {getEventName(event.eventType)}
-                     </div>
-                     <div>
-                        <span className={`px-2 py-1 rounded text-xs border whitespace-nowrap ${getSeverityColor(event.severity)}`}>
-                          {event.severity.toUpperCase()}
-                        </span>
-                     </div>
-                   </div>
-                 ))
+                   );
+                 })
                )}
             </div>
           </div>

@@ -73,6 +73,33 @@ export default {
       }
     }
 
+
+    if (request.method === 'POST' && url.pathname === '/blocklist') {
+      const customAuthHeader = request.headers.get('X-Asguard-Auth');
+      if (!env.ASGUARD_API_KEY || customAuthHeader !== env.ASGUARD_API_KEY) {
+        return new Response('Unauthorized', { status: 401, headers: corsHeaders });
+      }
+
+      try {
+        const payload = await request.json() as { key?: string, action?: string };
+        if (!payload.key || !payload.action) {
+           return new Response('Bad Request', { status: 400, headers: corsHeaders });
+        }
+
+        if (payload.action === 'block') {
+           await env.ASGUARD_GLOBAL_BLOCKLIST.put(payload.key, '1');
+        } else if (payload.action === 'unblock') {
+           await env.ASGUARD_GLOBAL_BLOCKLIST.delete(payload.key);
+        } else {
+           return new Response('Invalid action', { status: 400, headers: corsHeaders });
+        }
+
+        return new Response('OK', { status: 200, headers: corsHeaders });
+      } catch (e) {
+        return new Response('Internal Server Error', { status: 500, headers: corsHeaders });
+      }
+    }
+
     // Optionally parse telemetry if it's a telemetry endpoint
     if (request.method === 'POST' && url.pathname === '/telemetry') {
       try {
@@ -101,11 +128,9 @@ async function logTelemetry(data: any, env: Env) {
   try {
     const existing: any[] = await env.ASGUARD_TELEMETRY.get('recent_events', { type: 'json' }) || [];
     existing.unshift(data);
-    // Keep rotating recent events list up to a certain limit e.g. 100
-    if (existing.length > 100) {
-      existing.pop();
-    }
-    await env.ASGUARD_TELEMETRY.put('recent_events', JSON.stringify(existing));
+    // Truncate to 50 recent events
+    const pruned = existing.slice(0, 50);
+    await env.ASGUARD_TELEMETRY.put('recent_events', JSON.stringify(pruned));
   } catch (err) {
     console.error('Failed to log telemetry:', err);
   }
