@@ -3,6 +3,7 @@ import worker from '../src/index';
 const mockKV = {
     get: vi.fn(),
     put: vi.fn(),
+    delete: vi.fn(),
 };
 const mockTelemetryKV = {
     get: vi.fn(),
@@ -121,6 +122,30 @@ describe('Asguard Interceptor', () => {
         expect(response.status).toBe(200);
         const data = await response.json();
         expect(data).toEqual(['ip:1.2.3.4', 'token:abc']);
+    });
+    it('handles POST /blocklist to block an IP', async () => {
+        const request = new Request('https://example.com/blocklist', {
+            method: 'POST',
+            headers: { 'X-Asguard-Auth': 'secret-key', 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: 'ip:10.0.0.1', action: 'block' })
+        });
+        const env = { ASGUARD_API_KEY: 'secret-key', ASGUARD_GLOBAL_BLOCKLIST: mockKV, ASGUARD_TELEMETRY: mockTelemetryKV };
+        const ctx = { waitUntil: vi.fn() };
+        const response = await worker.fetch(request, env, ctx);
+        expect(response.status).toBe(200);
+        expect(mockKV.put).toHaveBeenCalledWith('ip:10.0.0.1', '1');
+    });
+    it('handles POST /blocklist to unblock an IP', async () => {
+        const request = new Request('https://example.com/blocklist', {
+            method: 'POST',
+            headers: { 'X-Asguard-Auth': 'secret-key', 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: 'ip:10.0.0.1', action: 'unblock' })
+        });
+        const env = { ASGUARD_API_KEY: 'secret-key', ASGUARD_GLOBAL_BLOCKLIST: mockKV, ASGUARD_TELEMETRY: mockTelemetryKV };
+        const ctx = { waitUntil: vi.fn() };
+        const response = await worker.fetch(request, env, ctx);
+        expect(response.status).toBe(200);
+        expect(mockKV.delete).toHaveBeenCalledWith('ip:10.0.0.1');
     });
 });
 //# sourceMappingURL=interceptor.test.js.map
