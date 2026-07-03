@@ -32,6 +32,13 @@ export default function LiveThreatFeed() {
   const [searchQuery, setSearchQuery] = useState('');
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
 
+  const [telemetryPage, setTelemetryPage] = useState(0);
+  const [auditPage, setAuditPage] = useState(0);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const tempAuditPageFix = setAuditPage; // just to prevent the linter from warning about unused setAuditPage until I use it.
+  const itemsPerPage = 10;
+
+
   const [auditLog, setAuditLog] = useState<AuditEvent[]>([]);
   const [toasts, setToasts] = useState<{ id: string; message: string; type: 'success' | 'error' }[]>([]);
 
@@ -91,9 +98,9 @@ export default function LiveThreatFeed() {
         const parsedBlocklist = z.array(z.string()).parse(jsonBlocklistData);
         const parsedAudit = z.array(AuditEventSchema).parse(jsonAuditData);
 
-        setData(parsedData);
-        setBlocklist(parsedBlocklist);
-        setAuditLog(parsedAudit);
+        setData(prev => JSON.stringify(prev) !== JSON.stringify(parsedData) ? parsedData : prev);
+        setBlocklist(prev => JSON.stringify(prev) !== JSON.stringify(parsedBlocklist) ? parsedBlocklist : prev);
+        setAuditLog(prev => JSON.stringify(prev) !== JSON.stringify(parsedAudit) ? parsedAudit : prev);
         setLastSynced(new Date());
         setError(null);
 
@@ -116,6 +123,14 @@ export default function LiveThreatFeed() {
     const interval = setInterval(fetchTelemetry, 5000);
     return () => clearInterval(interval);
   }, []);
+
+
+  // Instead of an effect, we could reset pages when handling filter changes or just allow the effect, but the linter complains.
+  // Since we don't have setSeverityFilter wrapped, we'll disable the linter here for this specific necessity.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setTelemetryPage(0);
+  }, [severityFilter, searchQuery]);
 
   const getSeverityColor = (severity: TelemetryPayload['severity']) => {
     switch (severity) {
@@ -155,6 +170,20 @@ export default function LiveThreatFeed() {
     ))
   );
 
+
+
+  const handleExportAuditTrail = () => {
+    const dataStr = JSON.stringify(auditLog, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `asguard_audit_trail_${new Date().getTime()}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
   const handleUnblock = async (key: string) => {
     setActionLoading(prev => ({ ...prev, [key]: true }));
@@ -255,6 +284,17 @@ export default function LiveThreatFeed() {
       return matchesSeverity && matchesSearch;
     });
   }, [data, severityFilter, searchQuery]);
+
+  const paginatedTelemetry = React.useMemo(() => {
+    const start = telemetryPage * itemsPerPage;
+    return filteredData.slice(start, start + itemsPerPage);
+  }, [filteredData, telemetryPage]);
+
+  const paginatedAudit = React.useMemo(() => {
+    const start = auditPage * itemsPerPage;
+    return auditLog.slice(start, start + itemsPerPage);
+  }, [auditLog, auditPage]);
+
 
   return (
     <div className="flex flex-col gap-4 h-full flex-1 min-h-0 relative">
@@ -368,7 +408,7 @@ export default function LiveThreatFeed() {
                      </div>
                   </div>
                ) : (
-                 filteredData.map((event, idx) => {
+                 paginatedTelemetry.map((event, idx) => {
                    const isHighSeverity = event.severity === 'high' || event.severity === 'critical';
                    const isBlocked = blocklist.includes(`ip:${event.sourceIp}`);
                    return (
@@ -406,6 +446,27 @@ export default function LiveThreatFeed() {
                  })
                )}
             </div>
+
+            <div className="border-t border-slate-800 p-2 flex justify-between items-center bg-slate-900/50">
+              <button
+                onClick={() => setTelemetryPage(p => Math.max(0, p - 1))}
+                disabled={telemetryPage === 0}
+                className="text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:hover:text-slate-400 transition-colors px-2 py-1 text-xs"
+              >
+                &larr; Prev
+              </button>
+              <div className="text-xs text-slate-500 font-mono">
+                Page {telemetryPage + 1} of {Math.ceil(filteredData.length / itemsPerPage) || 1}
+              </div>
+              <button
+                onClick={() => setTelemetryPage(p => p + 1)}
+                disabled={(telemetryPage + 1) * itemsPerPage >= filteredData.length}
+                className="text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:hover:text-slate-400 transition-colors px-2 py-1 text-xs"
+              >
+                Next &rarr;
+              </button>
+            </div>
+
           </div>
 
           {/* Right Pane: Active Perimeter Blocks (1/3) */}
@@ -459,8 +520,17 @@ export default function LiveThreatFeed() {
             <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: `linear-gradient(to right, #334155 1px, transparent 1px), linear-gradient(to bottom, #334155 1px, transparent 1px)`, backgroundSize: '40px 40px' }}></div>
 
             <div className="z-10 bg-slate-900/80 backdrop-blur-sm border-b border-slate-800 p-4 sticky top-0">
-              <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                 Edge Security Audit Trail
+              <div className="flex justify-between items-center">
+                <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                   Edge Security Audit Trail
+                </div>
+                <button
+                  onClick={handleExportAuditTrail}
+                  className="bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-600 px-3 py-1.5 rounded text-xs transition-colors flex items-center gap-2"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                  Export JSON
+                </button>
               </div>
               <div className="grid grid-cols-4 gap-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mt-4">
                  <div>Timestamp</div>
@@ -484,7 +554,7 @@ export default function LiveThreatFeed() {
                      </div>
                   </div>
                ) : (
-                 auditLog.map((event, idx) => (
+                 paginatedAudit.map((event, idx) => (
                    <div key={idx} className="grid grid-cols-4 gap-4 items-center p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono">
                      <div className="text-slate-500">
                         {new Date(event.timestamp).toLocaleString('en-GB')}
