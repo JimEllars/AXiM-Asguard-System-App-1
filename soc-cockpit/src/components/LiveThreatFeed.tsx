@@ -9,6 +9,8 @@ const TelemetryPayloadSchema = z.object({
   eventType: z.enum(['authentication_failure', 'signature_tampering', 'suspicious_activity']),
   severity: z.enum(['low', 'medium', 'high', 'critical']),
   details: z.record(z.unknown()).optional(),
+  country: z.string().optional(),
+  colo: z.string().optional(),
 });
 type TelemetryPayload = z.infer<typeof TelemetryPayloadSchema>;
 
@@ -29,6 +31,7 @@ export default function LiveThreatFeed() {
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState(false);
   const [severityFilter, setSeverityFilter] = useState<'all' | 'high' | 'medium' | 'low'>('all');
+  const [appOriginFilter, setAppOriginFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
 
@@ -130,7 +133,7 @@ export default function LiveThreatFeed() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setTelemetryPage(0);
-  }, [severityFilter, searchQuery]);
+  }, [severityFilter, searchQuery, appOriginFilter]);
 
   const getSeverityColor = (severity: TelemetryPayload['severity']) => {
     switch (severity) {
@@ -153,7 +156,9 @@ export default function LiveThreatFeed() {
 
   const renderTelemetrySkeleton = () => (
     Array.from({ length: 5 }).map((_, i) => (
-      <div key={i} className="grid grid-cols-4 gap-4 items-center p-3 rounded bg-slate-900/40 border border-slate-800 animate-pulse">
+      <div key={i} className="grid grid-cols-6 gap-4 items-center p-3 rounded bg-slate-900/40 border border-slate-800 animate-pulse">
+        <div className="h-4 bg-slate-800 rounded"></div>
+        <div className="h-4 bg-slate-800 rounded"></div>
         <div className="h-4 bg-slate-800 rounded"></div>
         <div className="h-4 bg-slate-800 rounded"></div>
         <div className="h-4 bg-slate-800 rounded"></div>
@@ -271,7 +276,15 @@ export default function LiveThreatFeed() {
         matchesSeverity = event.severity === severityFilter;
       }
 
-      // 2. Filter by search query
+      // 2. Filter by app origin
+      let matchesAppOrigin = true;
+      if (appOriginFilter !== 'all') {
+         // Assuming origin is stored in event.details?.origin as instructed or we can check details.origin string match
+         const origin = (event.details && (event.details as any).origin) ? (event.details as any).origin : 'unknown';
+         matchesAppOrigin = origin === appOriginFilter;
+      }
+
+      // 3. Filter by search query
       let matchesSearch = true;
       if (searchQuery.trim() !== '') {
         const query = searchQuery.toLowerCase();
@@ -281,9 +294,9 @@ export default function LiveThreatFeed() {
           JSON.stringify(event.details || {}).toLowerCase().includes(query);
       }
 
-      return matchesSeverity && matchesSearch;
+      return matchesSeverity && matchesAppOrigin && matchesSearch;
     });
-  }, [data, severityFilter, searchQuery]);
+  }, [data, severityFilter, searchQuery, appOriginFilter]);
 
   const paginatedTelemetry = React.useMemo(() => {
     const start = telemetryPage * itemsPerPage;
@@ -352,6 +365,16 @@ export default function LiveThreatFeed() {
         />
         <select
           className="bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-500 uppercase tracking-wider font-semibold"
+          value={appOriginFilter}
+          onChange={(e) => setAppOriginFilter(e.target.value)}
+        >
+          <option value="all">App Origin: ALL</option>
+          <option value="VendOS">App Origin: VendOS</option>
+          <option value="B2B Scrapers">App Origin: B2B Scrapers</option>
+          <option value="CRM Bridge">App Origin: CRM Bridge</option>
+        </select>
+        <select
+          className="bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-500 uppercase tracking-wider font-semibold"
           value={severityFilter}
           onChange={(e) => setSeverityFilter(e.target.value as 'all' | 'high' | 'medium' | 'low')}
         >
@@ -384,9 +407,10 @@ export default function LiveThreatFeed() {
             <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: `linear-gradient(to right, #334155 1px, transparent 1px), linear-gradient(to bottom, #334155 1px, transparent 1px)`, backgroundSize: '40px 40px' }}></div>
 
             <div className="z-10 bg-slate-900/80 backdrop-blur-sm border-b border-slate-800 p-4 sticky top-0 flex justify-between items-center">
-              <div className="grid grid-cols-5 gap-4 text-xs font-semibold text-slate-400 uppercase tracking-wider w-full">
+              <div className="grid grid-cols-6 gap-4 text-xs font-semibold text-slate-400 uppercase tracking-wider w-full">
                  <div>Timestamp</div>
                  <div>Source IP</div>
+                 <div>Origin</div>
                  <div>Event Type</div>
                  <div>Severity</div>
                  <div>Action</div>
@@ -412,12 +436,20 @@ export default function LiveThreatFeed() {
                    const isHighSeverity = event.severity === 'high' || event.severity === 'critical';
                    const isBlocked = blocklist.includes(`ip:${event.sourceIp}`);
                    return (
-                     <div key={idx} className="grid grid-cols-5 gap-4 items-center p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono">
+                     <div key={idx} className="grid grid-cols-6 gap-4 items-center p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono">
                        <div className="text-slate-500">
                           {new Date(event.timestamp).toLocaleTimeString('en-GB')}
                        </div>
                        <div className="text-slate-300 truncate">
                           {event.sourceIp}
+                       </div>
+                       <div className="flex gap-2 items-center">
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-900/50 text-indigo-300 border border-indigo-700/50">
+                             {event.country || 'XX'}
+                          </span>
+                          <span className="text-[10px] text-slate-500 font-mono tracking-tighter">
+                             [{event.colo || 'UNKNOWN'}]
+                          </span>
                        </div>
                        <div className="truncate">
                           {getEventName(event.eventType)}

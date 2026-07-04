@@ -193,7 +193,12 @@ export default {
     // Optionally parse telemetry if it's a telemetry endpoint
     if (request.method === "POST" && url.pathname === "/telemetry") {
       try {
-        const payload = await request.json();
+        let payload = await request.json() as any;
+
+        // Enrich with Cloudflare metadata
+        payload.country = (request.cf && request.cf.country) ? request.cf.country : "XX";
+        payload.colo = (request.cf && request.cf.colo) ? request.cf.colo : "UNKNOWN";
+
         const parseResult = TelemetryPayloadSchema.safeParse(payload);
 
         if (!parseResult.success) {
