@@ -266,6 +266,47 @@ export default function LiveThreatFeed() {
     }
   };
 
+
+  const edgeTrendAnalytics = React.useMemo(() => {
+    const totalEvents = data.length;
+    if (totalEvents === 0) {
+      return { topColos: [], topCountries: [], totalEvents: 0 };
+    }
+
+    const coloCounts: Record<string, number> = {};
+    const countryCounts: Record<string, number> = {};
+
+    data.forEach(event => {
+      const coloKey = event.colo || 'N/A';
+      const countryKey = event.country || 'XX';
+
+      coloCounts[coloKey] = (coloCounts[coloKey] || 0) + 1;
+      countryCounts[countryKey] = (countryCounts[countryKey] || 0) + 1;
+    });
+
+    const topColos = Object.entries(coloCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([name, count]) => ({
+        name,
+        count,
+        percentage: (count / totalEvents) * 100,
+        isAnomalous: (count / totalEvents) > 0.4
+      }));
+
+    const topCountries = Object.entries(countryCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([name, count]) => ({
+        name,
+        count,
+        percentage: (count / totalEvents) * 100,
+        isAnomalous: (count / totalEvents) > 0.4
+      }));
+
+    return { topColos, topCountries, totalEvents };
+  }, [data]);
+
   const filteredData = React.useMemo(() => {
     return data.filter(event => {
       // 1. Filter by severity
@@ -280,7 +321,7 @@ export default function LiveThreatFeed() {
       let matchesAppOrigin = true;
       if (appOriginFilter !== 'all') {
          // Assuming origin is stored in event.details?.origin as instructed or we can check details.origin string match
-         const origin = (event.details && (event.details as any).origin) ? (event.details as any).origin : 'unknown';
+         const origin = (event.details && (event.details as Record<string, unknown>).origin) ? (event.details as Record<string, unknown>).origin : 'unknown';
          matchesAppOrigin = origin === appOriginFilter;
       }
 
@@ -350,6 +391,54 @@ export default function LiveThreatFeed() {
              <span className="text-xl font-mono text-emerald-400 bg-emerald-950/50 border border-emerald-900 px-2 py-1 rounded">
                &lt; 5ms
              </span>
+          </div>
+        </div>
+      </div>
+
+
+      {/* Edge Trend Analytics */}
+      <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-4 flex flex-col min-h-0">
+        <div className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-4 border-b border-slate-800 pb-2">Edge Trend Analytics</div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Top Datacenters */}
+          <div>
+            <div className="text-[10px] text-slate-500 font-mono mb-2">TOP DATACENTERS</div>
+            <div className="space-y-2">
+              {edgeTrendAnalytics.topColos.map((colo, idx) => (
+                <div key={idx} className={`flex items-center justify-between p-2 rounded border ${colo.isAnomalous ? 'border-amber-500/50 bg-amber-950/20 animate-pulse' : 'border-slate-800 bg-slate-900/40'}`}>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs font-bold text-slate-300">[{colo.name}]</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-24 h-1.5 bg-slate-800 rounded overflow-hidden">
+                      <div className={`h-full ${colo.isAnomalous ? 'bg-amber-500' : 'bg-indigo-500'}`} style={{ width: `${colo.percentage}%` }}></div>
+                    </div>
+                    <span className="font-mono text-xs text-slate-400 w-8 text-right">{colo.count}</span>
+                  </div>
+                </div>
+              ))}
+              {edgeTrendAnalytics.topColos.length === 0 && <div className="text-xs text-slate-600 font-mono italic p-2">Awaiting telemetry...</div>}
+            </div>
+          </div>
+          {/* Top Regional Sources */}
+          <div>
+            <div className="text-[10px] text-slate-500 font-mono mb-2">TOP REGIONAL SOURCES</div>
+            <div className="space-y-2">
+              {edgeTrendAnalytics.topCountries.map((country, idx) => (
+                <div key={idx} className={`flex items-center justify-between p-2 rounded border ${country.isAnomalous ? 'border-amber-500/50 bg-amber-950/20 animate-pulse' : 'border-slate-800 bg-slate-900/40'}`}>
+                  <div className="flex items-center gap-2">
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-900/50 text-indigo-300 border border-indigo-700/50">{country.name}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-24 h-1.5 bg-slate-800 rounded overflow-hidden">
+                      <div className={`h-full ${country.isAnomalous ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${country.percentage}%` }}></div>
+                    </div>
+                    <span className="font-mono text-xs text-slate-400 w-8 text-right">{country.count}</span>
+                  </div>
+                </div>
+              ))}
+              {edgeTrendAnalytics.topCountries.length === 0 && <div className="text-xs text-slate-600 font-mono italic p-2">Awaiting telemetry...</div>}
+            </div>
           </div>
         </div>
       </div>
@@ -448,7 +537,7 @@ export default function LiveThreatFeed() {
                              {event.country || 'XX'}
                           </span>
                           <span className="text-[10px] text-slate-500 font-mono tracking-tighter">
-                             [{event.colo || 'UNKNOWN'}]
+                             [{event.colo || 'N/A'}]
                           </span>
                        </div>
                        <div className="truncate">
