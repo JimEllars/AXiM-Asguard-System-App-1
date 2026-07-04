@@ -5,5 +5,7 @@ export const TelemetryPayloadSchema = z.object({
     eventType: z.enum(['authentication_failure', 'signature_tampering', 'suspicious_activity']),
     severity: z.enum(['low', 'medium', 'high', 'critical']),
     details: z.record(z.unknown()).optional(),
+    country: z.string().optional(),
+    colo: z.string().optional(),
 });
 //# sourceMappingURL=telemetry.js.map
