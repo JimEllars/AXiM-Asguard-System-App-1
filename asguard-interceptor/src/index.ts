@@ -10,10 +10,25 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Asguard-Auth",
+  "Access-Control-Expose-Headers": "Server-Timing",
 };
 
 export default {
   async fetch(
+    request: Request,
+    env: Env,
+    ctx: ExecutionContext,
+  ): Promise<Response> {
+    const startTime = Date.now();
+    const response = await this.handle(request, env, ctx);
+    const duration = Date.now() - startTime;
+
+    const newResponse = new Response(response.body, response);
+    newResponse.headers.set("Server-Timing", `edge-exec;dur=${duration};desc="Stateless Perimeter Check"`);
+    return newResponse;
+  },
+
+  async handle(
     request: Request,
     env: Env,
     ctx: ExecutionContext,

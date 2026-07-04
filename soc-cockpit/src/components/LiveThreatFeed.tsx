@@ -28,6 +28,9 @@ export default function LiveThreatFeed() {
   const [blocklist, setBlocklist] = useState<string[]>([]);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [edgeLatency, setEdgeLatency] = useState<string | null>(null);
+  const [velocityShift, setVelocityShift] = useState<'up' | 'down' | 'none'>('none');
+
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState(false);
   const [severityFilter, setSeverityFilter] = useState<'all' | 'high' | 'medium' | 'low'>('all');
@@ -93,6 +96,14 @@ export default function LiveThreatFeed() {
           throw new Error(`Failed to fetch audit: ${auditRes.statusText}`);
         }
 
+        const serverTiming = telemetryRes.headers.get('Server-Timing');
+        if (serverTiming) {
+          const match = serverTiming.match(/dur=([0-9.]+)/);
+          if (match && match[1]) {
+            setEdgeLatency(match[1]);
+          }
+        }
+
         const jsonTelemetryData = await telemetryRes.json();
         const jsonBlocklistData = await blocklistRes.json();
         const jsonAuditData = await auditRes.json();
@@ -101,7 +112,18 @@ export default function LiveThreatFeed() {
         const parsedBlocklist = z.array(z.string()).parse(jsonBlocklistData);
         const parsedAudit = z.array(AuditEventSchema).parse(jsonAuditData);
 
-        setData(prev => JSON.stringify(prev) !== JSON.stringify(parsedData) ? parsedData : prev);
+        setData(prev => {
+          if (JSON.stringify(prev) !== JSON.stringify(parsedData)) {
+            // Update velocity indicator based on prev length
+            if (prev.length > 0) {
+                if (parsedData.length > prev.length) setVelocityShift('up');
+                else if (parsedData.length < prev.length) setVelocityShift('down');
+                else setVelocityShift('none');
+            }
+            return parsedData;
+          }
+          return prev;
+        });
         setBlocklist(prev => JSON.stringify(prev) !== JSON.stringify(parsedBlocklist) ? parsedBlocklist : prev);
         setAuditLog(prev => JSON.stringify(prev) !== JSON.stringify(parsedAudit) ? parsedAudit : prev);
         setLastSynced(new Date());
@@ -379,7 +401,19 @@ export default function LiveThreatFeed() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-4 flex flex-col justify-between">
           <div className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">Ingested Alerts</div>
-          <div className="text-2xl font-mono text-slate-200">{isLoading ? '-' : data.length}</div>
+          <div className="text-2xl font-mono text-slate-200 flex items-center gap-2">
+            {isLoading ? '-' : data.length}
+            {velocityShift === 'up' && (
+              <span className="text-xs text-red-400 bg-red-950/50 px-1.5 py-0.5 rounded border border-red-900 flex items-center gap-1 transition-all">
+                ↑ <span className="text-[10px] uppercase tracking-wider">Expanding</span>
+              </span>
+            )}
+            {velocityShift === 'down' && (
+              <span className="text-xs text-emerald-400 bg-emerald-950/50 px-1.5 py-0.5 rounded border border-emerald-900 flex items-center gap-1 transition-all">
+                ↓ <span className="text-[10px] uppercase tracking-wider">Dropping</span>
+              </span>
+            )}
+          </div>
         </div>
         <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-4 flex flex-col justify-between">
           <div className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">Active Edge Drops</div>
@@ -389,7 +423,7 @@ export default function LiveThreatFeed() {
           <div className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">Node Latency Target</div>
           <div>
              <span className="text-xl font-mono text-emerald-400 bg-emerald-950/50 border border-emerald-900 px-2 py-1 rounded">
-               &lt; 5ms
+               {edgeLatency ? `${edgeLatency}ms Avg Edge Execution` : '< 5ms'}
              </span>
           </div>
         </div>
@@ -405,7 +439,7 @@ export default function LiveThreatFeed() {
             <div className="text-[10px] text-slate-500 font-mono mb-2">TOP DATACENTERS</div>
             <div className="space-y-2">
               {edgeTrendAnalytics.topColos.map((colo, idx) => (
-                <div key={idx} className={`flex items-center justify-between p-2 rounded border ${colo.isAnomalous ? 'border-amber-500/50 bg-amber-950/20 animate-pulse' : 'border-slate-800 bg-slate-900/40'}`}>
+                <button key={idx} onClick={() => setSearchQuery(colo.name)} className={`w-full flex items-center justify-between p-2 rounded border hover:bg-slate-800/60 cursor-pointer transition-colors ${colo.isAnomalous ? 'border-amber-500/50 bg-amber-950/20 animate-pulse' : 'border-slate-800 bg-slate-900/40'}`}>
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-xs font-bold text-slate-300">[{colo.name}]</span>
                   </div>
@@ -415,7 +449,7 @@ export default function LiveThreatFeed() {
                     </div>
                     <span className="font-mono text-xs text-slate-400 w-8 text-right">{colo.count}</span>
                   </div>
-                </div>
+                </button>
               ))}
               {edgeTrendAnalytics.topColos.length === 0 && <div className="text-xs text-slate-600 font-mono italic p-2">Awaiting telemetry...</div>}
             </div>
@@ -425,7 +459,7 @@ export default function LiveThreatFeed() {
             <div className="text-[10px] text-slate-500 font-mono mb-2">TOP REGIONAL SOURCES</div>
             <div className="space-y-2">
               {edgeTrendAnalytics.topCountries.map((country, idx) => (
-                <div key={idx} className={`flex items-center justify-between p-2 rounded border ${country.isAnomalous ? 'border-amber-500/50 bg-amber-950/20 animate-pulse' : 'border-slate-800 bg-slate-900/40'}`}>
+                <button key={idx} onClick={() => setSearchQuery(country.name)} className={`w-full flex items-center justify-between p-2 rounded border hover:bg-slate-800/60 cursor-pointer transition-colors ${country.isAnomalous ? 'border-amber-500/50 bg-amber-950/20 animate-pulse' : 'border-slate-800 bg-slate-900/40'}`}>
                   <div className="flex items-center gap-2">
                     <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-900/50 text-indigo-300 border border-indigo-700/50">{country.name}</span>
                   </div>
@@ -435,7 +469,7 @@ export default function LiveThreatFeed() {
                     </div>
                     <span className="font-mono text-xs text-slate-400 w-8 text-right">{country.count}</span>
                   </div>
-                </div>
+                </button>
               ))}
               {edgeTrendAnalytics.topCountries.length === 0 && <div className="text-xs text-slate-600 font-mono italic p-2">Awaiting telemetry...</div>}
             </div>
