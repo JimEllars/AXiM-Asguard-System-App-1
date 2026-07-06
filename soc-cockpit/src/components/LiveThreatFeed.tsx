@@ -25,6 +25,38 @@ const AuditEventSchema = z.object({
 type AuditEvent = z.infer<typeof AuditEventSchema>;
 
 
+
+function formatTimeLeft(ms: number) {
+  if (ms <= 0) return 'Expired';
+  const mins = Math.floor(ms / 60000);
+  const hours = Math.floor(mins / 60);
+  if (hours > 0) return `Expires in ~${hours}h`;
+  return `Lease: ${mins}m left`;
+}
+
+function LeaseTimer({ timestamp, ttl }: { timestamp: number; ttl: number }) {
+  const [timeLeft, setTimeLeft] = useState(() => {
+    const expiresAt = timestamp + (ttl * 1000);
+    return expiresAt - Date.now();
+  });
+
+  useEffect(() => {
+    const expiresAt = timestamp + (ttl * 1000);
+    const interval = setInterval(() => {
+      setTimeLeft(expiresAt - Date.now());
+    }, 60000); // update every minute
+    return () => clearInterval(interval);
+  }, [timestamp, ttl]);
+
+  if (timeLeft <= 0) return null;
+
+  return (
+    <span className="text-[10px] text-amber-500/80 font-mono tracking-tighter border border-amber-900/50 bg-amber-950/20 px-1.5 py-0.5 rounded ml-2">
+      {formatTimeLeft(timeLeft)}
+    </span>
+  );
+}
+
 export default function LiveThreatFeed() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -58,6 +90,8 @@ export default function LiveThreatFeed() {
   const [appOriginFilter, setAppOriginFilter] = useState<string>(searchParams.get('origin') || 'all');
     const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
   const [localSearchQuery, setLocalSearchQuery] = useState(searchParams.get('search') || '');
+  const [auditSearchQuery, setAuditSearchQuery] = useState('');
+  const [localAuditSearchQuery, setLocalAuditSearchQuery] = useState('');
 
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -65,6 +99,13 @@ export default function LiveThreatFeed() {
     }, 300);
     return () => clearTimeout(handler);
   }, [localSearchQuery]);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setAuditSearchQuery(localAuditSearchQuery);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [localAuditSearchQuery]);
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
 
 
@@ -431,10 +472,20 @@ export default function LiveThreatFeed() {
     return filteredData.slice(start, start + itemsPerPage);
   }, [filteredData, telemetryPage]);
 
+  const filteredAuditLog = React.useMemo(() => {
+    if (!auditSearchQuery.trim()) return auditLog;
+    const query = auditSearchQuery.toLowerCase();
+    return auditLog.filter(event =>
+      event.action.toLowerCase().includes(query) ||
+      (event.target && event.target.toLowerCase().includes(query)) ||
+      (event.signature && event.signature.toLowerCase().includes(query))
+    );
+  }, [auditLog, auditSearchQuery]);
+
   const paginatedAudit = React.useMemo(() => {
     const start = auditPage * itemsPerPage;
-    return auditLog.slice(start, start + itemsPerPage);
-  }, [auditLog, auditPage]);
+    return filteredAuditLog.slice(start, start + itemsPerPage);
+  }, [filteredAuditLog, auditPage]);
 
 
 
@@ -736,9 +787,16 @@ export default function LiveThreatFeed() {
                      </div>
                   </div>
                ) : (
-                 blocklist.map((keyName, idx) => (
+                 blocklist.map((keyName, idx) => {
+                   const auditEvent = auditLog.find(e => e.target === keyName && e.action === 'block' && e.ttl);
+                   return (
                    <div key={idx} className="flex justify-between items-center p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono">
-                     <span className="truncate">{keyName}</span>
+                     <div className="flex items-center min-w-0">
+                       <span className="truncate">{keyName}</span>
+                       {auditEvent && auditEvent.ttl && (
+                         <LeaseTimer timestamp={auditEvent.timestamp} ttl={auditEvent.ttl} />
+                       )}
+                     </div>
                      <button
                        onClick={() => handleUnblock(keyName)}
                        disabled={actionLoading[keyName]}
@@ -747,7 +805,8 @@ export default function LiveThreatFeed() {
                        {actionLoading[keyName] ? 'Lifting...' : 'Lift'}
                      </button>
                    </div>
-                 ))
+                   );
+                 })
                )}
             </div>
           </div>
@@ -763,8 +822,17 @@ export default function LiveThreatFeed() {
 
             <div className="z-10 bg-slate-900/80 backdrop-blur-sm border-b border-slate-800 p-4 sticky top-0">
               <div className="flex justify-between items-center">
-                <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                   Edge Security Audit Trail
+                <div className="flex items-center gap-4">
+                  <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                     Edge Security Audit Trail
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Search events..."
+                    className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 w-48 focus:outline-none focus:border-slate-500 font-mono"
+                    value={localAuditSearchQuery}
+                    onChange={(e) => setLocalAuditSearchQuery(e.target.value)}
+                  />
                 </div>
                 <button
                   onClick={handleExportAuditTrail}
