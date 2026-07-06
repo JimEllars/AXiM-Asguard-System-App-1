@@ -217,6 +217,9 @@ export default {
                 // Enrich with Cloudflare metadata
                 payload.country = (request.cf && request.cf.country) ? request.cf.country : "XX";
                 payload.colo = (request.cf && request.cf.colo) ? request.cf.colo : "UNKNOWN";
+                payload.requestMethod = request.method;
+                payload.targetResource = url.pathname;
+                payload.signatureMetadata = request.headers.get("X-Asguard-Signature") || "UNKNOWN";
                 const parseResult = TelemetryPayloadSchema.safeParse(payload);
                 if (!parseResult.success) {
                     return new Response("Invalid Telemetry Payload", {

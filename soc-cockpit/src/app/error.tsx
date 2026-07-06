@@ -21,8 +21,8 @@ export default function Error({
           <h2 className="text-2xl font-semibold">Global Threat Grid</h2>
           <p className="text-slate-400 text-sm mt-1">Monitoring active perimeter defense systems.</p>
         </div>
-        <div className="text-xs bg-red-950/50 border border-red-900 px-3 py-1.5 rounded-md text-red-400 font-mono">
-          STATUS: CRITICAL FAILURE
+        <div className="text-xs bg-amber-950/50 border border-amber-900 px-3 py-1.5 rounded-md text-amber-400 font-mono">
+          STATUS: CONNECTION ALERT
         </div>
       </div>
 
@@ -36,8 +36,8 @@ export default function Error({
           }}
         ></div>
 
-        <div className="z-10 text-center flex flex-col items-center gap-4 p-8 bg-slate-900/80 backdrop-blur-sm rounded-xl border border-red-900/50">
-           <svg className="w-12 h-12 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <div className="z-10 text-center flex flex-col items-center gap-4 p-8 bg-slate-900/80 backdrop-blur-sm rounded-xl border border-amber-900/50">
+           <svg className="w-12 h-12 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
            </svg>
            <div>
