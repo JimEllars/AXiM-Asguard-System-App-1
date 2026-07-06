@@ -304,4 +304,45 @@ describe("Asguard Interceptor", () => {
     );
     expect(auditCallArgs).toBeUndefined();
   });
+
+  it("includes Server-Timing header with valid edge-exec duration", async () => {
+    mockTelemetryKV.get.mockResolvedValue([]);
+    const requestGet = new Request("https://example.com/telemetry", {
+      headers: { "X-Asguard-Auth": "secret-key" },
+    });
+    const env = {
+      ASGUARD_API_KEY: "secret-key",
+      ASGUARD_GLOBAL_BLOCKLIST: mockKV as any,
+      ASGUARD_TELEMETRY: mockTelemetryKV as any,
+    };
+    const ctx = { waitUntil: vi.fn() } as any;
+
+    const responseGet = await worker.fetch(requestGet, env, ctx);
+    expect(responseGet.status).toBe(200);
+    const serverTimingGet = responseGet.headers.get("Server-Timing");
+    expect(serverTimingGet).toBeDefined();
+    expect(serverTimingGet).toMatch(/edge-exec;dur=[0-9]+(\.[0-9]+)?;desc="Stateless Perimeter Check"/);
+
+    const payload = {
+      sourceIp: "192.168.1.1",
+      timestamp: Date.now(),
+      eventType: "signature_tampering",
+      severity: "high",
+    };
+
+    const requestPost = new Request("https://example.com/telemetry", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      headers: { "cf-connecting-ip": "1.2.3.4" },
+    });
+    // @ts-ignore
+    requestPost.cf = { country: "US", colo: "DFW" };
+
+    const responsePost = await worker.fetch(requestPost, env, ctx);
+    expect(responsePost.status).toBe(202);
+    const serverTimingPost = responsePost.headers.get("Server-Timing");
+    expect(serverTimingPost).toBeDefined();
+    expect(serverTimingPost).toMatch(/edge-exec;dur=[0-9]+(\.[0-9]+)?;desc="Stateless Perimeter Check"/);
+  });
+
 });

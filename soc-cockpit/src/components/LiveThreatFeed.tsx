@@ -29,7 +29,22 @@ export default function LiveThreatFeed() {
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [edgeLatency, setEdgeLatency] = useState<string | null>(null);
-  const [velocityShift, setVelocityShift] = useState<'up' | 'down' | 'none'>('none');
+  const [velocityHistory, setVelocityHistory] = useState<('up' | 'down' | 'none')[]>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('asguard_velocity_history');
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) return parsed;
+        } catch(e) {
+          console.error('Failed to parse velocity history', e);
+        }
+      }
+    }
+    return [];
+  });
+
+  const velocityShift = velocityHistory.length > 0 ? velocityHistory[velocityHistory.length - 1] : 'none';
 
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState(false);
@@ -116,9 +131,17 @@ export default function LiveThreatFeed() {
           if (JSON.stringify(prev) !== JSON.stringify(parsedData)) {
             // Update velocity indicator based on prev length
             if (prev.length > 0) {
-                if (parsedData.length > prev.length) setVelocityShift('up');
-                else if (parsedData.length < prev.length) setVelocityShift('down');
-                else setVelocityShift('none');
+                let shift: 'up' | 'down' | 'none' = 'none';
+                if (parsedData.length > prev.length) shift = 'up';
+                else if (parsedData.length < prev.length) shift = 'down';
+
+                setVelocityHistory(prevHistory => {
+                  const newHistory = [...prevHistory, shift].slice(-5);
+                  if (typeof window !== 'undefined') {
+                    localStorage.setItem('asguard_velocity_history', JSON.stringify(newHistory));
+                  }
+                  return newHistory;
+                });
             }
             return parsedData;
           }
@@ -425,6 +448,14 @@ export default function LiveThreatFeed() {
              <span className="text-xl font-mono text-emerald-400 bg-emerald-950/50 border border-emerald-900 px-2 py-1 rounded">
                {edgeLatency ? `${edgeLatency}ms Avg Edge Execution` : '< 5ms'}
              </span>
+             {edgeLatency && (
+               <div className="mt-2 w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                 <div
+                   className={`h-full ${parseFloat(edgeLatency) < 3 ? 'bg-emerald-500' : 'bg-amber-500'}`}
+                   style={{ width: `${Math.min((parseFloat(edgeLatency) / 5) * 100, 100)}%` }}
+                 ></div>
+               </div>
+             )}
           </div>
         </div>
       </div>
