@@ -1,4 +1,15 @@
 import { TelemetryPayloadSchema } from "./telemetry";
+const rateLimitMap = new Map();
+function pruneRateLimitMap() {
+    if (rateLimitMap.size > 10000) {
+        const now = Date.now();
+        for (const [key, value] of rateLimitMap.entries()) {
+            if (now - value.timestamp > 10000) {
+                rateLimitMap.delete(key);
+            }
+        }
+    }
+}
 const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -21,11 +32,18 @@ export default {
         const clientIp = request.headers.get("cf-connecting-ip") || "unknown";
         // Flood Control Handler
         if (clientIp !== "unknown") {
+            pruneRateLimitMap();
             const rateLimitKey = `rate_limit:${clientIp}`;
-            const currentCountStr = await env.ASGUARD_TELEMETRY.get(rateLimitKey);
-            let currentCount = currentCountStr ? parseInt(currentCountStr, 10) : 0;
-            currentCount++;
-            await env.ASGUARD_TELEMETRY.put(rateLimitKey, currentCount.toString(), { expirationTtl: 60 });
+            const now = Date.now();
+            let record = rateLimitMap.get(rateLimitKey);
+            if (record && now - record.timestamp <= 10000) {
+                record.count++;
+            }
+            else {
+                record = { count: 1, timestamp: now };
+            }
+            rateLimitMap.set(rateLimitKey, record);
+            let currentCount = record.count;
             if (currentCount > 100) { // arbitrary limit for 429
                 const exceptionKey = `429_exceptions:${clientIp}`;
                 const exceptionsStr = await env.ASGUARD_TELEMETRY.get(exceptionKey);
