@@ -20,6 +20,7 @@ const AuditEventSchema = z.object({
   target: z.string(),
   ttl: z.number().optional(),
   timestamp: z.number(),
+  signature: z.string().optional(),
 });
 type AuditEvent = z.infer<typeof AuditEventSchema>;
 
@@ -55,7 +56,15 @@ export default function LiveThreatFeed() {
   const [flash, setFlash] = useState(false);
   const [severityFilter, setSeverityFilter] = useState<'all' | 'high' | 'medium' | 'low'>((searchParams.get('severity') as 'all' | 'high' | 'medium' | 'low') || 'all');
   const [appOriginFilter, setAppOriginFilter] = useState<string>(searchParams.get('origin') || 'all');
-  const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
+    const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
+  const [localSearchQuery, setLocalSearchQuery] = useState(searchParams.get('search') || '');
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setSearchQuery(localSearchQuery);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [localSearchQuery]);
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
 
 
@@ -428,6 +437,11 @@ export default function LiveThreatFeed() {
   }, [auditLog, auditPage]);
 
 
+
+  const floodMitigationCount = React.useMemo(() => {
+    return auditLog.filter(event => event.signature === 'FLOOD_CONTROL_MITIGATION').length;
+  }, [auditLog]);
+
   return (
     <div className="flex flex-col gap-4 h-full flex-1 min-h-0 relative">
       {/* Toasts */}
@@ -472,8 +486,17 @@ export default function LiveThreatFeed() {
           </div>
         </div>
         <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-4 flex flex-col justify-between">
-          <div className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">Active Edge Drops</div>
-          <div className="text-2xl font-mono text-slate-200">{isLoading ? '-' : blocklist.length}</div>
+          <div className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2 flex justify-between items-center">
+            <span>Active Edge Drops</span>
+            {floodMitigationCount > 0 && (
+              <span className="text-[10px] bg-red-950/50 text-red-400 border border-red-900 px-1.5 py-0.5 rounded font-mono">
+                {floodMitigationCount} FLOOD BLOCKS
+              </span>
+            )}
+          </div>
+          <div className="text-2xl font-mono text-slate-200 flex items-center gap-2">
+             {isLoading ? '-' : blocklist.length}
+          </div>
         </div>
         <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-4 flex flex-col justify-between">
           <div className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">Node Latency Target</div>
@@ -547,8 +570,8 @@ export default function LiveThreatFeed() {
           type="text"
           placeholder="Search by IP or Signature..."
           className="bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-sm text-slate-200 w-64 focus:outline-none focus:border-slate-500 font-mono"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+          value={localSearchQuery}
+          onChange={(e) => setLocalSearchQuery(e.target.value)}
         />
         <select
           className="bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-500 uppercase tracking-wider font-semibold"
