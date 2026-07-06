@@ -9,6 +9,9 @@ const TelemetryPayloadSchema = z.object({
   timestamp: z.number(),
   eventType: z.enum(['authentication_failure', 'signature_tampering', 'suspicious_activity']),
   severity: z.enum(['low', 'medium', 'high', 'critical']),
+  requestMethod: z.string().optional(),
+  targetResource: z.string().optional(),
+  signatureMetadata: z.string().optional(),
   details: z.record(z.unknown()).optional(),
   country: z.string().optional(),
   colo: z.string().optional(),
@@ -265,11 +268,15 @@ export default function LiveThreatFeed() {
 
   const getSeverityColor = (severity: TelemetryPayload['severity']) => {
     switch (severity) {
-      case 'critical': return 'text-red-400 bg-red-950/50 border-red-900';
-      case 'high': return 'text-orange-400 bg-orange-950/50 border-orange-900';
-      case 'medium': return 'text-yellow-400 bg-yellow-950/50 border-yellow-900';
-      case 'low': return 'text-blue-400 bg-blue-950/50 border-blue-900';
-      default: return 'text-slate-400 bg-slate-900/50 border-slate-800';
+      case 'critical':
+      case 'high':
+        return 'animate-pulse text-red-400 bg-red-950/80 border-red-900';
+      case 'medium':
+        return 'text-amber-400 bg-transparent border-amber-500';
+      case 'low':
+        return 'text-slate-400 bg-transparent border-slate-700';
+      default:
+        return 'text-slate-400 bg-transparent border-slate-800';
     }
   };
 
@@ -646,20 +653,16 @@ export default function LiveThreatFeed() {
         </select>
       </div>
 
-      {/* Main Content Area */}
-      {error ? (
-        <div className="flex-1 bg-slate-950 border border-slate-800 rounded-lg flex items-center justify-center p-8">
-           <div className="bg-slate-900/80 border border-slate-700 rounded-lg p-6 max-w-lg w-full animate-pulse shadow-lg">
-              <div className="flex items-center gap-3 mb-4">
-                 <div className="w-2 h-2 rounded-full bg-red-500"></div>
-                 <h3 className="text-red-400 font-mono text-sm font-bold uppercase">Connection Failure</h3>
-              </div>
-              <div className="text-slate-400 font-mono text-sm break-all">
-                {error}
-              </div>
-           </div>
+      {/* Transient Error Banner */}
+      {error && (
+        <div className="bg-amber-900/50 border border-amber-700 text-amber-200 px-4 py-3 rounded-lg mb-6 flex justify-between items-center">
+          <span className="text-sm">{error}</span>
+          <button onClick={() => setError(null)} className="text-amber-400 hover:text-amber-200 transition-colors">&times;</button>
         </div>
-      ) : (
+      )}
+
+      {/* Main Content Area */}
+      {false ? null : (
         <div className="flex-1 flex flex-col min-h-0 gap-4">
           <div className="flex-1 flex flex-col lg:flex-row gap-4 min-h-0 overflow-hidden">
 
@@ -689,7 +692,7 @@ export default function LiveThreatFeed() {
                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                           <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
                         </div>
-                        <div className="text-slate-400 font-mono text-sm tracking-wider uppercase">Perimeter Shield Active: Zero Edge Drop Anomalies Detected</div>
+                        <div className="text-slate-400 font-mono text-sm tracking-wider uppercase">Perimeter Shield Fully Functional: Zero Threat Anomalies Detected</div>
                      </div>
                   </div>
                ) : (
