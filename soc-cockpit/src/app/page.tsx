@@ -1,5 +1,6 @@
 import React from 'react';
 import LiveThreatFeed from '@/components/LiveThreatFeed';
+import { Suspense } from 'react';
 
 export default function Home() {
   return (
@@ -14,7 +15,9 @@ export default function Home() {
         </div>
       </div>
 
-      <LiveThreatFeed />
+      <Suspense fallback={<div>Loading...</div>}>
+        <LiveThreatFeed />
+      </Suspense>
     </div>
   );
 }
