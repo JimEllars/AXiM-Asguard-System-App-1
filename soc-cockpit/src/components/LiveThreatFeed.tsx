@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { z } from 'zod';
 
 const TelemetryPayloadSchema = z.object({
@@ -24,6 +25,10 @@ type AuditEvent = z.infer<typeof AuditEventSchema>;
 
 
 export default function LiveThreatFeed() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+
   const [data, setData] = useState<TelemetryPayload[]>([]);
   const [blocklist, setBlocklist] = useState<string[]>([]);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
@@ -48,10 +53,38 @@ export default function LiveThreatFeed() {
 
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState(false);
-  const [severityFilter, setSeverityFilter] = useState<'all' | 'high' | 'medium' | 'low'>('all');
-  const [appOriginFilter, setAppOriginFilter] = useState<string>('all');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [severityFilter, setSeverityFilter] = useState<'all' | 'high' | 'medium' | 'low'>((searchParams.get('severity') as 'all' | 'high' | 'medium' | 'low') || 'all');
+  const [appOriginFilter, setAppOriginFilter] = useState<string>(searchParams.get('origin') || 'all');
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
+
+
+
+  const isInitialMount = useRef(true);
+
+  useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+    const params = new URLSearchParams(searchParams.toString());
+    if (searchQuery) {
+      params.set('search', searchQuery);
+    } else {
+      params.delete('search');
+    }
+    if (severityFilter && severityFilter !== 'all') {
+      params.set('severity', severityFilter);
+    } else {
+      params.delete('severity');
+    }
+    if (appOriginFilter && appOriginFilter !== 'all') {
+      params.set('origin', appOriginFilter);
+    } else {
+      params.delete('origin');
+    }
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  }, [searchQuery, severityFilter, appOriginFilter, pathname, router, searchParams]);
 
   const [telemetryPage, setTelemetryPage] = useState(0);
   const [auditPage, setAuditPage] = useState(0);
