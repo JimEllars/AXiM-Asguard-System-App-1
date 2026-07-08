@@ -154,7 +154,7 @@ describe("Asguard Interceptor", () => {
         mockKV.list = vi
             .fn()
             .mockResolvedValue({
-            keys: [{ name: "ip:1.2.3.4" }, { name: "token:abc" }],
+            keys: [{ name: "ip:1.2.3.4", expiration: 1234567890 }, { name: "token:abc" }],
         });
         const request = new Request("https://example.com/blocklist", {
             headers: { "X-Asguard-Auth": "secret-key" },
@@ -168,7 +168,7 @@ describe("Asguard Interceptor", () => {
         const response = await worker.fetch(request, env, ctx);
         expect(response.status).toBe(200);
         const data = await response.json();
-        expect(data).toEqual(["ip:1.2.3.4", "token:abc"]);
+        expect(data).toEqual([{ name: "ip:1.2.3.4", expiration: 1234567890 }, { name: "token:abc" }]);
     });
     it("handles POST /blocklist to block an IP", async () => {
         const request = new Request("https://example.com/blocklist", {
