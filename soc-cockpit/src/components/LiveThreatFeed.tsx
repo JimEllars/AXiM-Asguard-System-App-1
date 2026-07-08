@@ -37,19 +37,20 @@ function formatTimeLeft(ms: number) {
   return `Lease: ${mins}m left`;
 }
 
-function LeaseTimer({ timestamp, ttl }: { timestamp: number; ttl: number }) {
+function LeaseTimer({ expiration }: { expiration: number }) {
   const [timeLeft, setTimeLeft] = useState(() => {
-    const expiresAt = timestamp + (ttl * 1000);
+    // expiration is a unix timestamp in seconds
+    const expiresAt = expiration * 1000;
     return expiresAt - Date.now();
   });
 
   useEffect(() => {
-    const expiresAt = timestamp + (ttl * 1000);
+    const expiresAt = expiration * 1000;
     const interval = setInterval(() => {
       setTimeLeft(expiresAt - Date.now());
     }, 60000); // update every minute
     return () => clearInterval(interval);
-  }, [timestamp, ttl]);
+  }, [expiration]);
 
   if (timeLeft <= 0) return null;
 
@@ -66,7 +67,7 @@ export default function LiveThreatFeed() {
   const pathname = usePathname();
 
   const [data, setData] = useState<TelemetryPayload[]>([]);
-  const [blocklist, setBlocklist] = useState<string[]>([]);
+  const [blocklist, setBlocklist] = useState<{ name: string; expiration?: number }[]>([]);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [edgeLatency, setEdgeLatency] = useState<string | null>(null);
@@ -210,7 +211,7 @@ export default function LiveThreatFeed() {
         const jsonAuditData = await auditRes.json();
 
         const parsedData = z.array(TelemetryPayloadSchema).parse(jsonTelemetryData).slice(0, 50);
-        const parsedBlocklist = z.array(z.string()).parse(jsonBlocklistData);
+        const parsedBlocklist = z.array(z.object({ name: z.string(), expiration: z.number().optional() })).parse(jsonBlocklistData);
         const parsedAudit = z.array(AuditEventSchema).parse(jsonAuditData);
 
         setData(prev => {
@@ -337,7 +338,7 @@ export default function LiveThreatFeed() {
     }
 
     try {
-      const res = await fetch(`${workerUrl}/api/blacklist`, {
+      const res = await fetch(`${workerUrl}/blocklist`, {
         method: 'POST',
         headers: {
           'X-Asguard-Auth': apiKey,
@@ -350,7 +351,7 @@ export default function LiveThreatFeed() {
         throw new Error('Failed to unblock key');
       }
 
-      setBlocklist(prev => prev.filter(k => k !== key));
+      setBlocklist(prev => prev.filter(k => k.name !== key));
       addToast("Edge Rule Updated: Block Lifted", "success");
 
     } catch (err) {
@@ -373,7 +374,7 @@ export default function LiveThreatFeed() {
     }
 
     try {
-      const res = await fetch(`${workerUrl}/api/blacklist`, {
+      const res = await fetch(`${workerUrl}/blocklist`, {
         method: 'POST',
         headers: {
           'X-Asguard-Auth': apiKey,
@@ -389,7 +390,7 @@ export default function LiveThreatFeed() {
       // Optimistically update the blocklist
       setBlocklist(prev => {
         const key = `ip:${ip}`;
-        return prev.includes(key) ? prev : [...prev, key];
+        return prev.some(item => item.name === key) ? prev : [...prev, { name: key, expiration: Math.floor(Date.now() / 1000) + 86400 }];
       });
       addToast("Edge Rule Updated: Access Revoked", "success");
 
@@ -698,7 +699,7 @@ export default function LiveThreatFeed() {
                ) : (
                  paginatedTelemetry.map((event, idx) => {
                    const isHighSeverity = event.severity === 'high' || event.severity === 'critical';
-                   const isBlocked = blocklist.includes(`ip:${event.sourceIp}`);
+                   const isBlocked = blocklist.some(b => b.name === `ip:${event.sourceIp}`);
                    return (
                      <div key={idx} className="grid grid-cols-6 gap-4 items-center p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono">
                        <div className="text-slate-500">
@@ -790,14 +791,14 @@ export default function LiveThreatFeed() {
                      </div>
                   </div>
                ) : (
-                 blocklist.map((keyName, idx) => {
-                   const auditEvent = auditLog.find(e => e.target === keyName && e.action === 'block' && e.ttl);
+                 blocklist.map((blockItem, idx) => {
+                   const keyName = blockItem.name;
                    return (
                    <div key={idx} className="flex justify-between items-center p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono">
                      <div className="flex items-center min-w-0">
                        <span className="truncate">{keyName}</span>
-                       {auditEvent && auditEvent.ttl && (
-                         <LeaseTimer timestamp={auditEvent.timestamp} ttl={auditEvent.ttl} />
+                       {blockItem.expiration && (
+                         <LeaseTimer expiration={blockItem.expiration} />
                        )}
                      </div>
                      <button
