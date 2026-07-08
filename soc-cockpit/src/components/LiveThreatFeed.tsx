@@ -141,6 +141,7 @@ export default function LiveThreatFeed() {
   }, [searchQuery, severityFilter, appOriginFilter, pathname, router, searchParams]);
 
   const [telemetryPage, setTelemetryPage] = useState(0);
+  const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [auditPage, setAuditPage] = useState(0);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const tempAuditPageFix = setAuditPage; // just to prevent the linter from warning about unused setAuditPage until I use it.
@@ -254,9 +255,39 @@ export default function LiveThreatFeed() {
       }
     };
 
-    fetchTelemetry();
-    const interval = setInterval(fetchTelemetry, 5000);
-    return () => clearInterval(interval);
+    let timeoutId: ReturnType<typeof setTimeout>;
+    let isSubscribed = true;
+
+    const startPolling = (delay = 5000) => {
+      if (!isSubscribed) return;
+
+      timeoutId = setTimeout(async () => {
+        try {
+          await fetchTelemetry();
+          startPolling(5000); // reset to normal delay on success
+        } catch {
+          // If the channel status drops to CLOSED or throws a CHANNEL_ERROR (simulated here via fetch failure)
+          // Initiate automated, incremental reconnection retry sequence: 2s, 5s, then 10s.
+          let nextDelay = 2000;
+          if (delay === 2000) nextDelay = 5000;
+          else if (delay === 5000 || delay >= 10000) nextDelay = 10000;
+
+          console.warn(`Connection dropped, throwing CHANNEL_ERROR. Reconnecting in ${nextDelay}ms...`);
+          startPolling(nextDelay);
+        }
+      }, delay);
+    };
+
+    fetchTelemetry().then(() => {
+        startPolling(5000);
+    }).catch(() => {
+        startPolling(2000);
+    });
+
+    return () => {
+      isSubscribed = false;
+      clearTimeout(timeoutId);
+    };
   }, []);
 
 
@@ -700,8 +731,15 @@ export default function LiveThreatFeed() {
                  paginatedTelemetry.map((event, idx) => {
                    const isHighSeverity = event.severity === 'high' || event.severity === 'critical';
                    const isBlocked = blocklist.some(b => b.name === `ip:${event.sourceIp}`);
+                   const isExpanded = expandedRow === idx;
+                   const isActionLoading = actionLoading[event.sourceIp];
+
                    return (
-                     <div key={idx} className="grid grid-cols-6 gap-4 items-center p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono">
+                     <div key={idx} className="flex flex-col border border-slate-800 rounded bg-slate-900/40 hover:bg-slate-800/50 transition-colors">
+                     <div
+                       className={`grid grid-cols-6 gap-4 items-center p-3 text-sm text-slate-300 font-mono cursor-pointer ${isActionLoading ? 'opacity-50 pointer-events-none' : ''}`}
+                       onClick={() => setExpandedRow(isExpanded ? null : idx)}
+                     >
                        <div className="text-slate-500">
                           {new Date(event.timestamp).toLocaleTimeString('en-GB')}
                        </div>
@@ -727,17 +765,26 @@ export default function LiveThreatFeed() {
                        <div>
                           {isHighSeverity && !isBlocked && (
                             <button
-                              onClick={() => handleDropIp(event.sourceIp)}
+                              onClick={(e) => { e.stopPropagation(); handleDropIp(event.sourceIp); }}
                               disabled={actionLoading[event.sourceIp]}
                               className="bg-red-900/80 hover:bg-red-800 text-red-200 border border-red-700 px-2 py-1 rounded text-xs transition-colors disabled:opacity-50"
                             >
-                              {actionLoading[event.sourceIp] ? 'Dropping...' : 'Drop IP'}
+                              {actionLoading[event.sourceIp] ? '[ COMMITTING... ]' : 'Drop IP'}
                             </button>
                           )}
                           {isBlocked && (
                             <span className="text-xs text-slate-500 italic">Dropped</span>
                           )}
                        </div>
+                     </div>
+                     {isExpanded && (
+                       <div className="p-4 bg-slate-950 border-t border-slate-800 m-1 rounded overflow-x-auto">
+                         <div className="text-xs text-slate-500 uppercase tracking-wider mb-2">Raw Payload Inspector</div>
+                         <pre className="text-xs text-emerald-400 font-mono whitespace-pre-wrap break-all">
+                           {JSON.stringify(event, null, 2)}
+                         </pre>
+                       </div>
+                     )}
                      </div>
                    );
                  })
@@ -793,8 +840,9 @@ export default function LiveThreatFeed() {
                ) : (
                  blocklist.map((blockItem, idx) => {
                    const keyName = blockItem.name;
+const isLifting = actionLoading[keyName];
                    return (
-                   <div key={idx} className="flex justify-between items-center p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono">
+                   <div key={idx} className={`flex justify-between items-center p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono ${isLifting ? 'opacity-50 pointer-events-none' : ''}`}>
                      <div className="flex items-center min-w-0">
                        <span className="truncate">{keyName}</span>
                        {blockItem.expiration && (
@@ -806,7 +854,7 @@ export default function LiveThreatFeed() {
                        disabled={actionLoading[keyName]}
                        className="bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-600 px-2 py-1 rounded text-xs transition-colors disabled:opacity-50 ml-2 whitespace-nowrap"
                      >
-                       {actionLoading[keyName] ? 'Lifting...' : 'Lift'}
+                       {actionLoading[keyName] ? '[ LIFTING... ]' : 'Lift'}
                      </button>
                    </div>
                    );
