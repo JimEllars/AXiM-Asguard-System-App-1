@@ -69,7 +69,7 @@ export default {
 
       let currentCount = record.count;
 
-      if (currentCount > 100) { // arbitrary limit for 429
+      if (currentCount > 10) { // arbitrary limit for 429
         const exceptionKey = `429_exceptions:${clientIp}`;
         const exceptionsStr = await env.ASGUARD_TELEMETRY.get(exceptionKey);
         let exceptions = exceptionsStr ? parseInt(exceptionsStr, 10) : 0;
@@ -265,6 +265,64 @@ export default {
     }
 
     // Optionally parse telemetry if it's a telemetry endpoint
+
+    if (request.method === "POST" && url.pathname === "/api/blacklist") {
+      const customAuthHeader = request.headers.get("X-Asguard-Auth");
+      if (!env.ASGUARD_API_KEY || customAuthHeader !== env.ASGUARD_API_KEY) {
+        return new Response("Unauthorized", {
+          status: 401,
+          headers: corsHeaders,
+        });
+      }
+
+      try {
+        const payload = (await request.json()) as {
+          key?: string;
+          action?: string;
+          ttl?: number;
+        };
+        if (!payload.key || !payload.action) {
+          return new Response("Bad Request", {
+            status: 400,
+            headers: corsHeaders,
+          });
+        }
+
+        if (payload.action === "block") {
+          await env.ASGUARD_GLOBAL_BLOCKLIST.put(payload.key, "1", {
+            expirationTtl: payload.ttl || 86400,
+          });
+        } else if (payload.action === "unblock") {
+          await env.ASGUARD_GLOBAL_BLOCKLIST.delete(payload.key);
+        } else {
+          return new Response("Invalid action", {
+            status: 400,
+            headers: corsHeaders,
+          });
+        }
+
+        const timestamp = Date.now();
+        const ttl =
+          payload.action === "block" ? payload.ttl || 86400 : undefined;
+        await env.ASGUARD_TELEMETRY.put(
+          `audit:${timestamp}`,
+          JSON.stringify({
+            action: payload.action,
+            target: payload.key,
+            ttl: ttl,
+            timestamp: timestamp,
+          }),
+        );
+
+        return new Response("OK", { status: 200, headers: corsHeaders });
+      } catch (e) {
+        return new Response("Internal Server Error", {
+          status: 500,
+          headers: corsHeaders,
+        });
+      }
+    }
+
     if (request.method === "POST" && url.pathname === "/telemetry") {
       try {
         let payload = await request.json() as any;

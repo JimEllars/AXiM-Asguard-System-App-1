@@ -209,7 +209,7 @@ export default function LiveThreatFeed() {
         const jsonBlocklistData = await blocklistRes.json();
         const jsonAuditData = await auditRes.json();
 
-        const parsedData = z.array(TelemetryPayloadSchema).parse(jsonTelemetryData);
+        const parsedData = z.array(TelemetryPayloadSchema).parse(jsonTelemetryData).slice(0, 50);
         const parsedBlocklist = z.array(z.string()).parse(jsonBlocklistData);
         const parsedAudit = z.array(AuditEventSchema).parse(jsonAuditData);
 
@@ -337,7 +337,7 @@ export default function LiveThreatFeed() {
     }
 
     try {
-      const res = await fetch(`${workerUrl}/blocklist`, {
+      const res = await fetch(`${workerUrl}/api/blacklist`, {
         method: 'POST',
         headers: {
           'X-Asguard-Auth': apiKey,
@@ -373,7 +373,7 @@ export default function LiveThreatFeed() {
     }
 
     try {
-      const res = await fetch(`${workerUrl}/blocklist`, {
+      const res = await fetch(`${workerUrl}/api/blacklist`, {
         method: 'POST',
         headers: {
           'X-Asguard-Auth': apiKey,
