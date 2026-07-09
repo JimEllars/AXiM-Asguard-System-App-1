@@ -225,19 +225,22 @@ export default {
 const localEdgeLoggingBuffer = [];
 async function logTelemetry(data, env) {
     try {
+        // Capture a snapshot of the current buffer
+        const bufferSnapshot = [...localEdgeLoggingBuffer];
         const dbOp = async () => {
             const existing = (await env.ASGUARD_TELEMETRY.get("recent_events", { type: "json" })) ||
                 [];
-            let toSave = [data, ...existing];
-            if (localEdgeLoggingBuffer.length > 0) {
-                toSave = [...localEdgeLoggingBuffer, ...toSave];
-                localEdgeLoggingBuffer.length = 0; // Clear buffer
-            }
+            // Combine current data, buffer snapshot, and existing data
+            let toSave = [data, ...bufferSnapshot, ...existing];
             const pruned = toSave.slice(0, 50);
             await env.ASGUARD_TELEMETRY.put("recent_events", JSON.stringify(pruned));
         };
         const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Database connection timeout")), 5000));
         await Promise.race([dbOp(), timeoutPromise]);
+        // If successful, remove the successfully flushed items from the local buffer
+        if (bufferSnapshot.length > 0) {
+            localEdgeLoggingBuffer.splice(0, bufferSnapshot.length);
+        }
     }
     catch (err) {
         console.error("Failed to log telemetry, buffering locally:", err);

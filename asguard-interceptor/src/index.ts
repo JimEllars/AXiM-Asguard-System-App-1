@@ -283,16 +283,16 @@ const localEdgeLoggingBuffer: any[] = [];
 
 async function logTelemetry(data: any, env: Env) {
   try {
+    // Capture a snapshot of the current buffer
+    const bufferSnapshot = [...localEdgeLoggingBuffer];
+
     const dbOp = async () => {
       const existing: any[] =
         (await env.ASGUARD_TELEMETRY.get("recent_events", { type: "json" })) ||
         [];
 
-      let toSave = [data, ...existing];
-      if (localEdgeLoggingBuffer.length > 0) {
-          toSave = [...localEdgeLoggingBuffer, ...toSave];
-          localEdgeLoggingBuffer.length = 0; // Clear buffer
-      }
+      // Combine current data, buffer snapshot, and existing data
+      let toSave = [data, ...bufferSnapshot, ...existing];
 
       const pruned = toSave.slice(0, 50);
       await env.ASGUARD_TELEMETRY.put("recent_events", JSON.stringify(pruned));
@@ -303,6 +303,11 @@ async function logTelemetry(data: any, env: Env) {
     );
 
     await Promise.race([dbOp(), timeoutPromise]);
+
+    // If successful, remove the successfully flushed items from the local buffer
+    if (bufferSnapshot.length > 0) {
+      localEdgeLoggingBuffer.splice(0, bufferSnapshot.length);
+    }
   } catch (err) {
     console.error("Failed to log telemetry, buffering locally:", err);
     localEdgeLoggingBuffer.push(data);

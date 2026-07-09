@@ -151,6 +151,7 @@ export default function LiveThreatFeed() {
 
 
   const [auditLog, setAuditLog] = useState<AuditEvent[]>([]);
+  const [copiedRow, setCopiedRow] = useState<number | null>(null);
   const [toasts, setToasts] = useState<{ id: string; message: string; type: 'success' | 'error' }[]>([]);
 
   const addToast = React.useCallback((message: string, type: 'success' | 'error') => {
@@ -566,6 +567,16 @@ export default function LiveThreatFeed() {
     return filteredData.slice(start, start + itemsPerPage);
   }, [filteredData, telemetryPage]);
 
+  const hasHighDensityAnomaly = React.useMemo(() => {
+    if (paginatedTelemetry.length === 0) return false;
+    const counts: Record<string, number> = {};
+    for (const event of paginatedTelemetry) {
+      counts[event.sourceIp] = (counts[event.sourceIp] || 0) + 1;
+    }
+    const threshold = paginatedTelemetry.length * 0.20;
+    return Object.values(counts).some(count => count > threshold);
+  }, [paginatedTelemetry]);
+
   const filteredAuditLog = React.useMemo(() => {
     if (!auditSearchQuery.trim()) return auditLog;
     const query = auditSearchQuery.toLowerCase();
@@ -772,6 +783,11 @@ export default function LiveThreatFeed() {
 
           {/* Left Pane: Telemetry Grid (2/3) */}
           <div className="flex-[2] bg-slate-950 border border-slate-800 rounded-lg relative overflow-hidden flex flex-col min-h-0">
+            {hasHighDensityAnomaly && (
+              <div className="bg-amber-500/10 border-b border-amber-500/30 px-4 py-2 text-center text-amber-500 font-mono text-xs font-bold tracking-widest uppercase">
+                [ SYSTEM ACCELERATION ALERT: HIGH-DENSITY IP ANOMALY - ONYX COGNITIVE TRIAGE REQ ]
+              </div>
+            )}
             <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: `linear-gradient(to right, #334155 1px, transparent 1px), linear-gradient(to bottom, #334155 1px, transparent 1px)`, backgroundSize: '40px 40px' }}></div>
 
             <div className="z-10 bg-slate-900/80 backdrop-blur-sm border-b border-slate-800 p-4 sticky top-0 flex justify-between items-center">
@@ -850,8 +866,21 @@ export default function LiveThreatFeed() {
                        </div>
                      </div>
                      {isExpanded && (
-                       <div className="p-4 bg-slate-950 border-t border-slate-800 m-1 rounded overflow-x-auto">
-                         <div className="text-xs text-slate-500 uppercase tracking-wider mb-2">Raw Payload Inspector</div>
+                       <div className="p-4 bg-slate-950 border-t border-slate-800 m-1 rounded overflow-x-auto relative">
+                         <div className="flex justify-between items-center mb-2">
+                           <div className="text-xs text-slate-500 uppercase tracking-wider">Raw Payload Inspector</div>
+                           <button
+                             onClick={(e) => {
+                               e.stopPropagation();
+                               navigator.clipboard.writeText(JSON.stringify(event, null, 2));
+                               setCopiedRow(idx);
+                               setTimeout(() => setCopiedRow(null), 1500);
+                             }}
+                             className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-1 rounded transition-colors font-mono"
+                           >
+                             {copiedRow === idx ? '[ COPIED! ]' : 'Copy JSON'}
+                           </button>
+                         </div>
                          <pre className="text-xs text-emerald-400 font-mono whitespace-pre-wrap break-all">
                            {JSON.stringify(event, null, 2)}
                          </pre>
