@@ -18,6 +18,29 @@ describe("Asguard Interceptor", () => {
     vi.clearAllMocks();
   });
 
+
+  it("blocks request instantly via KV ledger short-circuiting and returns 403", async () => {
+    mockKV.get.mockResolvedValue("1");
+    const request = new Request("https://example.com/", {
+      headers: { "cf-connecting-ip": "1.2.3.4" },
+    });
+
+    const env = {
+      ASGUARD_API_KEY: "secret-key",
+      ASGUARD_BLACKLIST: mockKV as any,
+      ASGUARD_TELEMETRY: mockTelemetryKV as any,
+    };
+    const ctx = { waitUntil: vi.fn() } as any;
+
+    const startTime = Date.now();
+    const response = await worker.fetch(request, env, ctx);
+    const duration = Date.now() - startTime;
+
+    expect(response.status).toBe(403);
+    expect(mockKV.get).toHaveBeenCalledWith("ip:1.2.3.4");
+    // Ensure we drop without calling downstream (rate limit is handled natively so we can't easily spy on map size without exporting it, but we can verify status)
+  });
+
   it("handles OPTIONS preflight requests with CORS headers", async () => {
     const request = new Request("https://example.com/", {
       method: "OPTIONS",
