@@ -54,7 +54,7 @@ describe("Asguard Interceptor", () => {
     const ctx = { waitUntil: vi.fn() } as any;
 
     const response = await worker.fetch(request, env, ctx);
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(204);
     expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
     expect(response.headers.get("Access-Control-Allow-Methods")).toBe(
       "GET, POST, OPTIONS",
@@ -126,12 +126,38 @@ describe("Asguard Interceptor", () => {
     expect(response.status).toBe(202);
     expect(ctx.waitUntil).toHaveBeenCalled();
     expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
+  });
 
-    // Ensure the payload logged to telemetry was enriched
-    // Since ctx.waitUntil wraps logTelemetry, which calls env.ASGUARD_TELEMETRY.put
-    // Actually the mock for waitUntil doesn't execute the promise.
-    // We should ideally test logTelemetry, but for now we can just test that 400 is not thrown
-    // when using country/colo.
+  it("returns 202 immediately even if database logging bottlenecks", async () => {
+    const payload = {
+      sourceIp: "192.168.1.2",
+      timestamp: Date.now(),
+      eventType: "suspicious_activity",
+      severity: "low",
+    };
+
+    const request = new Request("https://example.com/telemetry", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      headers: { "cf-connecting-ip": "1.2.3.4" },
+    });
+
+    const mockSlowTelemetryKV = {
+      ...mockTelemetryKV,
+      get: vi.fn().mockImplementation(() => new Promise(resolve => setTimeout(resolve, 6000))),
+      put: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const env = {
+      ASGUARD_API_KEY: "secret-key",
+      ASGUARD_BLACKLIST: mockKV as any,
+      ASGUARD_TELEMETRY: mockSlowTelemetryKV as any,
+    };
+    const ctx = { waitUntil: vi.fn() } as any;
+
+    const response = await worker.fetch(request, env, ctx);
+    expect(response.status).toBe(202);
+    expect(ctx.waitUntil).toHaveBeenCalled();
   });
 
   it("rejects invalid telemetry payload and returns CORS headers", async () => {
