@@ -81,12 +81,31 @@ export default function LiveThreatFeed() {
     sessionStorage.setItem('asguard_annotations', JSON.stringify(newAnnotations));
   };
 
+  const handleAnnotationBlur = async (key: string) => {
+    const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
+    const apiKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY;
+    if (!workerUrl || !apiKey) return;
+
+    try {
+      await fetch(`${workerUrl}/blocklist`, {
+        method: 'POST',
+        headers: {
+          'X-Asguard-Auth': apiKey,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ key, action: 'update_note', note: annotations[key] || '' })
+      });
+    } catch (err) {
+      console.error("Error saving note:", err);
+    }
+  };
+
   const router = useRouter();
   const searchParams = useSearchParams();
   const pathname = usePathname();
 
   const [data, setData] = useState<TelemetryPayload[]>([]);
-  const [blocklist, setBlocklist] = useState<{ name: string; expiration?: number }[]>([]);
+  const [blocklist, setBlocklist] = useState<{ name: string; expiration?: number; note?: string }[]>([]);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [edgeLatency, setEdgeLatency] = useState<string | null>(null);
@@ -233,7 +252,22 @@ export default function LiveThreatFeed() {
         const jsonAuditData = await auditRes.json();
 
         const parsedData = z.array(TelemetryPayloadSchema).parse(jsonTelemetryData).slice(0, 50);
-        const parsedBlocklist = z.array(z.object({ name: z.string(), expiration: z.number().optional() })).parse(jsonBlocklistData);
+        const parsedBlocklist = z.array(z.object({ name: z.string(), expiration: z.number().optional(), note: z.string().optional() })).parse(jsonBlocklistData);
+        setAnnotations(prev => {
+          let updated = false;
+          const next = { ...prev };
+          for (const item of parsedBlocklist) {
+            if (item.note !== undefined && next[item.name] !== item.note) {
+              next[item.name] = item.note;
+              updated = true;
+            }
+          }
+          if (updated) {
+            sessionStorage.setItem('asguard_annotations', JSON.stringify(next));
+            return next;
+          }
+          return prev;
+        });
         const parsedAudit = z.array(AuditEventSchema).parse(jsonAuditData);
 
         setData(prev => {
@@ -916,7 +950,26 @@ export default function LiveThreatFeed() {
                            <button
                              onClick={(e) => {
                                e.stopPropagation();
-                               navigator.clipboard.writeText(JSON.stringify(event, null, 2));
+                               const sanitizePayload = (obj: unknown) => {
+                                 const clone = JSON.parse(JSON.stringify(obj));
+                                 const sensitiveKeys = ['authorization', 'cookie', 'token', 'signature', 'secret'];
+
+                                 const traverse = (o: Record<string, unknown> | unknown[]) => {
+                                   if (o && typeof o === 'object') {
+                                     for (const k in o) {
+                                       const obj = o as Record<string, unknown>;
+                                       if (sensitiveKeys.some(sk => k.toLowerCase().includes(sk))) {
+                                         obj[k] = '[ REDACTED_FOR_COMPLIANCE ]';
+                                       } else if (typeof obj[k] === 'object') {
+                                         traverse(obj[k] as Record<string, unknown>);
+                                       }
+                                     }
+                                   }
+                                 };
+                                 traverse(clone);
+                                 return clone;
+                               };
+                               navigator.clipboard.writeText(JSON.stringify(sanitizePayload(event), null, 2));
                                setCopiedRow(idx);
                                setTimeout(() => setCopiedRow(null), 1500);
                              }}
@@ -1010,6 +1063,7 @@ export default function LiveThreatFeed() {
                            maxLength={60}
                            value={annotations[keyName] || ''}
                            onChange={(e) => handleAnnotationChange(keyName, e.target.value)}
+                           onBlur={() => handleAnnotationBlur(keyName)}
                            className="w-full bg-slate-950/50 border border-slate-700 rounded px-2 py-1 text-[10px] text-slate-300 focus:outline-none focus:border-slate-500 placeholder-slate-600"
                         />
                      </div>
