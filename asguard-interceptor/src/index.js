@@ -30,12 +30,25 @@ function pruneRateLimitMap() {
         }
     }
 }
-const corsHeaders = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Asguard-Auth",
-    "Access-Control-Expose-Headers": "Server-Timing",
-};
+function getCorsHeaders(request, env, isMutation) {
+    let origin = request.headers.get("Origin");
+    let allowedOrigin = "*";
+    if (isMutation || request.method === "OPTIONS") {
+        const productionOrigin = env.ALLOWED_ORIGIN || "https://production-domain.com";
+        if (origin && origin === productionOrigin) {
+            allowedOrigin = productionOrigin;
+        }
+        else if (origin) {
+            allowedOrigin = "DENY";
+        }
+    }
+    return {
+        "Access-Control-Allow-Origin": allowedOrigin !== "DENY" ? allowedOrigin : "",
+        "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Asguard-Auth, X-Asguard-Signature",
+        "Access-Control-Expose-Headers": "Server-Timing",
+    };
+}
 export default {
     async fetch(request, env, ctx) {
         const startTime = Date.now();
@@ -46,15 +59,24 @@ export default {
         return newResponse;
     },
     async handle(request, env, ctx) {
+        const isMutation = request.method === 'POST' || request.method === 'DELETE';
         if (request.method === "OPTIONS") {
-            return new Response(null, { status: 204, headers: corsHeaders });
+            const headers = getCorsHeaders(request, env, true);
+            if (!headers["Access-Control-Allow-Origin"]) {
+                return new Response("Forbidden", { status: 403 });
+            }
+            return new Response(null, { status: 204, headers });
+        }
+        const headers = getCorsHeaders(request, env, isMutation);
+        if ((isMutation) && !headers["Access-Control-Allow-Origin"]) {
+            return new Response("Forbidden", { status: 403 });
         }
         const clientIp = request.headers.get("cf-connecting-ip") || "unknown";
         // Fast check against KV for blocked IP
         if (clientIp !== "unknown") {
             const isBlocked = await env.ASGUARD_BLACKLIST.get(`ip:${clientIp}`);
             if (isBlocked) {
-                return new Response("Forbidden", { status: 403, headers: corsHeaders });
+                return new Response("Forbidden", { status: 403, headers: getCorsHeaders(request, env, isMutation) });
             }
         }
         // Flood Control Handler
@@ -82,9 +104,12 @@ export default {
                 }
                 penaltyLedger.set(clientIp, penalty);
                 if (penalty.consecutive > 3) {
-                    await env.ASGUARD_BLACKLIST.put(`ip:${clientIp}`, "1", { expirationTtl: 86400 });
+                    ctx.waitUntil(env.ASGUARD_BLACKLIST.put(`ip:${clientIp}`, "1", { expirationTtl: 86400 }).catch(err => {
+                        console.error("Flood control block failed, buffering locally:", err);
+                        localEdgeLoggingBuffer.push({ type: 'blacklist_put', key: `ip:${clientIp}` });
+                    }));
                 }
-                return new Response("Too Many Requests", { status: 429, headers: corsHeaders });
+                return new Response("Too Many Requests", { status: 429, headers: getCorsHeaders(request, env, isMutation) });
             }
             else {
                 penaltyLedger.delete(clientIp);
@@ -96,16 +121,50 @@ export default {
             const token = authHeader.replace(/^Bearer\s+/, "").trim();
             const isTokenBlocked = await env.ASGUARD_BLACKLIST.get(`token:${token}`);
             if (isTokenBlocked) {
-                return new Response("Forbidden", { status: 403, headers: corsHeaders });
+                return new Response("Forbidden", { status: 403, headers: getCorsHeaders(request, env, isMutation) });
             }
         }
         const url = new URL(request.url);
+        if (request.method === "GET" && url.pathname === "/health") {
+            const customAuthHeader = request.headers.get("X-Asguard-Auth");
+            if (!env.ASGUARD_API_KEY || customAuthHeader !== env.ASGUARD_API_KEY) {
+                return new Response("Unauthorized", {
+                    status: 401,
+                    headers: getCorsHeaders(request, env, isMutation),
+                });
+            }
+            try {
+                await Promise.all([
+                    env.ASGUARD_BLACKLIST.get("health-check-key").catch(e => { throw new Error("ASGUARD_BLACKLIST failed"); }),
+                    env.ASGUARD_TELEMETRY.get("health-check-key").catch(e => { throw new Error("ASGUARD_TELEMETRY failed"); })
+                ]);
+                return new Response(JSON.stringify({
+                    status: "ok",
+                    blacklist: "ok",
+                    telemetry: "ok",
+                    timestamp: Date.now()
+                }), {
+                    status: 200,
+                    headers: { ...getCorsHeaders(request, env, isMutation), "Content-Type": "application/json" }
+                });
+            }
+            catch (err) {
+                return new Response(JSON.stringify({
+                    status: "degraded",
+                    error: err.message,
+                    timestamp: Date.now()
+                }), {
+                    status: 500,
+                    headers: { ...getCorsHeaders(request, env, isMutation), "Content-Type": "application/json" }
+                });
+            }
+        }
         if (request.method === "GET" && url.pathname === "/telemetry") {
             const customAuthHeader = request.headers.get("X-Asguard-Auth");
             if (!env.ASGUARD_API_KEY || customAuthHeader !== env.ASGUARD_API_KEY) {
                 return new Response("Unauthorized", {
                     status: 401,
-                    headers: corsHeaders,
+                    headers: getCorsHeaders(request, env, isMutation),
                 });
             }
             try {
@@ -114,13 +173,13 @@ export default {
                 })) || [];
                 return new Response(JSON.stringify(data), {
                     status: 200,
-                    headers: { ...corsHeaders, "Content-Type": "application/json" },
+                    headers: { ...getCorsHeaders(request, env, isMutation), "Content-Type": "application/json" },
                 });
             }
             catch (e) {
                 return new Response("Internal Server Error", {
                     status: 500,
-                    headers: corsHeaders,
+                    headers: getCorsHeaders(request, env, isMutation),
                 });
             }
         }
@@ -129,7 +188,7 @@ export default {
             if (!env.ASGUARD_API_KEY || customAuthHeader !== env.ASGUARD_API_KEY) {
                 return new Response("Unauthorized", {
                     status: 401,
-                    headers: corsHeaders,
+                    headers: getCorsHeaders(request, env, isMutation),
                 });
             }
             try {
@@ -142,13 +201,13 @@ export default {
                 auditEvents.sort((a, b) => b.timestamp - a.timestamp);
                 return new Response(JSON.stringify(auditEvents), {
                     status: 200,
-                    headers: { ...corsHeaders, "Content-Type": "application/json" },
+                    headers: { ...getCorsHeaders(request, env, isMutation), "Content-Type": "application/json" },
                 });
             }
             catch (e) {
                 return new Response("Internal Server Error", {
                     status: 500,
-                    headers: corsHeaders,
+                    headers: getCorsHeaders(request, env, isMutation),
                 });
             }
         }
@@ -157,7 +216,7 @@ export default {
             if (!env.ASGUARD_API_KEY || customAuthHeader !== env.ASGUARD_API_KEY) {
                 return new Response("Unauthorized", {
                     status: 401,
-                    headers: corsHeaders,
+                    headers: getCorsHeaders(request, env, isMutation),
                 });
             }
             const cacheUrl = new URL(request.url);
@@ -180,7 +239,7 @@ export default {
                 });
                 const responsePayload = new Response(JSON.stringify(keys), {
                     status: 200,
-                    headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "public, max-age=30" },
+                    headers: { ...getCorsHeaders(request, env, isMutation), "Content-Type": "application/json", "Cache-Control": "public, max-age=30" },
                 });
                 ctx.waitUntil(cache.put(cacheKey, responsePayload.clone()));
                 return responsePayload;
@@ -188,7 +247,7 @@ export default {
             catch (e) {
                 return new Response("Internal Server Error", {
                     status: 500,
-                    headers: corsHeaders,
+                    headers: getCorsHeaders(request, env, isMutation),
                 });
             }
         }
@@ -197,7 +256,7 @@ export default {
             if (!env.ASGUARD_API_KEY || customAuthHeader !== env.ASGUARD_API_KEY) {
                 return new Response("Unauthorized", {
                     status: 401,
-                    headers: corsHeaders,
+                    headers: getCorsHeaders(request, env, isMutation),
                 });
             }
             const invalidateCacheUrl = new URL(request.url);
@@ -207,7 +266,7 @@ export default {
                 if (!payload.key || !payload.action) {
                     return new Response("Bad Request", {
                         status: 400,
-                        headers: corsHeaders,
+                        headers: getCorsHeaders(request, env, isMutation),
                     });
                 }
                 if (payload.action === "block" || payload.action === "update_note") {
@@ -221,31 +280,77 @@ export default {
                     if (payload.note !== undefined) {
                         options.metadata = { note: payload.note };
                     }
-                    await env.ASGUARD_BLACKLIST.put(payload.key, "1", options);
+                    ctx.waitUntil((async () => {
+                        try {
+                            await Promise.race([
+                                env.ASGUARD_BLACKLIST.put(payload.key, "1", options),
+                                new Promise((_, r) => setTimeout(() => r(new Error("Timeout")), 5000))
+                            ]);
+                        }
+                        catch (e) {
+                            console.error("Failed to update blocklist", e);
+                            localEdgeLoggingBuffer.push({ type: 'blacklist_put', key: payload.key, options });
+                        }
+                    })());
                 }
                 else if (payload.action === "unblock") {
-                    await env.ASGUARD_BLACKLIST.delete(payload.key);
+                    ctx.waitUntil((async () => {
+                        try {
+                            await Promise.race([
+                                env.ASGUARD_BLACKLIST.delete(payload.key),
+                                new Promise((_, r) => setTimeout(() => r(new Error("Timeout")), 5000))
+                            ]);
+                        }
+                        catch (e) {
+                            console.error("Failed to delete from blocklist", e);
+                            localEdgeLoggingBuffer.push({ type: 'blacklist_delete', key: payload.key });
+                        }
+                    })());
                 }
                 else {
                     return new Response("Invalid action", {
                         status: 400,
-                        headers: corsHeaders,
+                        headers: getCorsHeaders(request, env, isMutation),
                     });
                 }
                 const timestamp = Date.now();
                 const ttl = payload.action === "block" ? payload.ttl || 86400 : undefined;
-                await env.ASGUARD_TELEMETRY.put(`audit:${timestamp}`, JSON.stringify({
-                    action: payload.action,
-                    target: payload.key,
-                    ttl: ttl,
-                    timestamp: timestamp,
-                }));
-                return new Response("OK", { status: 200, headers: corsHeaders });
+                ctx.waitUntil((async () => {
+                    try {
+                        const auditDbOp = async () => {
+                            await env.ASGUARD_TELEMETRY.put(`audit:${timestamp}`, JSON.stringify({
+                                action: payload.action,
+                                target: payload.key,
+                                ttl: ttl,
+                                timestamp: timestamp,
+                            }));
+                        };
+                        const auditTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Database connection timeout")), 5000));
+                        await Promise.race([auditDbOp(), auditTimeout]);
+                    }
+                    catch (err) {
+                        console.error("Failed to log audit telemetry, buffering locally:", err);
+                        localEdgeLoggingBuffer.push({
+                            type: "audit",
+                            key: `audit:${timestamp}`,
+                            payload: {
+                                action: payload.action,
+                                target: payload.key,
+                                ttl: ttl,
+                                timestamp: timestamp,
+                            }
+                        });
+                        if (localEdgeLoggingBuffer.length > 100) {
+                            localEdgeLoggingBuffer.shift();
+                        }
+                    }
+                })());
+                return new Response("OK", { status: 200, headers: getCorsHeaders(request, env, isMutation) });
             }
             catch (e) {
                 return new Response("Internal Server Error", {
                     status: 500,
-                    headers: corsHeaders,
+                    headers: getCorsHeaders(request, env, isMutation),
                 });
             }
         }
@@ -262,7 +367,7 @@ export default {
             if (timestamps.length > 5) {
                 return new Response("Too Many Requests", {
                     status: 429,
-                    headers: corsHeaders,
+                    headers: getCorsHeaders(request, env, isMutation),
                 });
             }
             try {
@@ -287,19 +392,19 @@ export default {
                 if (!parseResult.success) {
                     return new Response("Invalid Telemetry Payload", {
                         status: 400,
-                        headers: corsHeaders,
+                        headers: getCorsHeaders(request, env, isMutation),
                     });
                 }
                 ctx.waitUntil(logTelemetry(parseResult.data, env));
                 return new Response("OK", {
                     status: 202,
-                    headers: corsHeaders,
+                    headers: getCorsHeaders(request, env, isMutation),
                 });
             }
             catch (e) {
                 return new Response("Bad Request", {
                     status: 400,
-                    headers: corsHeaders,
+                    headers: getCorsHeaders(request, env, isMutation),
                 });
             }
         }
@@ -316,25 +421,25 @@ export default {
                 if (!parseResult.success) {
                     return new Response("Invalid Telemetry Payload", {
                         status: 400,
-                        headers: corsHeaders,
+                        headers: getCorsHeaders(request, env, isMutation),
                     });
                 }
                 // Securely log telemetry asynchronously
                 ctx.waitUntil(logTelemetry(parseResult.data, env));
                 return new Response("Telemetry accepted", {
                     status: 202,
-                    headers: corsHeaders,
+                    headers: getCorsHeaders(request, env, isMutation),
                 });
             }
             catch (e) {
                 return new Response("Bad Request", {
                     status: 400,
-                    headers: corsHeaders,
+                    headers: getCorsHeaders(request, env, isMutation),
                 });
             }
         }
         // Pass-through
-        return new Response("OK", { status: 200, headers: corsHeaders });
+        return new Response("OK", { status: 200, headers: getCorsHeaders(request, env, isMutation) });
     },
 };
 const localEdgeLoggingBuffer = [];

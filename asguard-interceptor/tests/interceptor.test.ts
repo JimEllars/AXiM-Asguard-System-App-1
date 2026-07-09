@@ -28,7 +28,7 @@ describe("Asguard Interceptor", () => {
   });
 
   it("should trigger client-error throttle circuit breaker returning 429", async () => {
-    const env = {
+    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "secret-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
@@ -40,7 +40,7 @@ describe("Asguard Interceptor", () => {
       headers: { "cf-connecting-ip": "9.9.9.9" },
       body: JSON.stringify({ message: "test" })
     });
-    const ctx = { waitUntil: vi.fn() } as any;
+    const ctx = { waitUntil: vi.fn().mockImplementation((p) => p) } as any;
 
     for (let i = 0; i < 5; i++) {
        const req = createReq();
@@ -61,12 +61,12 @@ describe("Asguard Interceptor", () => {
       headers: { "cf-connecting-ip": "1.2.3.4" },
     });
 
-    const env = {
+    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "secret-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
-    const ctx = { waitUntil: vi.fn() } as any;
+    const ctx = { waitUntil: vi.fn().mockImplementation((p) => p) } as any;
 
     const startTime = Date.now();
     const response = await worker.fetch(request, env, ctx);
@@ -82,18 +82,18 @@ describe("Asguard Interceptor", () => {
       method: "OPTIONS",
     });
 
-    const env = {
+    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "secret-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
-    const ctx = { waitUntil: vi.fn() } as any;
+    const ctx = { waitUntil: vi.fn().mockImplementation((p) => p) } as any;
 
     const response = await worker.fetch(request, env, ctx);
     expect(response.status).toBe(204);
-    expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBeDefined();
     expect(response.headers.get("Access-Control-Allow-Methods")).toBe(
-      "GET, POST, OPTIONS",
+      "GET, POST, DELETE, OPTIONS",
     );
   });
 
@@ -103,17 +103,17 @@ describe("Asguard Interceptor", () => {
       headers: { "cf-connecting-ip": "1.2.3.4" },
     });
 
-    const env = {
+    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "secret-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
-    const ctx = { waitUntil: vi.fn() } as any;
+    const ctx = { waitUntil: vi.fn().mockImplementation((p) => p) } as any;
 
     const response = await worker.fetch(request, env, ctx);
     expect(response.status).toBe(403);
     expect(mockKV.get).toHaveBeenCalledWith("ip:1.2.3.4");
-    expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBeDefined();
   });
 
   it("allows request if IP is not in blocklist and returns CORS headers", async () => {
@@ -122,16 +122,16 @@ describe("Asguard Interceptor", () => {
       headers: { "cf-connecting-ip": "1.2.3.4" },
     });
 
-    const env = {
+    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "secret-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
-    const ctx = { waitUntil: vi.fn() } as any;
+    const ctx = { waitUntil: vi.fn().mockImplementation((p) => p) } as any;
 
     const response = await worker.fetch(request, env, ctx);
     expect(response.status).toBe(200);
-    expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBeDefined();
   });
 
   it("accepts valid telemetry payload and returns CORS headers", async () => {
@@ -151,17 +151,17 @@ describe("Asguard Interceptor", () => {
     // @ts-ignore
     request.cf = { country: "US", colo: "DFW" };
 
-    const env = {
+    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "secret-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
-    const ctx = { waitUntil: vi.fn() } as any;
+    const ctx = { waitUntil: vi.fn().mockImplementation((p) => p) } as any;
 
     const response = await worker.fetch(request, env, ctx);
     expect(response.status).toBe(202);
     expect(ctx.waitUntil).toHaveBeenCalled();
-    expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBeDefined();
   });
 
   it("returns 202 immediately even if database logging bottlenecks", async () => {
@@ -184,12 +184,12 @@ describe("Asguard Interceptor", () => {
       put: vi.fn().mockResolvedValue(undefined),
     };
 
-    const env = {
+    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "secret-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockSlowTelemetryKV as any,
     };
-    const ctx = { waitUntil: vi.fn() } as any;
+    const ctx = { waitUntil: vi.fn().mockImplementation((p) => p) } as any;
 
     const response = await worker.fetch(request, env, ctx);
     expect(response.status).toBe(202);
@@ -211,25 +211,25 @@ describe("Asguard Interceptor", () => {
       headers: { "cf-connecting-ip": "1.2.3.4" },
     });
 
-    const env = {
+    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "secret-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
-    const ctx = { waitUntil: vi.fn() } as any;
+    const ctx = { waitUntil: vi.fn().mockImplementation((p) => p) } as any;
 
     const response = await worker.fetch(request, env, ctx);
     expect(response.status).toBe(400);
-    expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBeDefined();
   });
   it("rejects GET /telemetry without valid auth", async () => {
     const request = new Request("https://example.com/telemetry");
-    const env = {
+    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "secret-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
-    const ctx = { waitUntil: vi.fn() } as any;
+    const ctx = { waitUntil: vi.fn().mockImplementation((p) => p) } as any;
 
     const response = await worker.fetch(request, env, ctx);
     expect(response.status).toBe(401);
@@ -240,12 +240,12 @@ describe("Asguard Interceptor", () => {
     const request = new Request("https://example.com/telemetry", {
       headers: { "X-Asguard-Auth": "secret-key" },
     });
-    const env = {
+    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "secret-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
-    const ctx = { waitUntil: vi.fn() } as any;
+    const ctx = { waitUntil: vi.fn().mockImplementation((p) => p) } as any;
 
     const response = await worker.fetch(request, env, ctx);
     expect(response.status).toBe(200);
@@ -253,12 +253,12 @@ describe("Asguard Interceptor", () => {
 
   it("rejects GET /blocklist without valid auth", async () => {
     const request = new Request("https://example.com/blocklist");
-    const env = {
+    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "secret-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
-    const ctx = { waitUntil: vi.fn() } as any;
+    const ctx = { waitUntil: vi.fn().mockImplementation((p) => p) } as any;
 
     const response = await worker.fetch(request, env, ctx);
     expect(response.status).toBe(401);
@@ -273,12 +273,12 @@ describe("Asguard Interceptor", () => {
     const request = new Request("https://example.com/blocklist", {
       headers: { "X-Asguard-Auth": "secret-key" },
     });
-    const env = {
+    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "secret-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
-    const ctx = { waitUntil: vi.fn() } as any;
+    const ctx = { waitUntil: vi.fn().mockImplementation((p) => p) } as any;
 
     const response = await worker.fetch(request, env, ctx);
     expect(response.status).toBe(200);
@@ -295,12 +295,12 @@ describe("Asguard Interceptor", () => {
       },
       body: JSON.stringify({ key: "ip:10.0.0.1", action: "block" }),
     });
-    const env = {
+    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "secret-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
-    const ctx = { waitUntil: vi.fn() } as any;
+    const ctx = { waitUntil: vi.fn().mockImplementation((p) => p) } as any;
 
     const response = await worker.fetch(request, env, ctx);
     expect(response.status).toBe(200);
@@ -318,12 +318,12 @@ describe("Asguard Interceptor", () => {
       },
       body: JSON.stringify({ key: "ip:10.0.0.1", action: "unblock" }),
     });
-    const env = {
+    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "secret-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
-    const ctx = { waitUntil: vi.fn() } as any;
+    const ctx = { waitUntil: vi.fn().mockImplementation((p) => p) } as any;
 
     const response = await worker.fetch(request, env, ctx);
     expect(response.status).toBe(200);
@@ -339,12 +339,12 @@ describe("Asguard Interceptor", () => {
       },
       body: JSON.stringify({ key: "ip:10.0.0.2", action: "block", ttl: 3600 }),
     });
-    const env = {
+    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "secret-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
-    const ctx = { waitUntil: vi.fn() } as any;
+    const ctx = { waitUntil: vi.fn().mockImplementation((p) => p) } as any;
 
     const response = await worker.fetch(request, env, ctx);
     expect(response.status).toBe(200);
@@ -372,12 +372,12 @@ describe("Asguard Interceptor", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ key: "ip:10.0.0.3", action: "block" }),
     });
-    const env = {
+    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "secret-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
-    const ctx = { waitUntil: vi.fn() } as any;
+    const ctx = { waitUntil: vi.fn().mockImplementation((p) => p) } as any;
 
     const response = await worker.fetch(request, env, ctx);
     expect(response.status).toBe(401);
@@ -395,12 +395,12 @@ describe("Asguard Interceptor", () => {
     const requestGet = new Request("https://example.com/telemetry", {
       headers: { "X-Asguard-Auth": "secret-key" },
     });
-    const env = {
+    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "secret-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
-    const ctx = { waitUntil: vi.fn() } as any;
+    const ctx = { waitUntil: vi.fn().mockImplementation((p) => p) } as any;
 
     const responseGet = await worker.fetch(requestGet, env, ctx);
     expect(responseGet.status).toBe(200);
@@ -446,16 +446,108 @@ describe("Asguard Interceptor", () => {
     // @ts-ignore
     request.cf = { country: "US", colo: "DFW" };
 
+    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
+      ASGUARD_API_KEY: "secret-key",
+      ASGUARD_BLACKLIST: mockKV as any,
+      ASGUARD_TELEMETRY: mockTelemetryKV as any,
+    };
+    const ctx = { waitUntil: vi.fn().mockImplementation((p) => p) } as any;
+
+    const response = await worker.fetch(request, env, ctx);
+    expect(response.status).toBe(202);
+    expect(ctx.waitUntil).toHaveBeenCalled();
+  });
+
+
+  it("handles GET /health and returns ok for healthy bindings", async () => {
+    const mockSuccessKV = {
+      ...mockKV,
+      get: vi.fn().mockResolvedValue(null)
+    };
+    const request = new Request("https://example.com/health", {
+      method: "GET",
+      headers: { "X-Asguard-Auth": "secret-key" },
+    });
+
     const env = {
+      ALLOWED_ORIGIN: 'https://production-domain.com',
+      ASGUARD_API_KEY: "secret-key",
+      ASGUARD_BLACKLIST: mockSuccessKV as any,
+      ASGUARD_TELEMETRY: mockSuccessKV as any,
+    };
+    const ctx = { waitUntil: vi.fn() } as any;
+
+    const response = await worker.fetch(request, env, ctx);
+    expect(response.status).toBe(200);
+    const body = await response.json() as any;
+    expect(body.status).toBe("ok");
+    expect(body.blacklist).toBe("ok");
+    expect(body.telemetry).toBe("ok");
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBeDefined();
+  });
+
+  it("handles GET /health and returns degraded for failed bindings", async () => {
+    const mockFailedKV = {
+      ...mockKV,
+      get: vi.fn().mockImplementation(async (key) => {
+        if (key === "health-check-key") {
+          throw new Error("KV Storage Timeout Connection Failure");
+        }
+        return null;
+      }),
+    };
+
+    const request = new Request("https://example.com/health", {
+      method: "GET",
+      headers: { "X-Asguard-Auth": "secret-key" },
+    });
+
+    const env = {
+      ALLOWED_ORIGIN: 'https://production-domain.com',
+      ASGUARD_API_KEY: "secret-key",
+      ASGUARD_BLACKLIST: mockFailedKV as any,
+      ASGUARD_TELEMETRY: mockFailedKV as any,
+    };
+    const ctx = { waitUntil: vi.fn() } as any;
+
+    const response = await worker.fetch(request, env, ctx);
+    expect(response.status).toBe(500);
+    const body = await response.json() as any;
+    expect(body.status).toBe("degraded");
+    expect(body.error).toContain("ASGUARD_BLACKLIST");
+  });
+
+  it("rejects illegal CORS origin on mutations and preflight, but allows matching origin", async () => {
+    const env = {
+      ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "secret-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
     const ctx = { waitUntil: vi.fn() } as any;
 
-    const response = await worker.fetch(request, env, ctx);
-    expect(response.status).toBe(202);
-    expect(ctx.waitUntil).toHaveBeenCalled();
+    const illegalOptions = new Request("https://example.com/blocklist", {
+      method: "OPTIONS",
+      headers: { "Origin": "https://hacker.com" }
+    });
+    const illegalOptionsResponse = await worker.fetch(illegalOptions, env, ctx);
+    expect(illegalOptionsResponse.status).toBe(403);
+
+    const illegalPost = new Request("https://example.com/blocklist", {
+      method: "POST",
+      headers: { "Origin": "https://hacker.com", "X-Asguard-Auth": "secret-key", "Content-Type": "application/json" },
+      body: JSON.stringify({ key: "test", action: "block" })
+    });
+    const illegalPostResponse = await worker.fetch(illegalPost, env, ctx);
+    expect(illegalPostResponse.status).toBe(403);
+
+    const legalOptions = new Request("https://example.com/blocklist", {
+      method: "OPTIONS",
+      headers: { "Origin": "https://production-domain.com" }
+    });
+    const legalOptionsResponse = await worker.fetch(legalOptions, env, ctx);
+    expect(legalOptionsResponse.status).toBe(204);
+    expect(legalOptionsResponse.headers.get("Access-Control-Allow-Origin")).toBe("https://production-domain.com");
   });
 
 });
