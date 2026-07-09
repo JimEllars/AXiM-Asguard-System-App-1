@@ -25,7 +25,7 @@ describe("Asguard Interceptor", () => {
 
     const env = {
       ASGUARD_API_KEY: "secret-key",
-      ASGUARD_GLOBAL_BLOCKLIST: mockKV as any,
+      ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
     const ctx = { waitUntil: vi.fn() } as any;
@@ -46,7 +46,7 @@ describe("Asguard Interceptor", () => {
 
     const env = {
       ASGUARD_API_KEY: "secret-key",
-      ASGUARD_GLOBAL_BLOCKLIST: mockKV as any,
+      ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
     const ctx = { waitUntil: vi.fn() } as any;
@@ -65,7 +65,7 @@ describe("Asguard Interceptor", () => {
 
     const env = {
       ASGUARD_API_KEY: "secret-key",
-      ASGUARD_GLOBAL_BLOCKLIST: mockKV as any,
+      ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
     const ctx = { waitUntil: vi.fn() } as any;
@@ -94,7 +94,7 @@ describe("Asguard Interceptor", () => {
 
     const env = {
       ASGUARD_API_KEY: "secret-key",
-      ASGUARD_GLOBAL_BLOCKLIST: mockKV as any,
+      ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
     const ctx = { waitUntil: vi.fn() } as any;
@@ -128,7 +128,7 @@ describe("Asguard Interceptor", () => {
 
     const env = {
       ASGUARD_API_KEY: "secret-key",
-      ASGUARD_GLOBAL_BLOCKLIST: mockKV as any,
+      ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
     const ctx = { waitUntil: vi.fn() } as any;
@@ -141,7 +141,7 @@ describe("Asguard Interceptor", () => {
     const request = new Request("https://example.com/telemetry");
     const env = {
       ASGUARD_API_KEY: "secret-key",
-      ASGUARD_GLOBAL_BLOCKLIST: mockKV as any,
+      ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
     const ctx = { waitUntil: vi.fn() } as any;
@@ -157,7 +157,7 @@ describe("Asguard Interceptor", () => {
     });
     const env = {
       ASGUARD_API_KEY: "secret-key",
-      ASGUARD_GLOBAL_BLOCKLIST: mockKV as any,
+      ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
     const ctx = { waitUntil: vi.fn() } as any;
@@ -170,7 +170,7 @@ describe("Asguard Interceptor", () => {
     const request = new Request("https://example.com/blocklist");
     const env = {
       ASGUARD_API_KEY: "secret-key",
-      ASGUARD_GLOBAL_BLOCKLIST: mockKV as any,
+      ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
     const ctx = { waitUntil: vi.fn() } as any;
@@ -190,7 +190,7 @@ describe("Asguard Interceptor", () => {
     });
     const env = {
       ASGUARD_API_KEY: "secret-key",
-      ASGUARD_GLOBAL_BLOCKLIST: mockKV as any,
+      ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
     const ctx = { waitUntil: vi.fn() } as any;
@@ -212,7 +212,7 @@ describe("Asguard Interceptor", () => {
     });
     const env = {
       ASGUARD_API_KEY: "secret-key",
-      ASGUARD_GLOBAL_BLOCKLIST: mockKV as any,
+      ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
     const ctx = { waitUntil: vi.fn() } as any;
@@ -235,7 +235,7 @@ describe("Asguard Interceptor", () => {
     });
     const env = {
       ASGUARD_API_KEY: "secret-key",
-      ASGUARD_GLOBAL_BLOCKLIST: mockKV as any,
+      ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
     const ctx = { waitUntil: vi.fn() } as any;
@@ -256,7 +256,7 @@ describe("Asguard Interceptor", () => {
     });
     const env = {
       ASGUARD_API_KEY: "secret-key",
-      ASGUARD_GLOBAL_BLOCKLIST: mockKV as any,
+      ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
     const ctx = { waitUntil: vi.fn() } as any;
@@ -289,7 +289,7 @@ describe("Asguard Interceptor", () => {
     });
     const env = {
       ASGUARD_API_KEY: "secret-key",
-      ASGUARD_GLOBAL_BLOCKLIST: mockKV as any,
+      ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
     const ctx = { waitUntil: vi.fn() } as any;
@@ -312,7 +312,7 @@ describe("Asguard Interceptor", () => {
     });
     const env = {
       ASGUARD_API_KEY: "secret-key",
-      ASGUARD_GLOBAL_BLOCKLIST: mockKV as any,
+      ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
     const ctx = { waitUntil: vi.fn() } as any;

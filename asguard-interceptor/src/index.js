@@ -44,29 +44,13 @@ export default {
             }
             rateLimitMap.set(rateLimitKey, record);
             let currentCount = record.count;
-            if (currentCount > 10) { // arbitrary limit for 429
-                const exceptionKey = `429_exceptions:${clientIp}`;
-                const exceptionsStr = await env.ASGUARD_TELEMETRY.get(exceptionKey);
-                let exceptions = exceptionsStr ? parseInt(exceptionsStr, 10) : 0;
-                exceptions++;
-                await env.ASGUARD_TELEMETRY.put(exceptionKey, exceptions.toString(), { expirationTtl: 300 });
-                if (exceptions > 3) {
-                    await env.ASGUARD_GLOBAL_BLOCKLIST.put(`ip:${clientIp}`, "1", { expirationTtl: 86400 });
-                    const timestamp = Date.now();
-                    await env.ASGUARD_TELEMETRY.put(`audit:${timestamp}`, JSON.stringify({
-                        action: "block",
-                        target: `ip:${clientIp}`,
-                        ttl: 86400,
-                        timestamp: timestamp,
-                        signature: "FLOOD_CONTROL_MITIGATION"
-                    }));
-                }
+            if (currentCount > 10) {
                 return new Response("Too Many Requests", { status: 429, headers: corsHeaders });
             }
         }
         // Fast check against KV for blocked IP
         if (clientIp !== "unknown") {
-            const isBlocked = await env.ASGUARD_GLOBAL_BLOCKLIST.get(`ip:${clientIp}`);
+            const isBlocked = await env.ASGUARD_BLACKLIST.get(`ip:${clientIp}`);
             if (isBlocked) {
                 return new Response("Forbidden", { status: 403, headers: corsHeaders });
             }
@@ -75,7 +59,7 @@ export default {
         const authHeader = request.headers.get("Authorization");
         if (authHeader) {
             const token = authHeader.replace(/^Bearer\s+/, "").trim();
-            const isTokenBlocked = await env.ASGUARD_GLOBAL_BLOCKLIST.get(`token:${token}`);
+            const isTokenBlocked = await env.ASGUARD_BLACKLIST.get(`token:${token}`);
             if (isTokenBlocked) {
                 return new Response("Forbidden", { status: 403, headers: corsHeaders });
             }
@@ -142,7 +126,7 @@ export default {
                 });
             }
             try {
-                const listResult = await env.ASGUARD_GLOBAL_BLOCKLIST.list();
+                const listResult = await env.ASGUARD_BLACKLIST.list();
                 const keys = listResult.keys.map((k) => ({ name: k.name, expiration: k.expiration }));
                 return new Response(JSON.stringify(keys), {
                     status: 200,
@@ -173,12 +157,12 @@ export default {
                     });
                 }
                 if (payload.action === "block") {
-                    await env.ASGUARD_GLOBAL_BLOCKLIST.put(payload.key, "1", {
+                    await env.ASGUARD_BLACKLIST.put(payload.key, "1", {
                         expirationTtl: payload.ttl || 86400,
                     });
                 }
                 else if (payload.action === "unblock") {
-                    await env.ASGUARD_GLOBAL_BLOCKLIST.delete(payload.key);
+                    await env.ASGUARD_BLACKLIST.delete(payload.key);
                 }
                 else {
                     return new Response("Invalid action", {

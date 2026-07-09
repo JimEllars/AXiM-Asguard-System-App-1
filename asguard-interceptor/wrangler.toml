@@ -4,6 +4,6 @@ compatibility_date = "2023-10-01"
 
 # Bind a KV Namespace for the Global Blocklist
 kv_namespaces = [
-  { binding = "ASGUARD_GLOBAL_BLOCKLIST", id = "<YOUR_KV_NAMESPACE_ID>" },
+  { binding = "ASGUARD_BLACKLIST", id = "<YOUR_KV_NAMESPACE_ID>" },
   { binding = "ASGUARD_TELEMETRY", id = "<YOUR_TELEMETRY_KV_NAMESPACE_ID>" }
 ]
