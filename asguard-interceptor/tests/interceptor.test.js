@@ -12,6 +12,15 @@ const mockTelemetryKV = {
 };
 describe("Asguard Interceptor", () => {
     beforeEach(() => {
+        globalThis.caches = {
+            default: {
+                match: vi.fn().mockResolvedValue(null),
+                put: vi.fn().mockResolvedValue(undefined),
+                delete: vi.fn().mockResolvedValue(true)
+            }
+        };
+    });
+    beforeEach(() => {
         vi.clearAllMocks();
     });
     it("should trigger client-error throttle circuit breaker returning 429", async () => {

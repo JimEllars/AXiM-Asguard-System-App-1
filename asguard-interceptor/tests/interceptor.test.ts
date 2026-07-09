@@ -15,6 +15,15 @@ const mockTelemetryKV = {
 
 describe("Asguard Interceptor", () => {
   beforeEach(() => {
+    (globalThis as any).caches = {
+      default: {
+        match: vi.fn().mockResolvedValue(null),
+        put: vi.fn().mockResolvedValue(undefined),
+        delete: vi.fn().mockResolvedValue(true)
+      }
+    };
+  });
+  beforeEach(() => {
     vi.clearAllMocks();
   });
 

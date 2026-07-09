@@ -11,9 +11,9 @@ function pruneRateLimitMap() {
             }
         }
     }
-    if (penaltyLedger.size > 10000) {
+    if (penaltyLedger.size > 1000) {
         for (const [key, value] of penaltyLedger.entries()) {
-            if (now - value.timestamp > 60000) {
+            if (now - value.timestamp > 10000) {
                 penaltyLedger.delete(key);
             }
         }
@@ -160,6 +160,15 @@ export default {
                     headers: corsHeaders,
                 });
             }
+            const cacheUrl = new URL(request.url);
+            const cacheKey = new Request(cacheUrl.toString(), request);
+            const cache = caches.default;
+            const cachedResponse = await cache.match(cacheKey);
+            if (cachedResponse) {
+                const response = new Response(cachedResponse.body, cachedResponse);
+                response.headers.set("Cloudflare-Cache", "HIT");
+                return response;
+            }
             try {
                 const listResult = await env.ASGUARD_BLACKLIST.list();
                 const keys = listResult.keys.map((k) => {
@@ -169,10 +178,12 @@ export default {
                     }
                     return { name: k.name, expiration: k.expiration, note };
                 });
-                return new Response(JSON.stringify(keys), {
+                const responsePayload = new Response(JSON.stringify(keys), {
                     status: 200,
-                    headers: { ...corsHeaders, "Content-Type": "application/json" },
+                    headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "public, max-age=30" },
                 });
+                ctx.waitUntil(cache.put(cacheKey, responsePayload.clone()));
+                return responsePayload;
             }
             catch (e) {
                 return new Response("Internal Server Error", {
@@ -181,7 +192,7 @@ export default {
                 });
             }
         }
-        if (request.method === "POST" && url.pathname === "/blocklist") {
+        if ((request.method === "POST" || request.method === "DELETE") && url.pathname === "/blocklist") {
             const customAuthHeader = request.headers.get("X-Asguard-Auth");
             if (!env.ASGUARD_API_KEY || customAuthHeader !== env.ASGUARD_API_KEY) {
                 return new Response("Unauthorized", {
@@ -189,6 +200,8 @@ export default {
                     headers: corsHeaders,
                 });
             }
+            const invalidateCacheUrl = new URL(request.url);
+            ctx.waitUntil(caches.default.delete(new Request(invalidateCacheUrl.toString())));
             try {
                 const payload = (await request.json());
                 if (!payload.key || !payload.action) {
