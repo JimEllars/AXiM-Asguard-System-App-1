@@ -27,9 +27,16 @@ export default {
     },
     async handle(request, env, ctx) {
         if (request.method === "OPTIONS") {
-            return new Response(null, { headers: corsHeaders });
+            return new Response(null, { status: 204, headers: corsHeaders });
         }
         const clientIp = request.headers.get("cf-connecting-ip") || "unknown";
+        // Fast check against KV for blocked IP
+        if (clientIp !== "unknown") {
+            const isBlocked = await env.ASGUARD_BLACKLIST.get(`ip:${clientIp}`);
+            if (isBlocked) {
+                return new Response("Forbidden", { status: 403, headers: corsHeaders });
+            }
+        }
         // Flood Control Handler
         if (clientIp !== "unknown") {
             pruneRateLimitMap();
@@ -46,13 +53,6 @@ export default {
             let currentCount = record.count;
             if (currentCount > 10) {
                 return new Response("Too Many Requests", { status: 429, headers: corsHeaders });
-            }
-        }
-        // Fast check against KV for blocked IP
-        if (clientIp !== "unknown") {
-            const isBlocked = await env.ASGUARD_BLACKLIST.get(`ip:${clientIp}`);
-            if (isBlocked) {
-                return new Response("Forbidden", { status: 403, headers: corsHeaders });
             }
         }
         // Try reading auth token and check if it's blocked
@@ -222,17 +222,30 @@ export default {
         return new Response("OK", { status: 200, headers: corsHeaders });
     },
 };
+const localEdgeLoggingBuffer = [];
 async function logTelemetry(data, env) {
     try {
-        const existing = (await env.ASGUARD_TELEMETRY.get("recent_events", { type: "json" })) ||
-            [];
-        existing.unshift(data);
-        // Truncate to 50 recent events
-        const pruned = existing.slice(0, 50);
-        await env.ASGUARD_TELEMETRY.put("recent_events", JSON.stringify(pruned));
+        const dbOp = async () => {
+            const existing = (await env.ASGUARD_TELEMETRY.get("recent_events", { type: "json" })) ||
+                [];
+            let toSave = [data, ...existing];
+            if (localEdgeLoggingBuffer.length > 0) {
+                toSave = [...localEdgeLoggingBuffer, ...toSave];
+                localEdgeLoggingBuffer.length = 0; // Clear buffer
+            }
+            const pruned = toSave.slice(0, 50);
+            await env.ASGUARD_TELEMETRY.put("recent_events", JSON.stringify(pruned));
+        };
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Database connection timeout")), 5000));
+        await Promise.race([dbOp(), timeoutPromise]);
     }
     catch (err) {
-        console.error("Failed to log telemetry:", err);
+        console.error("Failed to log telemetry, buffering locally:", err);
+        localEdgeLoggingBuffer.push(data);
+        // Keep local buffer bounded
+        if (localEdgeLoggingBuffer.length > 100) {
+            localEdgeLoggingBuffer.shift();
+        }
     }
 }
 //# sourceMappingURL=index.js.map

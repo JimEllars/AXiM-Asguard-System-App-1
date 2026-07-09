@@ -47,7 +47,7 @@ export default {
     ctx: ExecutionContext,
   ): Promise<Response> {
     if (request.method === "OPTIONS") {
-      return new Response(null, { headers: corsHeaders });
+      return new Response(null, { status: 204, headers: corsHeaders });
     }
 
 
@@ -279,16 +279,36 @@ export default {
   },
 };
 
+const localEdgeLoggingBuffer: any[] = [];
+
 async function logTelemetry(data: any, env: Env) {
   try {
-    const existing: any[] =
-      (await env.ASGUARD_TELEMETRY.get("recent_events", { type: "json" })) ||
-      [];
-    existing.unshift(data);
-    // Truncate to 50 recent events
-    const pruned = existing.slice(0, 50);
-    await env.ASGUARD_TELEMETRY.put("recent_events", JSON.stringify(pruned));
+    const dbOp = async () => {
+      const existing: any[] =
+        (await env.ASGUARD_TELEMETRY.get("recent_events", { type: "json" })) ||
+        [];
+
+      let toSave = [data, ...existing];
+      if (localEdgeLoggingBuffer.length > 0) {
+          toSave = [...localEdgeLoggingBuffer, ...toSave];
+          localEdgeLoggingBuffer.length = 0; // Clear buffer
+      }
+
+      const pruned = toSave.slice(0, 50);
+      await env.ASGUARD_TELEMETRY.put("recent_events", JSON.stringify(pruned));
+    };
+
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Database connection timeout")), 5000)
+    );
+
+    await Promise.race([dbOp(), timeoutPromise]);
   } catch (err) {
-    console.error("Failed to log telemetry:", err);
+    console.error("Failed to log telemetry, buffering locally:", err);
+    localEdgeLoggingBuffer.push(data);
+    // Keep local buffer bounded
+    if (localEdgeLoggingBuffer.length > 100) {
+        localEdgeLoggingBuffer.shift();
+    }
   }
 }

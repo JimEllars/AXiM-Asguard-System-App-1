@@ -88,6 +88,7 @@ export default function LiveThreatFeed() {
   });
 
   const velocityShift = velocityHistory.length > 0 ? velocityHistory[velocityHistory.length - 1] : 'none';
+  const [realtimeStatus, setRealtimeStatus] = useState<'CONNECTED' | 'DISCONNECTED' | 'ERROR'>('DISCONNECTED');
 
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState(false);
@@ -274,39 +275,73 @@ export default function LiveThreatFeed() {
 
 
 
-    const channel = supabase
-      .channel('schema-db-changes')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'security_audit_logs' },
-        (payload) => {
-          // Add new items instantly and trigger row accents via standard state transition
-          setFlash(true);
-          setTimeout(() => setFlash(false), 500);
+    let channel: ReturnType<typeof supabase.channel>;
+    let timeoutId: NodeJS.Timeout;
+    let currentRetry = 0; // Fix: use local tracking
 
-          if (payload.new) {
-             const newLog = payload.new;
-             if (newLog.eventType) {
-                 const parsed = TelemetryPayloadSchema.safeParse(newLog);
-                 if (parsed.success) {
-                     setData(prev => [parsed.data, ...prev].slice(0, 50));
-                 }
-             } else {
-                 const parsed = AuditEventSchema.safeParse(newLog);
-                 if (parsed.success) {
-                     setAuditLog(prev => [parsed.data, ...prev].slice(0, 50));
-                 }
-             }
+    const setupRealtime = () => {
+      channel = supabase
+        .channel('schema-db-changes')
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'security_audit_logs' },
+          (payload) => {
+            // Add new items instantly and trigger row accents via standard state transition
+            setFlash(true);
+            setTimeout(() => setFlash(false), 500);
+
+            if (payload.new) {
+               const newLog = payload.new;
+               if (newLog.eventType) {
+                   const parsed = TelemetryPayloadSchema.safeParse(newLog);
+                   if (parsed.success) {
+                       setData(prev => {
+                           const newData = [...prev];
+                           newData.unshift(parsed.data);
+                           return newData.slice(0, 50);
+                       });
+                   }
+               } else {
+                   const parsed = AuditEventSchema.safeParse(newLog);
+                   if (parsed.success) {
+                       setAuditLog(prev => {
+                           const newData = [...prev];
+                           newData.unshift(parsed.data);
+                           return newData.slice(0, 50);
+                       });
+                   }
+               }
+            }
           }
-        }
-      )
-      .subscribe();
+        )
+        .subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+                setRealtimeStatus('CONNECTED');
+
+                currentRetry = 0;
+            } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+                setRealtimeStatus(status === 'CLOSED' ? 'DISCONNECTED' : 'ERROR');
+                // Auto-Heal backoff
+                const backoffIntervals = [2000, 5000, 10000];
+                const delay = backoffIntervals[Math.min(currentRetry, backoffIntervals.length - 1)];
+
+                timeoutId = setTimeout(() => {
+
+                    currentRetry++;
+                    setupRealtime();
+                }, delay);
+            }
+        });
+    };
+
+    setupRealtime();
 
     fetchTelemetry();
 
 
     return () => {
-      supabase.removeChannel(channel);
+      if (channel) supabase.removeChannel(channel);
+      if (timeoutId) clearTimeout(timeoutId);
     };
   }, []);
 
@@ -571,7 +606,24 @@ export default function LiveThreatFeed() {
       </div>
 
       {/* Synchronization Clock */}
-      <div className="flex justify-end">
+      <div className="flex justify-between items-center">
+        <div className={`text-xs font-mono border px-3 py-1.5 rounded transition-colors duration-300 flex items-center gap-2 ${
+          realtimeStatus === 'CONNECTED'
+            ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300'
+            : 'bg-amber-950/80 border-amber-500 text-amber-300'
+        }`}>
+          {realtimeStatus === 'CONNECTED' ? (
+            <>
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              <span>LIVE SYNC</span>
+            </>
+          ) : (
+            <span>Realtime Sync Interrupted — Re-establishing Edge Uplink...</span>
+          )}
+        </div>
         <div className={`text-xs font-mono border px-3 py-1.5 rounded transition-colors duration-300 ${flash ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300' : 'bg-slate-900 border-slate-700 text-slate-400'}`}>
           SYNC INTERVAL: 5000MS | LAST INDEXED: {lastSynced ? lastSynced.toLocaleTimeString('en-GB') : '--:--:--'}
         </div>
