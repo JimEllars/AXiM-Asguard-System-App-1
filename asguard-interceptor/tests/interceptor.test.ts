@@ -394,4 +394,32 @@ describe("Asguard Interceptor", () => {
     expect(serverTimingPost).toMatch(/edge-exec;dur=[0-9]+(\.[0-9]+)?;desc="Stateless Perimeter Check"/);
   });
 
+
+  it("handles POST /telemetry/client-error and returns 202 without interrupting edge routing", async () => {
+    const payload = {
+      message: "React render error",
+      fileTrace: "app/component.tsx:12",
+      timestamp: Date.now()
+    };
+
+    const request = new Request("https://example.com/telemetry/client-error", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      headers: { "cf-connecting-ip": "1.2.3.4" },
+    });
+    // @ts-ignore
+    request.cf = { country: "US", colo: "DFW" };
+
+    const env = {
+      ASGUARD_API_KEY: "secret-key",
+      ASGUARD_BLACKLIST: mockKV as any,
+      ASGUARD_TELEMETRY: mockTelemetryKV as any,
+    };
+    const ctx = { waitUntil: vi.fn() } as any;
+
+    const response = await worker.fetch(request, env, ctx);
+    expect(response.status).toBe(202);
+    expect(ctx.waitUntil).toHaveBeenCalled();
+  });
+
 });

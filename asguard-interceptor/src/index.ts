@@ -261,6 +261,50 @@ export default {
 
     // Optionally parse telemetry if it's a telemetry endpoint
 
+
+    if (request.method === "POST" && url.pathname === "/telemetry/client-error") {
+      try {
+        const rawPayload = await request.json() as any;
+
+        // Ensure payload has the expected schema format and enforce correct properties.
+        const payload = {
+          sourceIp: clientIp, // Use standard client IP from connection
+          timestamp: rawPayload.timestamp || Date.now(),
+          eventType: "client_error",
+          severity: "medium", // Default to medium severity for client errors
+          requestMethod: request.method,
+          targetResource: url.pathname,
+          signatureMetadata: request.headers.get("X-Asguard-Signature") || "UNKNOWN",
+          details: {
+            message: rawPayload.message || "Unknown Error",
+            fileTrace: rawPayload.fileTrace || "Unknown Stack Trace"
+          },
+          country: (request.cf && request.cf.country) ? request.cf.country : "XX",
+          colo: (request.cf && request.cf.colo) ? request.cf.colo : "UNKNOWN"
+        };
+
+        const parseResult = TelemetryPayloadSchema.safeParse(payload);
+        if (!parseResult.success) {
+           return new Response("Invalid Telemetry Payload", {
+            status: 400,
+            headers: corsHeaders,
+          });
+        }
+
+        ctx.waitUntil(logTelemetry(parseResult.data, env));
+
+        return new Response("OK", {
+          status: 202,
+          headers: corsHeaders,
+        });
+      } catch(e) {
+        return new Response("Bad Request", {
+          status: 400,
+          headers: corsHeaders,
+        });
+      }
+    }
+
     if (request.method === "POST" && url.pathname === "/telemetry") {
       try {
         let payload = await request.json() as any;

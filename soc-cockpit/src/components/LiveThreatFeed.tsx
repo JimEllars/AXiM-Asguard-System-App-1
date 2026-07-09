@@ -63,6 +63,24 @@ function LeaseTimer({ expiration }: { expiration: number }) {
 }
 
 export default function LiveThreatFeed() {
+
+  const [annotations, setAnnotations] = React.useState<Record<string, string>>(() => {
+    if (typeof window === 'undefined') return {};
+    try {
+      const stored = sessionStorage.getItem('asguard_annotations');
+      return stored ? JSON.parse(stored) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const handleAnnotationChange = (key: string, value: string) => {
+    if (value.length > 60) return;
+    const newAnnotations = { ...annotations, [key]: value };
+    setAnnotations(newAnnotations);
+    sessionStorage.setItem('asguard_annotations', JSON.stringify(newAnnotations));
+  };
+
   const router = useRouter();
   const searchParams = useSearchParams();
   const pathname = usePathname();
@@ -591,14 +609,30 @@ export default function LiveThreatFeed() {
   }, [auditLog]);
 
   const hasHighDensityAnomaly = React.useMemo(() => {
-    if (data.length === 0) return false;
+    if (data.length === 0) return { isAnomaly: false, ip: '', percentage: 0 };
     const currentViewport = data.slice(0, 50);
     const counts: Record<string, number> = {};
     for (const event of currentViewport) {
       counts[event.sourceIp] = (counts[event.sourceIp] || 0) + 1;
     }
-    const threshold = currentViewport.length * 0.20;
-    return Object.values(counts).some(count => count > threshold);
+    const totalViewportLogs = currentViewport.length;
+    let maxIp = '';
+    let maxCount = 0;
+
+    for (const [ip, count] of Object.entries(counts)) {
+      if (count > maxCount) {
+        maxCount = count;
+        maxIp = ip;
+      }
+    }
+
+    const percentage = (maxCount / totalViewportLogs) * 100;
+    const threshold = totalViewportLogs * 0.20;
+
+    if (maxCount > threshold) {
+      return { isAnomaly: true, ip: maxIp, percentage: Math.round(percentage) };
+    }
+    return { isAnomaly: false, ip: '', percentage: 0 };
   }, [data]);
 
   return (
@@ -620,9 +654,9 @@ export default function LiveThreatFeed() {
       </div>
 
       {/* Onyx Triage Banner */}
-      {hasHighDensityAnomaly && (
+      {hasHighDensityAnomaly.isAnomaly && (
         <div className="bg-red-950/80 border-b border-red-500 text-red-200 px-4 py-2 text-center font-mono text-sm font-bold tracking-wider uppercase mb-2">
-          [ ALERT: EXU-DENSITY RADIAL EXCEPTION BLOCKS — ONYX COGNITIVE TRIAGE ENGAGED ]
+          [ CRITICAL ANOMALY DETECTED: IP {hasHighDensityAnomaly.ip} REPRESENTS {hasHighDensityAnomaly.percentage}% OF ACTIVE EDGE BLOCKS ]
         </div>
       )}
 
@@ -951,22 +985,34 @@ export default function LiveThreatFeed() {
                ) : (
                  blocklist.map((blockItem, idx) => {
                    const keyName = blockItem.name;
-const isLifting = actionLoading[keyName];
+                   const isLifting = actionLoading[keyName];
                    return (
-                   <div key={idx} className={`flex justify-between items-center p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono ${isLifting ? 'opacity-50 pointer-events-none' : ''}`}>
-                     <div className="flex items-center min-w-0">
-                       <span className="truncate">{keyName}</span>
-                       {blockItem.expiration && (
-                         <LeaseTimer expiration={blockItem.expiration} />
-                       )}
+                   <div key={idx} className={`flex flex-col gap-2 p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono ${isLifting ? 'opacity-50 pointer-events-none' : ''}`}>
+                     <div className="flex justify-between items-center">
+                       <div className="flex items-center min-w-0">
+                         <span className="truncate">{keyName}</span>
+                         {blockItem.expiration && (
+                           <LeaseTimer expiration={blockItem.expiration} />
+                         )}
+                       </div>
+                       <button
+                         onClick={() => handleUnblock(keyName)}
+                         disabled={actionLoading[keyName]}
+                         className="bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-600 px-2 py-1 rounded text-xs transition-colors disabled:opacity-50 ml-2 whitespace-nowrap"
+                       >
+                         {actionLoading[keyName] ? '[ LIFTING... ]' : 'Lift'}
+                       </button>
                      </div>
-                     <button
-                       onClick={() => handleUnblock(keyName)}
-                       disabled={actionLoading[keyName]}
-                       className="bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-600 px-2 py-1 rounded text-xs transition-colors disabled:opacity-50 ml-2 whitespace-nowrap"
-                     >
-                       {actionLoading[keyName] ? '[ LIFTING... ]' : 'Lift'}
-                     </button>
+                     <div className="flex">
+                        <input
+                           type="text"
+                           placeholder="Add triage note..."
+                           maxLength={60}
+                           value={annotations[keyName] || ''}
+                           onChange={(e) => handleAnnotationChange(keyName, e.target.value)}
+                           className="w-full bg-slate-950/50 border border-slate-700 rounded px-2 py-1 text-[10px] text-slate-300 focus:outline-none focus:border-slate-500 placeholder-slate-600"
+                        />
+                     </div>
                    </div>
                    );
                  })
