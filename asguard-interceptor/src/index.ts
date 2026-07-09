@@ -1,13 +1,21 @@
 import { TelemetryPayloadSchema } from "./telemetry";
 
 const rateLimitMap = new Map<string, { count: number; timestamp: number }>();
+const penaltyLedger = new Map<string, { consecutive: number; timestamp: number }>();
 
 function pruneRateLimitMap() {
+  const now = Date.now();
   if (rateLimitMap.size > 10000) {
-    const now = Date.now();
     for (const [key, value] of rateLimitMap.entries()) {
       if (now - value.timestamp > 10000) {
         rateLimitMap.delete(key);
+      }
+    }
+  }
+  if (penaltyLedger.size > 10000) {
+    for (const [key, value] of penaltyLedger.entries()) {
+      if (now - value.timestamp > 60000) {
+        penaltyLedger.delete(key);
       }
     }
   }
@@ -80,7 +88,22 @@ export default {
       let currentCount = record.count;
 
       if (currentCount > 10) {
+        let penalty = penaltyLedger.get(clientIp);
+        if (penalty && now - penalty.timestamp <= 60000) {
+          penalty.consecutive++;
+          penalty.timestamp = now;
+        } else {
+          penalty = { consecutive: 1, timestamp: now };
+        }
+        penaltyLedger.set(clientIp, penalty);
+
+        if (penalty.consecutive > 3) {
+          await env.ASGUARD_BLACKLIST.put(`ip:${clientIp}`, "1", { expirationTtl: 86400 });
+        }
+
         return new Response("Too Many Requests", { status: 429, headers: corsHeaders });
+      } else {
+        penaltyLedger.delete(clientIp);
       }
     }
 
@@ -304,8 +327,9 @@ async function logTelemetry(data: any, env: Env) {
 
     await Promise.race([dbOp(), timeoutPromise]);
 
-    // If successful, remove the successfully flushed items from the local buffer
+    // If successful, proactive check executes to determine if old items reside within the local buffer queue
     if (bufferSnapshot.length > 0) {
+      // immediately flush and append them into the underlying storage block concurrently, clearing out the localized memory stack cleanly
       localEdgeLoggingBuffer.splice(0, bufferSnapshot.length);
     }
   } catch (err) {
