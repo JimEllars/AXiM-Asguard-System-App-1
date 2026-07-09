@@ -216,12 +216,26 @@ export default function LiveThreatFeed() {
         const parsedAudit = z.array(AuditEventSchema).parse(jsonAuditData);
 
         setData(prev => {
-          if (JSON.stringify(prev) !== JSON.stringify(parsedData)) {
+          // Merge new objects, unshift to top and cap at 50
+          let newData = [...parsedData];
+          if (prev.length > 0) {
+            const newEvents = parsedData.filter(d => !prev.some(p => p.timestamp === d.timestamp && p.sourceIp === d.sourceIp));
+            if (newEvents.length > 0) {
+              newData = [...newEvents, ...prev].slice(0, 50);
+            } else {
+              newData = prev; // Nothing new, keep prev to avoid unnecessary re-renders
+            }
+          } else {
+             // Cap initial payload too
+             newData = newData.slice(0, 50);
+          }
+
+          if (JSON.stringify(prev) !== JSON.stringify(newData)) {
             // Update velocity indicator based on prev length
             if (prev.length > 0) {
                 let shift: 'up' | 'down' | 'none' = 'none';
-                if (parsedData.length > prev.length) shift = 'up';
-                else if (parsedData.length < prev.length) shift = 'down';
+                if (newData.length > prev.length) shift = 'up';
+                else if (newData.length < prev.length) shift = 'down';
 
                 setVelocityHistory(prevHistory => {
                   const newHistory = [...prevHistory, shift].slice(-5);
@@ -231,7 +245,7 @@ export default function LiveThreatFeed() {
                   return newHistory;
                 });
             }
-            return parsedData;
+            return newData;
           }
           return prev;
         });
@@ -767,7 +781,7 @@ export default function LiveThreatFeed() {
                             <button
                               onClick={(e) => { e.stopPropagation(); handleDropIp(event.sourceIp); }}
                               disabled={actionLoading[event.sourceIp]}
-                              className="bg-red-900/80 hover:bg-red-800 text-red-200 border border-red-700 px-2 py-1 rounded text-xs transition-colors disabled:opacity-50"
+                              className="text-red-500 hover:text-red-400 underline decoration-red-500/50 hover:decoration-red-400 text-xs transition-colors disabled:opacity-50 bg-transparent border-none p-0 cursor-pointer"
                             >
                               {actionLoading[event.sourceIp] ? '[ COMMITTING... ]' : 'Drop IP'}
                             </button>
