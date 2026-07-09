@@ -567,15 +567,7 @@ export default function LiveThreatFeed() {
     return filteredData.slice(start, start + itemsPerPage);
   }, [filteredData, telemetryPage]);
 
-  const hasHighDensityAnomaly = React.useMemo(() => {
-    if (paginatedTelemetry.length === 0) return false;
-    const counts: Record<string, number> = {};
-    for (const event of paginatedTelemetry) {
-      counts[event.sourceIp] = (counts[event.sourceIp] || 0) + 1;
-    }
-    const threshold = paginatedTelemetry.length * 0.20;
-    return Object.values(counts).some(count => count > threshold);
-  }, [paginatedTelemetry]);
+
 
   const filteredAuditLog = React.useMemo(() => {
     if (!auditSearchQuery.trim()) return auditLog;
@@ -598,6 +590,17 @@ export default function LiveThreatFeed() {
     return auditLog.filter(event => event.signature === 'FLOOD_CONTROL_MITIGATION').length;
   }, [auditLog]);
 
+  const hasHighDensityAnomaly = React.useMemo(() => {
+    if (data.length === 0) return false;
+    const currentViewport = data.slice(0, 50);
+    const counts: Record<string, number> = {};
+    for (const event of currentViewport) {
+      counts[event.sourceIp] = (counts[event.sourceIp] || 0) + 1;
+    }
+    const threshold = currentViewport.length * 0.20;
+    return Object.values(counts).some(count => count > threshold);
+  }, [data]);
+
   return (
     <div className="flex flex-col gap-4 h-full flex-1 min-h-0 relative">
       {/* Toasts */}
@@ -615,6 +618,13 @@ export default function LiveThreatFeed() {
           </div>
         ))}
       </div>
+
+      {/* Onyx Triage Banner */}
+      {hasHighDensityAnomaly && (
+        <div className="bg-red-950/80 border-b border-red-500 text-red-200 px-4 py-2 text-center font-mono text-sm font-bold tracking-wider uppercase mb-2">
+          [ ALERT: EXU-DENSITY RADIAL EXCEPTION BLOCKS — ONYX COGNITIVE TRIAGE ENGAGED ]
+        </div>
+      )}
 
       {/* Synchronization Clock */}
       <div className="flex justify-between items-center">
