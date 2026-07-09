@@ -18,6 +18,33 @@ describe("Asguard Interceptor", () => {
     vi.clearAllMocks();
   });
 
+  it("should trigger client-error throttle circuit breaker returning 429", async () => {
+    const env = {
+      ASGUARD_API_KEY: "secret-key",
+      ASGUARD_BLACKLIST: mockKV as any,
+      ASGUARD_TELEMETRY: mockTelemetryKV as any,
+    };
+
+    // Simulate 6 client-error requests
+    const createReq = () => new Request("https://example.com/telemetry/client-error", {
+      method: "POST",
+      headers: { "cf-connecting-ip": "9.9.9.9" },
+      body: JSON.stringify({ message: "test" })
+    });
+    const ctx = { waitUntil: vi.fn() } as any;
+
+    for (let i = 0; i < 5; i++) {
+       const req = createReq();
+       const res = await worker.fetch(req, env, ctx);
+       expect(res.status).not.toBe(429);
+    }
+
+    const req = createReq();
+    const res = await worker.fetch(req, env, ctx);
+    expect(res.status).toBe(429);
+  });
+
+
 
   it("blocks request instantly via KV ledger short-circuiting and returns 403", async () => {
     mockKV.get.mockResolvedValue("1");

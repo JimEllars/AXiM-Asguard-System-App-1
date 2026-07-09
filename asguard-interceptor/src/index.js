@@ -1,6 +1,7 @@
 import { TelemetryPayloadSchema } from "./telemetry";
 const rateLimitMap = new Map();
 const penaltyLedger = new Map();
+const clientErrorThrottleMap = new Map();
 function pruneRateLimitMap() {
     const now = Date.now();
     if (rateLimitMap.size > 10000) {
@@ -14,6 +15,17 @@ function pruneRateLimitMap() {
         for (const [key, value] of penaltyLedger.entries()) {
             if (now - value.timestamp > 60000) {
                 penaltyLedger.delete(key);
+            }
+        }
+    }
+    if (clientErrorThrottleMap.size > 10000) {
+        for (const [key, timestamps] of clientErrorThrottleMap.entries()) {
+            const valid = timestamps.filter(t => now - t <= 10000);
+            if (valid.length === 0) {
+                clientErrorThrottleMap.delete(key);
+            }
+            else {
+                clientErrorThrottleMap.set(key, valid);
             }
         }
     }
@@ -150,7 +162,13 @@ export default {
             }
             try {
                 const listResult = await env.ASGUARD_BLACKLIST.list();
-                const keys = listResult.keys.map((k) => ({ name: k.name, expiration: k.expiration }));
+                const keys = listResult.keys.map((k) => {
+                    let note = undefined;
+                    if (k.metadata && typeof k.metadata === 'object' && 'note' in k.metadata) {
+                        note = k.metadata.note;
+                    }
+                    return { name: k.name, expiration: k.expiration, note };
+                });
                 return new Response(JSON.stringify(keys), {
                     status: 200,
                     headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -179,10 +197,18 @@ export default {
                         headers: corsHeaders,
                     });
                 }
-                if (payload.action === "block") {
-                    await env.ASGUARD_BLACKLIST.put(payload.key, "1", {
-                        expirationTtl: payload.ttl || 86400,
-                    });
+                if (payload.action === "block" || payload.action === "update_note") {
+                    const options = {};
+                    if (payload.ttl) {
+                        options.expirationTtl = payload.ttl;
+                    }
+                    else if (payload.action === "block") {
+                        options.expirationTtl = 86400;
+                    }
+                    if (payload.note !== undefined) {
+                        options.metadata = { note: payload.note };
+                    }
+                    await env.ASGUARD_BLACKLIST.put(payload.key, "1", options);
                 }
                 else if (payload.action === "unblock") {
                     await env.ASGUARD_BLACKLIST.delete(payload.key);
@@ -212,6 +238,20 @@ export default {
         }
         // Optionally parse telemetry if it's a telemetry endpoint
         if (request.method === "POST" && url.pathname === "/telemetry/client-error") {
+            const now = Date.now();
+            const ipKey = clientIp;
+            // Prune occasionally or handle inline
+            let timestamps = clientErrorThrottleMap.get(ipKey) || [];
+            // Keep only timestamps within the last 10 seconds (10000ms)
+            timestamps = timestamps.filter(t => now - t <= 10000);
+            timestamps.push(now);
+            clientErrorThrottleMap.set(ipKey, timestamps);
+            if (timestamps.length > 5) {
+                return new Response("Too Many Requests", {
+                    status: 429,
+                    headers: corsHeaders,
+                });
+            }
             try {
                 const rawPayload = await request.json();
                 // Ensure payload has the expected schema format and enforce correct properties.
