@@ -119,6 +119,7 @@ export default function LiveThreatFeed() {
   const [blocklist, setBlocklist] = useState<{ name: string; expiration?: number; note?: string }[]>([]);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [healthStatus, setHealthStatus] = useState<'ok' | 'degraded' | 'unknown'>('unknown');
   const [edgeLatency, setEdgeLatency] = useState<string | null>(null);
   const [velocityHistory, setVelocityHistory] = useState<('up' | 'down' | 'none')[]>(() => {
     if (typeof window !== 'undefined') {
@@ -258,7 +259,7 @@ export default function LiveThreatFeed() {
       const abortController = new AbortController();
       const timeoutIdFetch = setTimeout(() => abortController.abort(), 4000);
       try {
-        const [telemetryRes, blocklistRes, auditRes] = await Promise.all([
+        const [telemetryRes, blocklistRes, auditRes, healthRes, dlqRes] = await Promise.all([
           fetch(`${workerUrl}/telemetry`, {
             headers: { 'X-Asguard-Auth': apiKey },
             signal: abortController.signal
@@ -268,6 +269,14 @@ export default function LiveThreatFeed() {
             signal: abortController.signal
           }),
           fetch(`${workerUrl}/audit`, {
+            headers: { 'X-Asguard-Auth': apiKey },
+            signal: abortController.signal
+          }),
+          fetch(`${workerUrl}/health`, {
+            headers: { 'X-Asguard-Auth': apiKey },
+            signal: abortController.signal
+          }),
+          fetch(`${workerUrl}/dlq`, {
             headers: { 'X-Asguard-Auth': apiKey },
             signal: abortController.signal
           })
@@ -284,6 +293,17 @@ export default function LiveThreatFeed() {
           throw new Error(`Failed to fetch audit: ${auditRes.statusText}`);
         }
 
+        if (healthRes.ok) {
+          const healthData = await healthRes.json();
+          setHealthStatus(healthData.status === 'ok' ? 'ok' : 'degraded');
+        } else {
+          setHealthStatus('degraded');
+        }
+
+        if (!dlqRes.ok) {
+          throw new Error(`Failed to fetch DLQ: ${dlqRes.statusText}`);
+        }
+
         const serverTiming = telemetryRes.headers.get('Server-Timing');
         if (serverTiming) {
           const match = serverTiming.match(/dur=([0-9.]+)/);
@@ -295,6 +315,7 @@ export default function LiveThreatFeed() {
         const jsonTelemetryData = await telemetryRes.json();
         const jsonBlocklistData = await blocklistRes.json();
         const jsonAuditData = await auditRes.json();
+        const jsonDlqData = await dlqRes.json();
 
         const parsedData = z.array(TelemetryPayloadSchema).parse(jsonTelemetryData).slice(0, 50);
         const parsedBlocklist = z.array(z.object({ name: z.string(), expiration: z.number().optional(), note: z.string().optional() })).parse(jsonBlocklistData);
@@ -349,8 +370,10 @@ export default function LiveThreatFeed() {
           }
           return prev;
         });
+        const parsedDlq = z.array(DlqRecordSchema).parse(jsonDlqData);
         setBlocklist(prev => JSON.stringify(prev) !== JSON.stringify(parsedBlocklist) ? parsedBlocklist : prev);
         setAuditLog(prev => JSON.stringify(prev) !== JSON.stringify(parsedAudit) ? parsedAudit : prev);
+        setDlqRecords(prev => JSON.stringify(prev) !== JSON.stringify(parsedDlq) ? parsedDlq : prev);
         setLastSynced(new Date());
         setError(null);
 
@@ -768,13 +791,28 @@ export default function LiveThreatFeed() {
 
       {/* Onyx Triage Banner */}
       {hasHighDensityAnomaly.isAnomaly && (
-        <div className="bg-red-950/80 border-b border-red-500 text-red-200 px-4 py-2 text-center font-mono text-sm font-bold tracking-wider uppercase mb-2">
+        <div
+          onClick={() => {
+            setLocalSearchQuery(hasHighDensityAnomaly.ip);
+            setSearchQuery(hasHighDensityAnomaly.ip);
+          }}
+          className="bg-red-950/80 border-b border-red-500 text-red-200 px-4 py-2 text-center font-mono text-sm font-bold tracking-wider uppercase mb-2 cursor-pointer hover:bg-red-900/80 transition-colors"
+        >
           [ CRITICAL ANOMALY DETECTED: IP {hasHighDensityAnomaly.ip} REPRESENTS {hasHighDensityAnomaly.percentage}% OF ACTIVE EDGE BLOCKS ]
         </div>
       )}
 
       {/* Synchronization Clock */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row justify-between items-center gap-2">
+        <div className={`text-xs font-mono border px-3 py-1.5 rounded flex items-center gap-2 ${
+          healthStatus === 'ok'
+            ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300'
+            : healthStatus === 'degraded'
+            ? 'bg-amber-950/80 border-amber-500 text-amber-300'
+            : 'bg-slate-900 border-slate-700 text-slate-400'
+        }`}>
+          {healthStatus === 'ok' ? 'STATUS: PERIMETER SECURE' : healthStatus === 'degraded' ? 'STATUS: DEGRADED' : 'STATUS: UNKNOWN'}
+        </div>
         <div className={`text-xs font-mono border px-3 py-1.5 rounded transition-colors duration-300 flex items-center gap-2 ${
           realtimeStatus === 'CONNECTED'
             ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300'

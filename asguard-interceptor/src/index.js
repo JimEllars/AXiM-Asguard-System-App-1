@@ -159,6 +159,38 @@ export default {
                 });
             }
         }
+        if (request.method === "GET" && url.pathname === "/dlq") {
+            const customAuthHeader = request.headers.get("X-Asguard-Auth");
+            if (!env.ASGUARD_API_KEY || customAuthHeader !== env.ASGUARD_API_KEY) {
+                return new Response("Unauthorized", {
+                    status: 401,
+                    headers: getCorsHeaders(request, env, isMutation),
+                });
+            }
+            try {
+                const listResult = await env.ASGUARD_TELEMETRY.list({ prefix: "dlq:" });
+                const records = await Promise.all(listResult.keys.map(async (key) => {
+                    const data = await env.ASGUARD_TELEMETRY.get(key.name);
+                    try {
+                        return data ? JSON.parse(data) : null;
+                    }
+                    catch (e) {
+                        return null;
+                    }
+                }));
+                const validRecords = records.filter(r => r !== null);
+                return new Response(JSON.stringify(validRecords), {
+                    status: 200,
+                    headers: { ...getCorsHeaders(request, env, isMutation), "Content-Type": "application/json" },
+                });
+            }
+            catch (e) {
+                return new Response("Internal Server Error", {
+                    status: 500,
+                    headers: getCorsHeaders(request, env, isMutation),
+                });
+            }
+        }
         if (request.method === "GET" && url.pathname === "/telemetry") {
             const customAuthHeader = request.headers.get("X-Asguard-Auth");
             if (!env.ASGUARD_API_KEY || customAuthHeader !== env.ASGUARD_API_KEY) {
@@ -390,6 +422,14 @@ export default {
                 };
                 const parseResult = TelemetryPayloadSchema.safeParse(payload);
                 if (!parseResult.success) {
+                    ctx.waitUntil(env.ASGUARD_TELEMETRY.put(`dlq:${Date.now()}`, JSON.stringify({
+                        id: `dlq-${Date.now()}`,
+                        timestamp: Date.now(),
+                        originNode: payload.colo || "UNKNOWN",
+                        droppedRoute: url.pathname,
+                        errorReason: "Schema validation failure",
+                        payload: payload
+                    })));
                     return new Response("Invalid Telemetry Payload", {
                         status: 400,
                         headers: getCorsHeaders(request, env, isMutation),
@@ -419,6 +459,14 @@ export default {
                 payload.signatureMetadata = request.headers.get("X-Asguard-Signature") || "UNKNOWN";
                 const parseResult = TelemetryPayloadSchema.safeParse(payload);
                 if (!parseResult.success) {
+                    ctx.waitUntil(env.ASGUARD_TELEMETRY.put(`dlq:${Date.now()}`, JSON.stringify({
+                        id: `dlq-${Date.now()}`,
+                        timestamp: Date.now(),
+                        originNode: payload.colo || "UNKNOWN",
+                        droppedRoute: url.pathname,
+                        errorReason: "Schema validation failure",
+                        payload: payload
+                    })));
                     return new Response("Invalid Telemetry Payload", {
                         status: 400,
                         headers: getCorsHeaders(request, env, isMutation),
