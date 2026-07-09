@@ -28,6 +28,17 @@ const AuditEventSchema = z.object({
 });
 type AuditEvent = z.infer<typeof AuditEventSchema>;
 
+const DlqRecordSchema = z.object({
+  id: z.string(),
+  timestamp: z.number(),
+  originNode: z.string(),
+  droppedRoute: z.string(),
+  errorReason: z.string(),
+  payload: z.any().optional(),
+});
+type DlqRecord = z.infer<typeof DlqRecordSchema>;
+
+
 
 
 function formatTimeLeft(ms: number) {
@@ -150,6 +161,34 @@ export default function LiveThreatFeed() {
     return () => clearTimeout(handler);
   }, [localAuditSearchQuery]);
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
+
+  const [dlqRecords, setDlqRecords] = useState<DlqRecord[]>([]);
+  const [dlqSearchQuery, setDlqSearchQuery] = useState('');
+  const [debouncedDlqSearch, setDebouncedDlqSearch] = useState('');
+  const [replayingState, setReplayingState] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedDlqSearch(dlqSearchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [dlqSearchQuery]);
+
+  useEffect(() => {
+    // Mocking initial DLQ data since it's an isolated UI task without specific endpoint
+    setDlqRecords([
+      { id: 'dlq-1', timestamp: Date.now() - 5000, originNode: 'us-east-1-edge', droppedRoute: '/api/v1/auth', errorReason: 'Malformed JSON trailing comma' },
+      { id: 'dlq-2', timestamp: Date.now() - 15000, originNode: 'eu-west-1-edge', droppedRoute: '/api/v1/telemetry', errorReason: 'Missing required headers' },
+      { id: 'dlq-3', timestamp: Date.now() - 60000, originNode: 'ap-south-1-edge', droppedRoute: '/api/v1/submit', errorReason: 'Type signature mismatch' },
+    ]);
+  }, []);
+
+  const filteredDlq = dlqRecords.filter(record =>
+    record.originNode.toLowerCase().includes(debouncedDlqSearch.toLowerCase()) ||
+    record.droppedRoute.toLowerCase().includes(debouncedDlqSearch.toLowerCase()) ||
+    record.errorReason.toLowerCase().includes(debouncedDlqSearch.toLowerCase())
+  ).slice(0, 30);
+
 
 
 
@@ -451,6 +490,30 @@ export default function LiveThreatFeed() {
   );
 
 
+
+
+  const handleReplayPayload = async (id: string) => {
+    setReplayingState(prev => ({ ...prev, [id]: true }));
+
+    try {
+      // Dispatch authenticated asynchronous network call to the AXiM Support System triage proxy
+      // Using a simulated delay for the handshake as per "restricted to a secure mock support replay handshake"
+      await new Promise(resolve => setTimeout(resolve, 800));
+
+      // Slice the record cleanly out of the client view array
+      setDlqRecords(prev => prev.filter(record => record.id !== id));
+
+      addToast(`Payload ${id} successfully replayed.`, 'success');
+    } catch (error) {
+      addToast('Failed to replay payload.', 'error');
+    } finally {
+      setReplayingState(prev => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    }
+  };
 
   const handleExportAuditTrail = () => {
     const dataStr = JSON.stringify(auditLog, null, 2);
