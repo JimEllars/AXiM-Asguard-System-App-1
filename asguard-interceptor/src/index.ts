@@ -53,6 +53,16 @@ export default {
 
     const clientIp = request.headers.get("cf-connecting-ip") || "unknown";
 
+    // Fast check against KV for blocked IP
+    if (clientIp !== "unknown") {
+      const isBlocked = await env.ASGUARD_BLACKLIST.get(
+        `ip:${clientIp}`,
+      );
+      if (isBlocked) {
+        return new Response("Forbidden", { status: 403, headers: corsHeaders });
+      }
+    }
+
     // Flood Control Handler
     if (clientIp !== "unknown") {
       pruneRateLimitMap();
@@ -74,16 +84,6 @@ export default {
       }
     }
 
-
-    // Fast check against KV for blocked IP
-    if (clientIp !== "unknown") {
-      const isBlocked = await env.ASGUARD_BLACKLIST.get(
-        `ip:${clientIp}`,
-      );
-      if (isBlocked) {
-        return new Response("Forbidden", { status: 403, headers: corsHeaders });
-      }
-    }
 
     // Try reading auth token and check if it's blocked
     const authHeader = request.headers.get("Authorization");

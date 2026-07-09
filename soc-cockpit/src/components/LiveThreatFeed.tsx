@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { z } from 'zod';
+import { supabase } from '@/utils/supabaseClient';
 
 const TelemetryPayloadSchema = z.object({
   sourceIp: z.string().ip(),
@@ -269,38 +270,43 @@ export default function LiveThreatFeed() {
       }
     };
 
-    let timeoutId: ReturnType<typeof setTimeout>;
-    let isSubscribed = true;
 
-    const startPolling = (delay = 5000) => {
-      if (!isSubscribed) return;
 
-      timeoutId = setTimeout(async () => {
-        try {
-          await fetchTelemetry();
-          startPolling(5000); // reset to normal delay on success
-        } catch {
-          // If the channel status drops to CLOSED or throws a CHANNEL_ERROR (simulated here via fetch failure)
-          // Initiate automated, incremental reconnection retry sequence: 2s, 5s, then 10s.
-          let nextDelay = 2000;
-          if (delay === 2000) nextDelay = 5000;
-          else if (delay === 5000 || delay >= 10000) nextDelay = 10000;
 
-          console.warn(`Connection dropped, throwing CHANNEL_ERROR. Reconnecting in ${nextDelay}ms...`);
-          startPolling(nextDelay);
+
+    const channel = supabase
+      .channel('schema-db-changes')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'security_audit_logs' },
+        (payload) => {
+          // Add new items instantly and trigger row accents via standard state transition
+          setFlash(true);
+          setTimeout(() => setFlash(false), 500);
+
+          if (payload.new) {
+             const newLog = payload.new;
+             if (newLog.eventType) {
+                 const parsed = TelemetryPayloadSchema.safeParse(newLog);
+                 if (parsed.success) {
+                     setData(prev => [parsed.data, ...prev].slice(0, 50));
+                 }
+             } else {
+                 const parsed = AuditEventSchema.safeParse(newLog);
+                 if (parsed.success) {
+                     setAuditLog(prev => [parsed.data, ...prev].slice(0, 50));
+                 }
+             }
+          }
         }
-      }, delay);
-    };
+      )
+      .subscribe();
 
-    fetchTelemetry().then(() => {
-        startPolling(5000);
-    }).catch(() => {
-        startPolling(2000);
-    });
+    fetchTelemetry();
+
 
     return () => {
-      isSubscribed = false;
-      clearTimeout(timeoutId);
+      supabase.removeChannel(channel);
     };
   }, []);
 
