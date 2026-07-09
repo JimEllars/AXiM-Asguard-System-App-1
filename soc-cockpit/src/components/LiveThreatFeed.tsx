@@ -34,7 +34,7 @@ const DlqRecordSchema = z.object({
   originNode: z.string(),
   droppedRoute: z.string(),
   errorReason: z.string(),
-  payload: z.any().optional(),
+  payload: z.record(z.unknown()).optional(),
 });
 type DlqRecord = z.infer<typeof DlqRecordSchema>;
 

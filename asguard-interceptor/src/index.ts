@@ -176,7 +176,7 @@ export default {
         const auditEvents = values.filter(value => value !== null);
 
         // Sort in descending order by timestamp
-        auditEvents.sort((a: any, b: any) => b.timestamp - a.timestamp);
+        (auditEvents as { timestamp: number }[]).sort((a, b) => b.timestamp - a.timestamp);
 
         return new Response(JSON.stringify(auditEvents), {
           status: 200,
@@ -201,7 +201,7 @@ export default {
 
       const cacheUrl = new URL(request.url);
       const cacheKey = new Request(cacheUrl.toString(), request);
-      const cache = (caches as any).default;
+      const cache = (caches as unknown as { default: Cache }).default;
       const cachedResponse = await cache.match(cacheKey);
 
       if (cachedResponse) {
@@ -215,7 +215,7 @@ export default {
         const keys = listResult.keys.map((k) => {
           let note = undefined;
           if (k.metadata && typeof k.metadata === 'object' && 'note' in k.metadata) {
-            note = (k.metadata as any).note;
+            note = (k.metadata as { note?: string }).note;
           }
           return { name: k.name, expiration: k.expiration, note };
         });
@@ -245,7 +245,7 @@ export default {
       }
 
       const invalidateCacheUrl = new URL(request.url);
-      ctx.waitUntil((caches as any).default.delete(new Request(invalidateCacheUrl.toString())));
+      ctx.waitUntil((caches as unknown as { default: Cache }).default.delete(new Request(invalidateCacheUrl.toString())));
 
       try {
         const payload = (await request.json()) as {
@@ -325,7 +325,7 @@ export default {
       }
 
       try {
-        const rawPayload = await request.json() as any;
+        const rawPayload = await request.json() as Record<string, unknown>;
 
         // Ensure payload has the expected schema format and enforce correct properties.
         const payload = {
@@ -368,7 +368,7 @@ export default {
 
     if (request.method === "POST" && url.pathname === "/telemetry") {
       try {
-        let payload = await request.json() as any;
+        let payload = await request.json() as Record<string, unknown>;
 
         // Enrich with Cloudflare metadata
         payload.country = (request.cf && request.cf.country) ? request.cf.country : "XX";
@@ -407,15 +407,15 @@ export default {
   },
 };
 
-const localEdgeLoggingBuffer: any[] = [];
+const localEdgeLoggingBuffer: unknown[] = [];
 
-async function logTelemetry(data: any, env: Env) {
+async function logTelemetry(data: unknown, env: Env) {
   try {
     // Capture a snapshot of the current buffer
     const bufferSnapshot = [...localEdgeLoggingBuffer];
 
     const dbOp = async () => {
-      const existing: any[] =
+      const existing: unknown[] =
         (await env.ASGUARD_TELEMETRY.get("recent_events", { type: "json" })) ||
         [];
 
