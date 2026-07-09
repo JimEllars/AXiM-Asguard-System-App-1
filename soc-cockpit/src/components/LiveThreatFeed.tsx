@@ -221,7 +221,7 @@ export default function LiveThreatFeed() {
   const [telemetryPage, setTelemetryPage] = useState(0);
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [auditPage, setAuditPage] = useState(0);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
   const tempAuditPageFix = setAuditPage; // just to prevent the linter from warning about unused setAuditPage until I use it.
   const itemsPerPage = 10;
 
@@ -255,18 +255,24 @@ export default function LiveThreatFeed() {
         return;
       }
 
+      const abortController = new AbortController();
+      const timeoutIdFetch = setTimeout(() => abortController.abort(), 4000);
       try {
         const [telemetryRes, blocklistRes, auditRes] = await Promise.all([
           fetch(`${workerUrl}/telemetry`, {
             headers: { 'X-Asguard-Auth': apiKey },
+            signal: abortController.signal
           }),
           fetch(`${workerUrl}/blocklist`, {
             headers: { 'X-Asguard-Auth': apiKey },
+            signal: abortController.signal
           }),
           fetch(`${workerUrl}/audit`, {
             headers: { 'X-Asguard-Auth': apiKey },
+            signal: abortController.signal
           })
         ]);
+        clearTimeout(timeoutIdFetch);
 
         if (!telemetryRes.ok) {
           throw new Error(`Failed to fetch telemetry: ${telemetryRes.statusText}`);
@@ -353,7 +359,9 @@ export default function LiveThreatFeed() {
 
       } catch (err: unknown) {
         console.error("Error fetching data:", err);
-        if (err instanceof Error) {
+        if (err instanceof Error && err.name === "AbortError") {
+          setError("[ EDGE SYNC TIMEOUT: RETRYING ADAPTIVE INTERCEPTOR CHANNELS ]");
+        } else if (err instanceof Error) {
           setError(err.message);
         } else {
           setError(String(err));
@@ -441,7 +449,7 @@ export default function LiveThreatFeed() {
   // Instead of an effect, we could reset pages when handling filter changes or just allow the effect, but the linter complains.
   // Since we don't have setSeverityFilter wrapped, we'll disable the linter here for this specific necessity.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+
     setTelemetryPage(0);
   }, [severityFilter, searchQuery, appOriginFilter]);
 
@@ -539,6 +547,8 @@ export default function LiveThreatFeed() {
       return;
     }
 
+    const abortController = new AbortController();
+    const timeoutIdFetch = setTimeout(() => abortController.abort(), 4000);
     try {
       const res = await fetch(`${workerUrl}/blocklist`, {
         method: 'POST',
@@ -546,8 +556,10 @@ export default function LiveThreatFeed() {
           'X-Asguard-Auth': apiKey,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ key, action: 'unblock' })
+        body: JSON.stringify({ key, action: 'unblock' }),
+        signal: abortController.signal
       });
+      clearTimeout(timeoutIdFetch);
 
       if (!res.ok) {
         throw new Error('Failed to unblock key');
@@ -575,6 +587,8 @@ export default function LiveThreatFeed() {
       return;
     }
 
+    const abortController = new AbortController();
+    const timeoutIdFetch = setTimeout(() => abortController.abort(), 4000);
     try {
       const res = await fetch(`${workerUrl}/blocklist`, {
         method: 'POST',
@@ -582,8 +596,10 @@ export default function LiveThreatFeed() {
           'X-Asguard-Auth': apiKey,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ key: `ip:${ip}`, action: 'block' })
+        body: JSON.stringify({ key: `ip:${ip}`, action: 'block' }),
+        signal: abortController.signal
       });
+      clearTimeout(timeoutIdFetch);
 
       if (!res.ok) {
         throw new Error('Failed to drop IP');
