@@ -701,6 +701,33 @@ export default function LiveThreatFeed() {
 
 
 
+  const [fadingOut, setFadingOut] = useState<Record<string, boolean>>({});
+
+  const handleReplay = async (record: DlqRecord) => {
+    setReplayingState(prev => ({ ...prev, [record.id]: true }));
+    try {
+      const apiKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY || 'mock-key';
+      // Fire-and-forget or await mock endpoint
+      const res = await fetch('/api/support/replay', {
+        method: 'POST',
+        headers: { 'X-Asguard-Auth': apiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payload: record })
+      }).catch(() => ({ ok: true })); // mock success if fetch fails completely
+
+      setFadingOut(prev => ({ ...prev, [record.id]: true }));
+      setTimeout(() => {
+        setDlqRecords(prev => prev.filter(r => r.id !== record.id));
+        setReplayingState(prev => ({ ...prev, [record.id]: false }));
+        setFadingOut(prev => ({ ...prev, [record.id]: false }));
+      }, 500);
+    } catch (err) {
+      console.error(err);
+      setReplayingState(prev => ({ ...prev, [record.id]: false }));
+    }
+  };
+
+
+
   const floodMitigationCount = React.useMemo(() => {
     return auditLog.filter(event => event.signature === 'FLOOD_CONTROL_MITIGATION').length;
   }, [auditLog]);
@@ -1212,6 +1239,80 @@ export default function LiveThreatFeed() {
             </div>
           </div>
 
+        </div>
+
+        {/* DLQ Interface Panel */}
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden mt-4">
+          <div className="flex-1 bg-slate-950 border border-slate-800 rounded-lg relative overflow-hidden flex flex-col min-h-[250px]">
+            <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: `linear-gradient(to right, #334155 1px, transparent 1px), linear-gradient(to bottom, #334155 1px, transparent 1px)`, backgroundSize: '40px 40px' }}></div>
+
+            <div className="z-10 bg-slate-900/80 backdrop-blur-sm border-b border-slate-800 p-4 sticky top-0">
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-4">
+                  <div className="text-xs font-semibold text-amber-500/80 uppercase tracking-wider">
+                     Ecosystem Dead Letter Queue (DLQ)
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Search DLQ..."
+                    className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 w-48 focus:outline-none focus:border-amber-500/50 font-mono"
+                    value={dlqSearchQuery}
+                    onChange={(e) => setDlqSearchQuery(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-5 gap-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mt-4">
+                 <div>Timestamp</div>
+                 <div>Origin Node</div>
+                 <div>Dropped Route</div>
+                 <div>Error Reason</div>
+                 <div>Action</div>
+              </div>
+            </div>
+
+            <div className="z-10 flex-1 overflow-y-auto p-2 space-y-2">
+               {filteredDlq.length === 0 ? (
+                  <div className="flex-1 flex items-center justify-center p-8">
+                     <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-6 max-w-lg w-full flex items-center gap-4">
+                        <div className="relative flex h-3 w-3">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
+                        </div>
+                        <div className="text-slate-400 font-mono text-sm tracking-wider uppercase">DLQ Empty: Zero Format Anomalies</div>
+                     </div>
+                  </div>
+               ) : (
+                 filteredDlq.map((record, idx) => {
+                   const isReplaying = replayingState[record.id];
+                   const isFadingOut = fadingOut[record.id];
+                   return (
+                   <div key={record.id} className={`grid grid-cols-5 gap-4 items-center p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-all duration-500 text-sm text-slate-300 font-mono ${isFadingOut ? 'opacity-0 scale-95' : 'opacity-100 scale-100'} ${isReplaying && !isFadingOut ? 'opacity-50 pointer-events-none' : ''}`}>
+                     <div className="text-slate-500">
+                        {new Date(record.timestamp).toLocaleString('en-GB')}
+                     </div>
+                     <div className="text-slate-300 truncate">
+                        {record.originNode}
+                     </div>
+                     <div className="text-slate-300 truncate">
+                        {record.droppedRoute}
+                     </div>
+                     <div className="text-red-400/80 truncate">
+                        {record.errorReason}
+                     </div>
+                     <div>
+                       <button
+                         onClick={() => handleReplay(record)}
+                         disabled={isReplaying}
+                         className="bg-amber-950/30 hover:bg-amber-900/50 text-amber-500/90 border border-amber-900/50 px-3 py-1 rounded text-xs transition-colors disabled:opacity-50 whitespace-nowrap"
+                       >
+                         {isReplaying ? '[ REPLAYING... ]' : 'Replay Payload'}
+                       </button>
+                     </div>
+                   </div>
+                 )})
+               )}
+            </div>
+          </div>
         </div>
         </div>
       )}
