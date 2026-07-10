@@ -495,13 +495,29 @@ async function logTelemetry(data, env) {
     try {
         // Capture a snapshot of the current buffer
         const bufferSnapshot = [...localEdgeLoggingBuffer];
+        // Filter out mutation errors (which have a "type" field like blacklist_put or audit)
+        const telemetryEvents = bufferSnapshot.filter(item => !item.type);
+        const mutationErrors = bufferSnapshot.filter(item => item.type);
         const dbOp = async () => {
             const existing = (await env.ASGUARD_TELEMETRY.get("recent_events", { type: "json" })) ||
                 [];
-            // Combine current data, buffer snapshot, and existing data
-            let toSave = [data, ...bufferSnapshot, ...existing];
+            // Combine current data, filtered buffer snapshot, and existing data
+            let toSave = [data, ...telemetryEvents, ...existing];
             const pruned = toSave.slice(0, 50);
             await env.ASGUARD_TELEMETRY.put("recent_events", JSON.stringify(pruned));
+            // Divert mutation error frames to a secondary background queue handler (DLQ pattern)
+            if (mutationErrors.length > 0) {
+                await Promise.all(mutationErrors.map(async (errFrame) => {
+                    await env.ASGUARD_TELEMETRY.put(`dlq:${Date.now()}-${Math.random()}`, JSON.stringify({
+                        id: `dlq-${Date.now()}-${Math.random()}`,
+                        timestamp: Date.now(),
+                        originNode: "UNKNOWN", // Could be enriched if available
+                        droppedRoute: "worker_buffer",
+                        errorReason: "Mutation Error Diverted from Buffer",
+                        payload: errFrame
+                    }));
+                }));
+            }
         };
         const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Database connection timeout")), 5000));
         await Promise.race([dbOp(), timeoutPromise]);

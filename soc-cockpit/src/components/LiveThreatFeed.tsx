@@ -175,14 +175,6 @@ export default function LiveThreatFeed() {
     return () => clearTimeout(timer);
   }, [dlqSearchQuery]);
 
-  useEffect(() => {
-    // Mocking initial DLQ data since it's an isolated UI task without specific endpoint
-    setDlqRecords([
-      { id: 'dlq-1', timestamp: Date.now() - 5000, originNode: 'us-east-1-edge', droppedRoute: '/api/v1/auth', errorReason: 'Malformed JSON trailing comma' },
-      { id: 'dlq-2', timestamp: Date.now() - 15000, originNode: 'eu-west-1-edge', droppedRoute: '/api/v1/telemetry', errorReason: 'Missing required headers' },
-      { id: 'dlq-3', timestamp: Date.now() - 60000, originNode: 'ap-south-1-edge', droppedRoute: '/api/v1/submit', errorReason: 'Type signature mismatch' },
-    ]);
-  }, []);
 
   const filteredDlq = dlqRecords.filter(record =>
     record.originNode.toLowerCase().includes(debouncedDlqSearch.toLowerCase()) ||
@@ -223,7 +215,6 @@ export default function LiveThreatFeed() {
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [auditPage, setAuditPage] = useState(0);
 
-  const tempAuditPageFix = setAuditPage; // just to prevent the linter from warning about unused setAuditPage until I use it.
   const itemsPerPage = 10;
 
 
@@ -1270,9 +1261,93 @@ export default function LiveThreatFeed() {
                  ))
                )}
             </div>
+            <div className="border-t border-slate-800 p-2 flex justify-between items-center bg-slate-900/50">
+              <button
+                onClick={() => setAuditPage(p => Math.max(0, p - 1))}
+                disabled={auditPage === 0}
+                className="text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:hover:text-slate-400 transition-colors px-2 py-1 text-xs"
+              >
+                &larr; Prev
+              </button>
+              <div className="text-xs text-slate-500 font-mono">
+                Page {auditPage + 1} of {Math.ceil(filteredAuditLog.length / itemsPerPage) || 1}
+              </div>
+              <button
+                onClick={() => setAuditPage(p => p + 1)}
+                disabled={(auditPage + 1) * itemsPerPage >= filteredAuditLog.length}
+                className="text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:hover:text-slate-400 transition-colors px-2 py-1 text-xs"
+              >
+                Next &rarr;
+              </button>
+            </div>
+
           </div>
 
         </div>
+
+          {/* Bottom Pane: Dead Letter Queue (DLQ) */}
+          <div className="flex-1 bg-slate-950 border border-slate-800 rounded-lg relative overflow-hidden flex flex-col min-h-[250px] mt-4">
+            <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: `linear-gradient(to right, #334155 1px, transparent 1px), linear-gradient(to bottom, #334155 1px, transparent 1px)`, backgroundSize: '40px 40px' }}></div>
+
+            <div className="z-10 bg-slate-900/80 backdrop-blur-sm border-b border-slate-800 p-4 sticky top-0">
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-4">
+                  <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                     Ecosystem Dead Letter Queue (DLQ)
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Search DLQ..."
+                    className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 w-48 focus:outline-none focus:border-slate-500 font-mono"
+                    value={dlqSearchQuery}
+                    onChange={(e) => setDlqSearchQuery(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-4 gap-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mt-4">
+                 <div>Timestamp</div>
+                 <div>Origin Node</div>
+                 <div>Dropped Route</div>
+                 <div>Error Reason</div>
+              </div>
+            </div>
+
+            <div className="z-10 flex-1 overflow-y-auto p-2 space-y-2">
+               {isLoading ? (
+                  renderTelemetrySkeleton()
+               ) : filteredDlq.length === 0 ? (
+                  <div className="flex-1 flex items-center justify-center p-8">
+                     <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-6 max-w-lg w-full flex items-center gap-4">
+                        <div className="relative flex h-3 w-3">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                        </div>
+                        <div className="text-slate-400 font-mono text-sm tracking-wider uppercase">DLQ Clean: Zero Dropped Anomalies</div>
+                     </div>
+                  </div>
+               ) : (
+                 filteredDlq.map((event, idx) => (
+                   <div key={event.id || idx} className="grid grid-cols-4 gap-4 items-center p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono">
+                     <div className="text-slate-500">
+                        {new Date(event.timestamp).toLocaleString('en-GB')}
+                     </div>
+                     <div>
+                        <span className="px-2 py-1 rounded text-xs border whitespace-nowrap text-amber-400 bg-amber-950/50 border-amber-900">
+                          {event.originNode}
+                        </span>
+                     </div>
+                     <div className="truncate text-slate-300">
+                        {event.droppedRoute}
+                     </div>
+                     <div className="text-slate-400 truncate">
+                        {event.errorReason}
+                     </div>
+                   </div>
+                 ))
+               )}
+            </div>
+          </div>
+
         </div>
       )}
     </div>
