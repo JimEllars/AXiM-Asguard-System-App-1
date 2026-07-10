@@ -295,7 +295,7 @@ export default function LiveThreatFeed() {
 
         if (healthRes.ok) {
           const healthData = await healthRes.json();
-          setHealthStatus(healthData.status === 'ok' ? 'ok' : 'degraded');
+          setHealthStatus(healthData.status === 'ok' && healthData.blacklist === 'ok' && healthData.telemetry === 'ok' ? 'ok' : 'degraded');
         } else {
           setHealthStatus('degraded');
         }
@@ -811,7 +811,7 @@ export default function LiveThreatFeed() {
             ? 'bg-amber-950/80 border-amber-500 text-amber-300'
             : 'bg-slate-900 border-slate-700 text-slate-400'
         }`}>
-          {healthStatus === 'ok' ? 'STATUS: PERIMETER SECURE' : healthStatus === 'degraded' ? 'STATUS: DEGRADED' : 'STATUS: UNKNOWN'}
+          {healthStatus === 'ok' ? 'STATUS: PERIMETER SECURE' : healthStatus === 'degraded' ? 'STATUS: PERIMETER DEGRADED' : 'STATUS: UNKNOWN'}
         </div>
         <div className={`text-xs font-mono border px-3 py-1.5 rounded transition-colors duration-300 flex items-center gap-2 ${
           realtimeStatus === 'CONNECTED'
@@ -978,8 +978,14 @@ export default function LiveThreatFeed() {
 
           {/* Left Pane: Telemetry Grid (2/3) */}
           <div className="flex-[2] bg-slate-950 border border-slate-800 rounded-lg relative overflow-hidden flex flex-col min-h-0">
-            {hasHighDensityAnomaly && (
-              <div className="bg-amber-500/10 border-b border-amber-500/30 px-4 py-2 text-center text-amber-500 font-mono text-xs font-bold tracking-widest uppercase">
+            {hasHighDensityAnomaly.isAnomaly && (
+              <div
+                onClick={() => {
+                  setLocalSearchQuery(hasHighDensityAnomaly.ip);
+                  setSearchQuery(hasHighDensityAnomaly.ip);
+                }}
+                className="bg-amber-500/10 border-b border-amber-500/30 px-4 py-2 text-center text-amber-500 font-mono text-xs font-bold tracking-widest uppercase cursor-pointer hover:bg-amber-500/20 transition-colors"
+              >
                 [ SYSTEM ACCELERATION ALERT: HIGH-DENSITY IP ANOMALY - ONYX COGNITIVE TRIAGE REQ ]
               </div>
             )}
