@@ -179,6 +179,8 @@ export default {
           status: "ok",
           blacklist: "ok",
           telemetry: "ok",
+          rateLimitSize: rateLimitMap.size,
+          penaltyLedgerSize: penaltyLedger.size,
           timestamp: Date.now()
         }), {
           status: 200,

@@ -1219,7 +1219,7 @@ export default function LiveThreatFeed() {
                   Export JSON
                 </button>
               </div>
-              <div className="grid grid-cols-4 gap-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mt-4">
+              <div className="grid grid-cols-5 gap-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mt-4">
                  <div>Timestamp</div>
                  <div>Action</div>
                  <div>Target</div>
@@ -1304,11 +1304,12 @@ export default function LiveThreatFeed() {
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-4 gap-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mt-4">
+              <div className="grid grid-cols-5 gap-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mt-4">
                  <div>Timestamp</div>
                  <div>Origin Node</div>
                  <div>Dropped Route</div>
                  <div>Error Reason</div>
+                 <div>Action</div>
               </div>
             </div>
 
@@ -1322,12 +1323,12 @@ export default function LiveThreatFeed() {
                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                           <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
                         </div>
-                        <div className="text-slate-400 font-mono text-sm tracking-wider uppercase">DLQ Clean: Zero Dropped Anomalies</div>
+                        <div className="text-slate-400 font-mono text-sm tracking-wider uppercase">[ SYSTEM INTEGRITY EXCELLENT: DEAD LETTER QUEUE VACANT ]</div>
                      </div>
                   </div>
                ) : (
                  filteredDlq.map((event, idx) => (
-                   <div key={event.id || idx} className="grid grid-cols-4 gap-4 items-center p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono">
+                   <div key={event.id || idx} className="grid grid-cols-5 gap-4 items-center p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono">
                      <div className="text-slate-500">
                         {new Date(event.timestamp).toLocaleString('en-GB')}
                      </div>
@@ -1341,6 +1342,14 @@ export default function LiveThreatFeed() {
                      </div>
                      <div className="text-slate-400 truncate">
                         {event.errorReason}
+                     </div>
+                     <div className="text-right">
+                        <button
+                           onClick={() => event.id && handleReplayPayload(event.id)}
+                           disabled={event.id ? replayingState[event.id] : false}
+                           className="text-amber-400 hover:text-amber-300 disabled:text-amber-700 disabled:cursor-not-allowed transition-colors text-xs font-semibold uppercase">
+                           {event.id && replayingState[event.id] ? "[ REPLAYING... ]" : "Replay Payload"}
+                        </button>
                      </div>
                    </div>
                  ))
