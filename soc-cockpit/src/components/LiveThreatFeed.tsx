@@ -120,6 +120,7 @@ export default function LiveThreatFeed() {
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [healthStatus, setHealthStatus] = useState<'ok' | 'degraded' | 'unknown'>('unknown');
+  const [edgeMetrics, setEdgeMetrics] = useState({ rateLimitSize: 0, penaltyLedgerSize: 0 });
   const [edgeLatency, setEdgeLatency] = useState<string | null>(null);
   const [velocityHistory, setVelocityHistory] = useState<('up' | 'down' | 'none')[]>(() => {
     if (typeof window !== 'undefined') {
@@ -231,6 +232,50 @@ export default function LiveThreatFeed() {
   }, []);
 
 
+
+  useEffect(() => {
+    const fetchBackgroundStatus = async () => {
+      const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
+      const apiKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY;
+
+      if (!workerUrl || !apiKey) return;
+
+      const abortController = new AbortController();
+      const timeoutId = setTimeout(() => abortController.abort(), 4000);
+      try {
+        const [healthRes, dlqRes] = await Promise.all([
+          fetch(`${workerUrl}/health`, {
+            headers: { 'X-Asguard-Auth': apiKey },
+            signal: abortController.signal
+          }),
+          fetch(`${workerUrl}/dlq`, {
+            headers: { 'X-Asguard-Auth': apiKey },
+            signal: abortController.signal
+          })
+        ]);
+        clearTimeout(timeoutId);
+
+        if (healthRes.ok) {
+          const healthData = await healthRes.json();
+          setEdgeMetrics({ rateLimitSize: healthData.rateLimitSize || 0, penaltyLedgerSize: healthData.penaltyLedgerSize || 0 });
+          setHealthStatus(healthData.status === 'ok' && healthData.blacklist === 'ok' && healthData.telemetry === 'ok' ? 'ok' : 'degraded');
+        } else {
+          setHealthStatus('degraded');
+        }
+
+        if (dlqRes.ok) {
+          const dlqData = await dlqRes.json();
+          setDlqRecords(dlqData);
+        }
+      } catch (err) {
+        console.error("Background polling failed", err);
+      }
+    };
+
+    const interval = setInterval(fetchBackgroundStatus, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
   useEffect(() => {
     const fetchTelemetry = async () => {
       const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
@@ -286,6 +331,7 @@ export default function LiveThreatFeed() {
 
         if (healthRes.ok) {
           const healthData = await healthRes.json();
+          setEdgeMetrics({ rateLimitSize: healthData.rateLimitSize || 0, penaltyLedgerSize: healthData.penaltyLedgerSize || 0 });
           setHealthStatus(healthData.status === 'ok' && healthData.blacklist === 'ok' && healthData.telemetry === 'ok' ? 'ok' : 'degraded');
         } else {
           setHealthStatus('degraded');
@@ -518,12 +564,32 @@ export default function LiveThreatFeed() {
     setReplayingState(prev => ({ ...prev, [id]: true }));
 
     try {
-      // Dispatch authenticated asynchronous network call to the AXiM Support System triage proxy
-      // Using a simulated delay for the handshake as per "restricted to a secure mock support replay handshake"
-      await new Promise(resolve => setTimeout(resolve, 800));
+      const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
+      const apiKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY;
 
-      // Slice the record cleanly out of the client view array
-      setDlqRecords(prev => prev.filter(record => record.id !== id));
+      if (!workerUrl || !apiKey) {
+        throw new Error("Missing environment credentials");
+      }
+
+      const abortController = new AbortController();
+      const timeoutId = setTimeout(() => abortController.abort(), 8000);
+
+      const response = await fetch(`${workerUrl}/dlq/replay`, {
+        method: 'POST',
+        headers: {
+          'X-Asguard-Auth': apiKey,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ id }),
+        signal: abortController.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        setDlqRecords(prev => prev.filter(record => record.id !== id));
+      } else {
+        console.error("Failed to replay DLQ payload");
+      }
 
       addToast(`Payload ${id} successfully replayed.`, 'success');
     } catch (error) {
@@ -803,6 +869,14 @@ export default function LiveThreatFeed() {
             : 'bg-slate-900 border-slate-700 text-slate-400'
         }`}>
           {healthStatus === 'ok' ? 'STATUS: PERIMETER SECURE' : healthStatus === 'degraded' ? 'STATUS: PERIMETER DEGRADED' : 'STATUS: UNKNOWN'}
+        </div>
+
+        {/* Memory Allocation Tooltip */}
+        <div className="relative group text-xs font-mono border px-3 py-1.5 rounded flex items-center gap-2 bg-slate-900 border-slate-700 text-slate-400 cursor-help transition-colors hover:bg-slate-800">
+           EDGE METRICS [?]
+           <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max max-w-xs opacity-0 transition-opacity group-hover:opacity-100 bg-slate-800 text-slate-200 text-[10px] rounded px-3 py-2 border border-slate-600 shadow-xl z-50 whitespace-nowrap">
+             [ MAPS ALLOCATED — FLOOD LEDGER: {edgeMetrics.rateLimitSize} | PENALTY LEDGER: {edgeMetrics.penaltyLedgerSize} ]
+           </div>
         </div>
         <div className={`text-xs font-mono border px-3 py-1.5 rounded transition-colors duration-300 flex items-center gap-2 ${
           realtimeStatus === 'CONNECTED'

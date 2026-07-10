@@ -11,6 +11,7 @@ const mockTelemetryKV = {
   get: vi.fn(),
   put: vi.fn(),
   list: vi.fn(),
+  delete: vi.fn(),
 };
 
 describe("Asguard Interceptor", () => {
@@ -548,6 +549,36 @@ describe("Asguard Interceptor", () => {
     const legalOptionsResponse = await worker.fetch(legalOptions, env, ctx);
     expect(legalOptionsResponse.status).toBe(204);
     expect(legalOptionsResponse.headers.get("Access-Control-Allow-Origin")).toBe("https://production-domain.com");
+  });
+
+
+
+  it("should process authenticated POST /dlq/replay by logging telemetry and dropping the KV record", async () => {
+    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
+      ASGUARD_API_KEY: "secret-key",
+      ASGUARD_BLACKLIST: mockKV as any,
+      ASGUARD_TELEMETRY: mockTelemetryKV as any,
+    };
+
+    const req = new Request("https://example.com/dlq/replay", {
+      method: "POST",
+      headers: { "X-Asguard-Auth": "secret-key" },
+      body: JSON.stringify({ id: "dlq-12345" })
+    });
+
+    const ctx = { waitUntil: vi.fn().mockImplementation(p => p) } as any;
+
+    const res = await worker.fetch(req, env, ctx);
+
+    // allow microtasks to flush
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(res.status).toBe(200);
+    expect(mockTelemetryKV.put).toHaveBeenCalledWith(
+       expect.stringMatching(/^audit:\d+$/),
+       expect.stringContaining('"action":"dlq_replay"')
+    );
+    expect(mockTelemetryKV.delete).toHaveBeenCalledWith("dlq:12345");
   });
 
 });

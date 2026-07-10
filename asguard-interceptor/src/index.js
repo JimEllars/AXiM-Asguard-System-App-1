@@ -142,6 +142,8 @@ export default {
                     status: "ok",
                     blacklist: "ok",
                     telemetry: "ok",
+                    rateLimitSize: rateLimitMap.size,
+                    penaltyLedgerSize: penaltyLedger.size,
                     timestamp: Date.now()
                 }), {
                     status: 200,
@@ -156,6 +158,51 @@ export default {
                 }), {
                     status: 500,
                     headers: { ...getCorsHeaders(request, env, isMutation), "Content-Type": "application/json" }
+                });
+            }
+        }
+        if (request.method === "POST" && url.pathname === "/dlq/replay") {
+            const customAuthHeader = request.headers.get("X-Asguard-Auth");
+            if (!env.ASGUARD_API_KEY || customAuthHeader !== env.ASGUARD_API_KEY) {
+                return new Response("Unauthorized", {
+                    status: 401,
+                    headers: getCorsHeaders(request, env, isMutation),
+                });
+            }
+            try {
+                const body = await request.json();
+                if (!body || !body.id) {
+                    return new Response("Missing id in payload", {
+                        status: 400,
+                        headers: getCorsHeaders(request, env, isMutation),
+                    });
+                }
+                // The id returned to the client matches the original id inside the json payload, e.g., 'dlq-1234'.
+                // We need to map it back to the KV key which is 'dlq:1234' for deletion.
+                const targetKvKey = body.id.replace('dlq-', 'dlq:');
+                const timestamp = Date.now();
+                ctx.waitUntil((async () => {
+                    try {
+                        await env.ASGUARD_TELEMETRY.put(`audit:${timestamp}`, JSON.stringify({
+                            action: "dlq_replay",
+                            target: body.id,
+                            timestamp: timestamp
+                        }));
+                        await env.ASGUARD_TELEMETRY.delete(targetKvKey);
+                    }
+                    catch (err) {
+                        console.error("Failed to process DLQ replay", err);
+                    }
+                })());
+                return new Response("OK", {
+                    status: 200,
+                    headers: getCorsHeaders(request, env, isMutation),
+                });
+            }
+            catch (e) {
+                return new Response("Bad Request", {
+                    status: 400,
+                    headers: getCorsHeaders(request, env, isMutation),
                 });
             }
         }
