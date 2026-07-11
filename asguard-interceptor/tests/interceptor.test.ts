@@ -15,6 +15,59 @@ const mockTelemetryKV = {
 };
 
 describe("Asguard Interceptor", () => {
+
+  it("accepts valid telemetry payload with Web3 wallet address", async () => {
+    mockKV.get.mockResolvedValue(null);
+    const payload = {
+      sourceIp: "192.168.1.1",
+      timestamp: Date.now(),
+      eventType: "signature_tampering",
+      severity: "high",
+      web3WalletAddress: "0x1234567890123456789012345678901234567890"
+    };
+
+    const request = new Request("https://example.com/telemetry", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Asguard-Auth": "secret-key",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const env = { ASGUARD_API_KEY: "secret-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+    const ctx = { waitUntil: vi.fn() } as any;
+
+    const response = await worker.fetch(request, env, ctx);
+    expect(response.status).toBe(202);
+    expect(ctx.waitUntil).toHaveBeenCalled();
+  });
+
+  it("rejects telemetry payload with invalid Web3 wallet address format", async () => {
+    mockKV.get.mockResolvedValue(null);
+    const payload = {
+      sourceIp: "192.168.1.1",
+      timestamp: Date.now(),
+      eventType: "signature_tampering",
+      severity: "high",
+      web3WalletAddress: "0xINVALID123"
+    };
+
+    const request = new Request("https://example.com/telemetry", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Asguard-Auth": "secret-key",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const env = { ASGUARD_API_KEY: "secret-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+    const ctx = { waitUntil: vi.fn() } as any;
+
+    const response = await worker.fetch(request, env, ctx);
+    expect(response.status).toBe(400);
+  });
   beforeEach(() => {
     (globalThis as any).caches = {
       default: {
@@ -518,9 +571,9 @@ describe("Asguard Interceptor", () => {
     expect(body.error).toContain("ASGUARD_BLACKLIST");
   });
 
-  it("rejects illegal CORS origin on mutations and preflight, but allows matching origin", async () => {
+  it("rejects illegal CORS origin on mutations and preflight, but allows matching origin array and subdomains", async () => {
     const env = {
-      ALLOWED_ORIGIN: 'https://production-domain.com',
+      ALLOWED_ORIGIN: 'https://production-domain.com,https://app.production-domain.com',
       ASGUARD_API_KEY: "secret-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
@@ -549,6 +602,14 @@ describe("Asguard Interceptor", () => {
     const legalOptionsResponse = await worker.fetch(legalOptions, env, ctx);
     expect(legalOptionsResponse.status).toBe(204);
     expect(legalOptionsResponse.headers.get("Access-Control-Allow-Origin")).toBe("https://production-domain.com");
+
+    const legalOptionsMulti = new Request("https://example.com/blocklist", {
+      method: "OPTIONS",
+      headers: { "Origin": "https://app.production-domain.com" }
+    });
+    const legalOptionsMultiResponse = await worker.fetch(legalOptionsMulti, env, ctx);
+    expect(legalOptionsMultiResponse.status).toBe(204);
+    expect(legalOptionsMultiResponse.headers.get("Access-Control-Allow-Origin")).toBe("https://app.production-domain.com");
   });
 
 

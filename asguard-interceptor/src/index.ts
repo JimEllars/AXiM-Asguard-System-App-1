@@ -44,11 +44,18 @@ function getCorsHeaders(request: Request, env: Env, isMutation: boolean) {
   let allowedOrigin = "*";
 
   if (isMutation || request.method === "OPTIONS") {
-    const productionOrigin = env.ALLOWED_ORIGIN || "https://production-domain.com";
-    if (origin && origin === productionOrigin) {
-      allowedOrigin = productionOrigin;
-    } else if (origin) {
-      allowedOrigin = "DENY";
+    const allowedOriginsStr = env.ALLOWED_ORIGIN || "https://production-domain.com";
+    const allowedOriginsArray = allowedOriginsStr.split(',').map(s => s.trim());
+
+    if (origin) {
+      if (allowedOriginsArray.includes(origin)) {
+        allowedOrigin = origin;
+      } else if (origin.endsWith('.staging.domain.com') || origin.endsWith('.testing.domain.com')) {
+        // If testing subdomains are dynamically allowed
+        allowedOrigin = origin;
+      } else {
+        allowedOrigin = "DENY";
+      }
     }
   }
 
