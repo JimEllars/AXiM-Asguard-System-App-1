@@ -439,6 +439,35 @@ export default {
               }
             })()
           );
+
+          if (payload.action === "update_note") {
+             const ts = Date.now();
+             ctx.waitUntil(
+                (async () => {
+                  try {
+                    await env.ASGUARD_TELEMETRY.put(
+                      `audit:${ts}`,
+                      JSON.stringify({
+                        action: payload.action,
+                        target: payload.key,
+                        timestamp: ts,
+                      })
+                    );
+                  } catch (e) {
+                    console.error("Failed to log update_note audit", e);
+                    localEdgeLoggingBuffer.push({
+                      type: "audit_error",
+                      key: `audit:${ts}`,
+                      payload: {
+                        action: payload.action,
+                        target: payload.key,
+                        timestamp: ts,
+                      }
+                    });
+                  }
+                })()
+             );
+          }
         } else if (payload.action === "unblock") {
           ctx.waitUntil(
             (async () => {

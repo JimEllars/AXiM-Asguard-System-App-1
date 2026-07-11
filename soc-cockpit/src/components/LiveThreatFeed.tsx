@@ -221,9 +221,9 @@ export default function LiveThreatFeed() {
 
   const [auditLog, setAuditLog] = useState<AuditEvent[]>([]);
   const [copiedRow, setCopiedRow] = useState<number | null>(null);
-  const [toasts, setToasts] = useState<{ id: string; message: string; type: 'success' | 'error' }[]>([]);
+  const [toasts, setToasts] = useState<{ id: string; message: string; type: 'success' | 'error' | 'emerald' }[]>([]);
 
-  const addToast = React.useCallback((message: string, type: 'success' | 'error') => {
+  const addToast = React.useCallback((message: string, type: 'success' | 'error' | 'emerald') => {
     const id = Date.now().toString() + Math.floor(Math.random() * 1000).toString();
     setToasts((prev) => [...prev, { id, message, type }]);
     setTimeout(() => {
@@ -560,7 +560,7 @@ export default function LiveThreatFeed() {
 
 
 
-  const handleReplayPayload = async (id: string) => {
+  const handleReplayPayload = async (id: string, fullEvent: unknown) => {
     setReplayingState(prev => ({ ...prev, [id]: true }));
 
     try {
@@ -572,15 +572,14 @@ export default function LiveThreatFeed() {
       }
 
       const abortController = new AbortController();
-      const timeoutId = setTimeout(() => abortController.abort(), 8000);
-
-      const response = await fetch(`${workerUrl}/dlq/replay`, {
+      const timeoutId = setTimeout(() => abortController.abort(), 5000);
+      const response = await fetch(`${workerUrl}/api/dlq/bulk-replay`, {
         method: 'POST',
         headers: {
           'X-Asguard-Auth': apiKey,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ id }),
+        body: JSON.stringify(fullEvent),
         signal: abortController.signal
       });
       clearTimeout(timeoutId);
@@ -591,7 +590,7 @@ export default function LiveThreatFeed() {
         console.error("Failed to replay DLQ payload");
       }
 
-      addToast(`Payload ${id} successfully replayed.`, 'success');
+      addToast(`Payload ${id} successfully replayed.`, 'emerald');
     } catch (error) {
       addToast('Failed to replay payload.', 'error');
     } finally {
@@ -836,7 +835,7 @@ export default function LiveThreatFeed() {
           <div
             key={toast.id}
             className={`px-4 py-3 rounded shadow-lg font-mono text-sm border pointer-events-auto transition-all transform slide-in-right ${
-              toast.type === 'success'
+              (toast.type === 'success' || toast.type === 'emerald')
                 ? 'bg-emerald-950/90 border-emerald-500 text-emerald-200'
                 : 'bg-red-950/90 border-red-500 text-red-200'
             }`}
@@ -1419,7 +1418,7 @@ export default function LiveThreatFeed() {
                      </div>
                      <div className="text-right">
                         <button
-                           onClick={() => event.id && handleReplayPayload(event.id)}
+                           onClick={() => event.id && handleReplayPayload(event.id, event)}
                            disabled={event.id ? replayingState[event.id] : false}
                            className="text-amber-400 hover:text-amber-300 disabled:text-amber-700 disabled:cursor-not-allowed transition-colors text-xs font-semibold uppercase">
                            {event.id && replayingState[event.id] ? "[ REPLAYING... ]" : "Replay Payload"}
