@@ -61,6 +61,26 @@ function getCorsHeaders(request: Request, env: Env, isMutation: boolean) {
 }
 
 export default {
+  async scheduled(
+    event: any,
+    env: Env,
+    ctx: ExecutionContext
+  ) {
+    ctx.waitUntil(
+      (async () => {
+        try {
+          const listResult = await env.ASGUARD_BLACKLIST.list();
+          const now = Date.now();
+          const expiredKeys = listResult.keys.filter(k => k.expiration && k.expiration < now / 1000);
+
+          await Promise.all(expiredKeys.map(k => env.ASGUARD_BLACKLIST.delete(k.name)));
+        } catch (e) {
+          console.error("Scheduled cleanup failed", e);
+        }
+      })()
+    );
+  },
+
   async fetch(
     request: Request,
     env: Env,
@@ -376,7 +396,7 @@ export default {
         });
         const responsePayload = new Response(JSON.stringify(keys), {
           status: 200,
-          headers: { ...getCorsHeaders(request, env, isMutation), "Content-Type": "application/json", "Cache-Control": "public, max-age=30" },
+          headers: { ...getCorsHeaders(request, env, isMutation), "Content-Type": "application/json", "Cache-Control": "public, max-age=15, stale-while-revalidate=45" },
         });
 
         ctx.waitUntil(cache.put(cacheKey, responsePayload.clone()));

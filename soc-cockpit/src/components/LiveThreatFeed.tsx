@@ -899,6 +899,37 @@ export default function LiveThreatFeed() {
         </div>
       </div>
 
+      {/* Capacity Progress Bars */}
+      <div className="flex flex-col gap-2 mt-2">
+         {/* Rate Limit Size Bar */}
+         <div className="flex flex-col gap-1">
+            <div className="flex justify-between text-[10px] font-mono text-slate-400 uppercase tracking-wider">
+               <span>Rate Limit Map Depth</span>
+               <span>{edgeMetrics.rateLimitSize} / 10000</span>
+            </div>
+            <div className="w-full bg-slate-900 border border-slate-700 rounded h-2 overflow-hidden">
+               <div
+                  className={`h-full transition-all duration-500 ${edgeMetrics.rateLimitSize / 10000 > 0.7 ? 'bg-amber-500' : 'bg-slate-500'}`}
+                  style={{ width: `${Math.min(100, Math.max(0, (edgeMetrics.rateLimitSize / 10000) * 100))}%` }}
+               ></div>
+            </div>
+         </div>
+         {/* Penalty Ledger Size Bar */}
+         <div className="flex flex-col gap-1">
+            <div className="flex justify-between text-[10px] font-mono text-slate-400 uppercase tracking-wider">
+               <span>Penalty Ledger Depth</span>
+               <span>{edgeMetrics.penaltyLedgerSize} / 1000</span>
+            </div>
+            <div className="w-full bg-slate-900 border border-slate-700 rounded h-2 overflow-hidden">
+               <div
+                  className={`h-full transition-all duration-500 ${edgeMetrics.penaltyLedgerSize / 1000 > 0.7 ? 'bg-amber-500' : 'bg-slate-500'}`}
+                  style={{ width: `${Math.min(100, Math.max(0, (edgeMetrics.penaltyLedgerSize / 1000) * 100))}%` }}
+               ></div>
+            </div>
+         </div>
+      </div>
+
+
       {/* Metric Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-4 flex flex-col justify-between">
