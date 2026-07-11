@@ -50,6 +50,19 @@ function getCorsHeaders(request, env, isMutation) {
     };
 }
 export default {
+    async scheduled(event, env, ctx) {
+        ctx.waitUntil((async () => {
+            try {
+                const listResult = await env.ASGUARD_BLACKLIST.list();
+                const now = Date.now();
+                const expiredKeys = listResult.keys.filter(k => k.expiration && k.expiration < now / 1000);
+                await Promise.all(expiredKeys.map(k => env.ASGUARD_BLACKLIST.delete(k.name)));
+            }
+            catch (e) {
+                console.error("Scheduled cleanup failed", e);
+            }
+        })());
+    },
     async fetch(request, env, ctx) {
         const startTime = Date.now();
         const response = await this.handle(request, env, ctx);
@@ -318,7 +331,7 @@ export default {
                 });
                 const responsePayload = new Response(JSON.stringify(keys), {
                     status: 200,
-                    headers: { ...getCorsHeaders(request, env, isMutation), "Content-Type": "application/json", "Cache-Control": "public, max-age=30" },
+                    headers: { ...getCorsHeaders(request, env, isMutation), "Content-Type": "application/json", "Cache-Control": "public, max-age=15, stale-while-revalidate=45" },
                 });
                 ctx.waitUntil(cache.put(cacheKey, responsePayload.clone()));
                 return responsePayload;
@@ -371,6 +384,30 @@ export default {
                             localEdgeLoggingBuffer.push({ type: 'blacklist_put', key: payload.key, options });
                         }
                     })());
+                    if (payload.action === "update_note") {
+                        const ts = Date.now();
+                        ctx.waitUntil((async () => {
+                            try {
+                                await env.ASGUARD_TELEMETRY.put(`audit:${ts}`, JSON.stringify({
+                                    action: payload.action,
+                                    target: payload.key,
+                                    timestamp: ts,
+                                }));
+                            }
+                            catch (e) {
+                                console.error("Failed to log update_note audit", e);
+                                localEdgeLoggingBuffer.push({
+                                    type: "audit_error",
+                                    key: `audit:${ts}`,
+                                    payload: {
+                                        action: payload.action,
+                                        target: payload.key,
+                                        timestamp: ts,
+                                    }
+                                });
+                            }
+                        })());
+                    }
                 }
                 else if (payload.action === "unblock") {
                     ctx.waitUntil((async () => {
