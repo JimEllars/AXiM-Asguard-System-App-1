@@ -740,6 +740,22 @@ const localEdgeLoggingBuffer: any[] = [];
 
 async function logTelemetry(data: any, env: Env) {
   try {
+    // Age-based eviction: remove items older than 15 minutes (900,000ms)
+    const now = Date.now();
+    for (let i = localEdgeLoggingBuffer.length - 1; i >= 0; i--) {
+      const item = localEdgeLoggingBuffer[i];
+      let itemTimestamp = 0;
+      if (item && item.type && item.payload && item.payload.timestamp) {
+        itemTimestamp = item.payload.timestamp;
+      } else if (item && item.timestamp) {
+        itemTimestamp = item.timestamp;
+      }
+
+      if (itemTimestamp > 0 && now - itemTimestamp > 900000) {
+        localEdgeLoggingBuffer.splice(i, 1);
+      }
+    }
+
     // Capture a snapshot of the current buffer
     const bufferSnapshot = [...localEdgeLoggingBuffer];
 

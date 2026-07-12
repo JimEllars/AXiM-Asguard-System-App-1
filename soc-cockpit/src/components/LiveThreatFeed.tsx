@@ -122,6 +122,7 @@ export default function LiveThreatFeed() {
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [healthStatus, setHealthStatus] = useState<'ok' | 'degraded' | 'unknown'>('unknown');
+  const [isSyncing, setIsSyncing] = useState(false);
   const [edgeMetrics, setEdgeMetrics] = useState({ rateLimitSize: 0, penaltyLedgerSize: 0 });
   const [edgeLatency, setEdgeLatency] = useState<string | null>(null);
   const [velocityHistory, setVelocityHistory] = useState<('up' | 'down' | 'none')[]>(() => {
@@ -277,7 +278,7 @@ export default function LiveThreatFeed() {
 
         if (dlqRes.ok) {
           const dlqData = await dlqRes.json();
-          setDlqRecords(dlqData);
+          setDlqRecords(dlqData.slice(0, 50));
         }
 
         if (blocklistRes.ok) {
@@ -289,7 +290,7 @@ export default function LiveThreatFeed() {
         if (auditRes.ok) {
            const auditData = await auditRes.json();
            const parsedAudit = z.array(AuditEventSchema).parse(auditData);
-           setAuditLog(parsedAudit);
+           setAuditLog(parsedAudit.slice(0, 50));
         }
       } catch (err) {
         console.error("Background polling failed", err);
@@ -435,8 +436,8 @@ export default function LiveThreatFeed() {
         });
         const parsedDlq = z.array(DlqRecordSchema).parse(jsonDlqData);
         setBlocklist(prev => JSON.stringify(prev) !== JSON.stringify(parsedBlocklist) ? parsedBlocklist : prev);
-        setAuditLog(prev => JSON.stringify(prev) !== JSON.stringify(parsedAudit) ? parsedAudit : prev);
-        setDlqRecords(prev => JSON.stringify(prev) !== JSON.stringify(parsedDlq) ? parsedDlq : prev);
+        setAuditLog(prev => JSON.stringify(prev) !== JSON.stringify(parsedAudit.slice(0, 50)) ? parsedAudit.slice(0, 50) : prev);
+        setDlqRecords(prev => JSON.stringify(prev) !== JSON.stringify(parsedDlq.slice(0, 50)) ? parsedDlq.slice(0, 50) : prev);
         setLastSynced(new Date());
         setError(null);
 
@@ -538,6 +539,56 @@ export default function LiveThreatFeed() {
 
     setTelemetryPage(0);
   }, [severityFilter, searchQuery, appOriginFilter]);
+
+
+  const handleManualSync = React.useCallback(async () => {
+    setIsSyncing(true);
+    const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
+    const apiKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY;
+    if (workerUrl && apiKey) {
+       // Using an out of band fetch to the background status endpoint, which is essentially hitting /health, /dlq, /blocklist, /audit
+       const authHeaders = { 'X-Asguard-Auth': apiKey };
+
+       try {
+           const [healthRes, dlqRes, blocklistRes, auditRes] = await Promise.all([
+              fetch(`${workerUrl}/health`, { headers: authHeaders }),
+              fetch(`${workerUrl}/api/dlq`, { headers: authHeaders }),
+              fetch(`${workerUrl}/blocklist`, { headers: authHeaders }),
+              fetch(`${workerUrl}/audit`, { headers: authHeaders })
+           ]);
+
+           if (healthRes.ok) {
+              const healthData = await healthRes.json();
+              setEdgeMetrics({ rateLimitSize: healthData.rateLimitSize || 0, penaltyLedgerSize: healthData.penaltyLedgerSize || 0 });
+              setHealthStatus(healthData.status === 'ok' && healthData.blacklist === 'ok' && healthData.telemetry === 'ok' ? 'ok' : 'degraded');
+           }
+           if (dlqRes.ok) setDlqRecords(await dlqRes.json().then(d => d.slice(0, 50)));
+           if (blocklistRes.ok) {
+               const blocklistData = await blocklistRes.json();
+               const parsedBlocklist = z.array(z.object({ name: z.string(), expiration: z.number().optional(), note: z.string().optional() })).parse(blocklistData);
+               setBlocklist(parsedBlocklist);
+           }
+           if (auditRes.ok) {
+               const auditData = await auditRes.json();
+               const parsedAudit = z.array(AuditEventSchema).parse(auditData);
+               setAuditLog(parsedAudit.slice(0, 50));
+           }
+
+           const telemetryRes = await fetch(`${workerUrl}/telemetry`, { headers: authHeaders });
+           if (telemetryRes.ok) {
+              const telemetryData = await telemetryRes.json();
+              const parsedData = z.array(TelemetryPayloadSchema).parse(telemetryData).slice(0, 50);
+              setData(parsedData);
+              setLastSynced(new Date());
+           }
+       } catch (err) {
+           console.error("Manual sync failed", err);
+       }
+    }
+
+    setIsSyncing(false);
+    addToast("SYNC COMPLETE", "emerald");
+  }, [addToast]);
 
   const getSeverityColor = (severity: TelemetryPayload['severity']) => {
     switch (severity) {
@@ -932,6 +983,13 @@ export default function LiveThreatFeed() {
         <div className={`text-xs font-mono border px-3 py-1.5 rounded transition-colors duration-300 ${flash ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300' : 'bg-slate-900 border-slate-700 text-slate-400'}`}>
           SYNC INTERVAL: 5000MS | LAST INDEXED: {lastSynced ? lastSynced.toLocaleTimeString('en-GB') : '--:--:--'}
         </div>
+        <button
+           onClick={handleManualSync}
+           disabled={isSyncing}
+           className="text-xs font-mono border px-3 py-1.5 rounded transition-colors duration-300 bg-slate-800 hover:bg-slate-700 border-slate-600 text-slate-300 flex items-center gap-2 disabled:opacity-50"
+        >
+           {isSyncing ? '[ SYNCING LOGS... ]' : 'SYNC NOW'}
+        </button>
       </div>
 
       {/* Capacity Progress Bars */}
