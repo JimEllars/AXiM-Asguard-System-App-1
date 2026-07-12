@@ -30,12 +30,12 @@ describe("Asguard Interceptor", () => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Asguard-Auth": "secret-key",
+        "X-Asguard-Auth": "test-auth-key",
       },
       body: JSON.stringify(payload),
     });
 
-    const env = { ASGUARD_API_KEY: "secret-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+    const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
     const ctx = { waitUntil: vi.fn() } as any;
 
     const response = await worker.fetch(request, env, ctx);
@@ -57,12 +57,12 @@ describe("Asguard Interceptor", () => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Asguard-Auth": "secret-key",
+        "X-Asguard-Auth": "test-auth-key",
       },
       body: JSON.stringify(payload),
     });
 
-    const env = { ASGUARD_API_KEY: "secret-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+    const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
     const ctx = { waitUntil: vi.fn() } as any;
 
     const response = await worker.fetch(request, env, ctx);
@@ -83,7 +83,7 @@ describe("Asguard Interceptor", () => {
 
   it("should trigger client-error throttle circuit breaker returning 429", async () => {
     const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
-      ASGUARD_API_KEY: "secret-key",
+      ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -116,7 +116,7 @@ describe("Asguard Interceptor", () => {
     });
 
     const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
-      ASGUARD_API_KEY: "secret-key",
+      ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -137,7 +137,7 @@ describe("Asguard Interceptor", () => {
     });
 
     const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
-      ASGUARD_API_KEY: "secret-key",
+      ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -158,7 +158,7 @@ describe("Asguard Interceptor", () => {
     });
 
     const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
-      ASGUARD_API_KEY: "secret-key",
+      ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -177,7 +177,7 @@ describe("Asguard Interceptor", () => {
     });
 
     const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
-      ASGUARD_API_KEY: "secret-key",
+      ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -206,7 +206,7 @@ describe("Asguard Interceptor", () => {
     request.cf = { country: "US", colo: "DFW" };
 
     const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
-      ASGUARD_API_KEY: "secret-key",
+      ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -239,7 +239,7 @@ describe("Asguard Interceptor", () => {
     };
 
     const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
-      ASGUARD_API_KEY: "secret-key",
+      ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockSlowTelemetryKV as any,
     };
@@ -266,7 +266,7 @@ describe("Asguard Interceptor", () => {
     });
 
     const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
-      ASGUARD_API_KEY: "secret-key",
+      ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -279,7 +279,7 @@ describe("Asguard Interceptor", () => {
   it("rejects GET /telemetry without valid auth", async () => {
     const request = new Request("https://example.com/telemetry");
     const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
-      ASGUARD_API_KEY: "secret-key",
+      ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -292,10 +292,10 @@ describe("Asguard Interceptor", () => {
   it("allows GET /telemetry with valid auth", async () => {
     mockTelemetryKV.get.mockResolvedValue([]);
     const request = new Request("https://example.com/telemetry", {
-      headers: { "X-Asguard-Auth": "secret-key" },
+      headers: { "X-Asguard-Auth": "test-auth-key" },
     });
     const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
-      ASGUARD_API_KEY: "secret-key",
+      ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -308,7 +308,7 @@ describe("Asguard Interceptor", () => {
   it("rejects GET /blocklist without valid auth", async () => {
     const request = new Request("https://example.com/blocklist");
     const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
-      ASGUARD_API_KEY: "secret-key",
+      ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -325,10 +325,10 @@ describe("Asguard Interceptor", () => {
         keys: [{ name: "ip:1.2.3.4", expiration: 1234567890 }, { name: "token:abc" }],
       });
     const request = new Request("https://example.com/blocklist", {
-      headers: { "X-Asguard-Auth": "secret-key" },
+      headers: { "X-Asguard-Auth": "test-auth-key" },
     });
     const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
-      ASGUARD_API_KEY: "secret-key",
+      ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -344,13 +344,13 @@ describe("Asguard Interceptor", () => {
     const request = new Request("https://example.com/blocklist", {
       method: "POST",
       headers: {
-        "X-Asguard-Auth": "secret-key",
+        "X-Asguard-Auth": "test-auth-key",
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ key: "ip:10.0.0.1", action: "block" }),
     });
     const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
-      ASGUARD_API_KEY: "secret-key",
+      ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -367,13 +367,13 @@ describe("Asguard Interceptor", () => {
     const request = new Request("https://example.com/blocklist", {
       method: "POST",
       headers: {
-        "X-Asguard-Auth": "secret-key",
+        "X-Asguard-Auth": "test-auth-key",
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ key: "ip:10.0.0.1", action: "unblock" }),
     });
     const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
-      ASGUARD_API_KEY: "secret-key",
+      ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -388,13 +388,13 @@ describe("Asguard Interceptor", () => {
     const request = new Request("https://example.com/blocklist", {
       method: "POST",
       headers: {
-        "X-Asguard-Auth": "secret-key",
+        "X-Asguard-Auth": "test-auth-key",
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ key: "ip:10.0.0.2", action: "block", ttl: 3600 }),
     });
     const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
-      ASGUARD_API_KEY: "secret-key",
+      ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -427,7 +427,7 @@ describe("Asguard Interceptor", () => {
       body: JSON.stringify({ key: "ip:10.0.0.3", action: "block" }),
     });
     const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
-      ASGUARD_API_KEY: "secret-key",
+      ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -447,10 +447,10 @@ describe("Asguard Interceptor", () => {
   it("includes Server-Timing header with valid edge-exec duration", async () => {
     mockTelemetryKV.get.mockResolvedValue([]);
     const requestGet = new Request("https://example.com/telemetry", {
-      headers: { "X-Asguard-Auth": "secret-key" },
+      headers: { "X-Asguard-Auth": "test-auth-key" },
     });
     const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
-      ASGUARD_API_KEY: "secret-key",
+      ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -501,7 +501,7 @@ describe("Asguard Interceptor", () => {
     request.cf = { country: "US", colo: "DFW" };
 
     const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
-      ASGUARD_API_KEY: "secret-key",
+      ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -520,12 +520,12 @@ describe("Asguard Interceptor", () => {
     };
     const request = new Request("https://example.com/health", {
       method: "GET",
-      headers: { "X-Asguard-Auth": "secret-key" },
+      headers: { "X-Asguard-Auth": "test-auth-key" },
     });
 
     const env = {
       ALLOWED_ORIGIN: 'https://production-domain.com',
-      ASGUARD_API_KEY: "secret-key",
+      ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockSuccessKV as any,
       ASGUARD_TELEMETRY: mockSuccessKV as any,
     };
@@ -553,12 +553,12 @@ describe("Asguard Interceptor", () => {
 
     const request = new Request("https://example.com/health", {
       method: "GET",
-      headers: { "X-Asguard-Auth": "secret-key" },
+      headers: { "X-Asguard-Auth": "test-auth-key" },
     });
 
     const env = {
       ALLOWED_ORIGIN: 'https://production-domain.com',
-      ASGUARD_API_KEY: "secret-key",
+      ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockFailedKV as any,
       ASGUARD_TELEMETRY: mockFailedKV as any,
     };
@@ -574,7 +574,7 @@ describe("Asguard Interceptor", () => {
   it("rejects illegal CORS origin on mutations and preflight, but allows matching origin array and subdomains", async () => {
     const env = {
       ALLOWED_ORIGIN: 'https://production-domain.com,https://app.production-domain.com',
-      ASGUARD_API_KEY: "secret-key",
+      ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -589,7 +589,7 @@ describe("Asguard Interceptor", () => {
 
     const illegalPost = new Request("https://example.com/blocklist", {
       method: "POST",
-      headers: { "Origin": "https://hacker.com", "X-Asguard-Auth": "secret-key", "Content-Type": "application/json" },
+      headers: { "Origin": "https://hacker.com", "X-Asguard-Auth": "test-auth-key", "Content-Type": "application/json" },
       body: JSON.stringify({ key: "test", action: "block" })
     });
     const illegalPostResponse = await worker.fetch(illegalPost, env, ctx);
@@ -616,14 +616,14 @@ describe("Asguard Interceptor", () => {
 
   it("should process authenticated POST /dlq/replay by logging telemetry and dropping the KV record", async () => {
     const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
-      ASGUARD_API_KEY: "secret-key",
+      ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
 
     const req = new Request("https://example.com/dlq/replay", {
       method: "POST",
-      headers: { "X-Asguard-Auth": "secret-key" },
+      headers: { "X-Asguard-Auth": "test-auth-key" },
       body: JSON.stringify({ id: "dlq-12345" })
     });
 
@@ -664,7 +664,7 @@ describe("Asguard Interceptor", () => {
     });
 
         const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
-      ASGUARD_API_KEY: "secret-key",
+      ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };

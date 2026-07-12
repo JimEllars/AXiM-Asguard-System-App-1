@@ -4,6 +4,8 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { z } from 'zod';
 import { supabase } from '@/utils/supabaseClient';
+import { useActiveAccount } from 'thirdweb/react';
+
 
 const TelemetryPayloadSchema = z.object({
   sourceIp: z.string().ip(),
@@ -139,6 +141,8 @@ export default function LiveThreatFeed() {
 
   const velocityShift = velocityHistory.length > 0 ? velocityHistory[velocityHistory.length - 1] : 'none';
   const [realtimeStatus, setRealtimeStatus] = useState<'CONNECTED' | 'DISCONNECTED' | 'ERROR'>('DISCONNECTED');
+  const activeAccount = useActiveAccount();
+
 
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState(false);
@@ -899,6 +903,15 @@ export default function LiveThreatFeed() {
              [ FLOOD LEDGER: {edgeMetrics.rateLimitSize}/10000 | PENALTY LEDGER: {edgeMetrics.penaltyLedgerSize}/1000 ]
            </div>
         </div>
+
+        {/* Wallet Status Badge */}
+        <div className="text-xs font-mono border px-3 py-1.5 rounded transition-colors duration-300 flex items-center gap-2 bg-slate-950/80 border-slate-700 text-slate-300">
+          {activeAccount ? (
+            <span>WALLET: {activeAccount.address.slice(0, 4)}...{activeAccount.address.slice(-2)}</span>
+          ) : (
+            <span>[ AUTH: WEB2 PROXIED GATEWAY MODE ]</span>
+          )}
+        </div>
         <div className={`text-xs font-mono border px-3 py-1.5 rounded transition-colors duration-300 flex items-center gap-2 ${
           realtimeStatus === 'CONNECTED'
             ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300'
@@ -1141,7 +1154,7 @@ export default function LiveThreatFeed() {
                    const isActionLoading = actionLoading[event.sourceIp];
 
                    return (
-                     <div key={idx} className="flex flex-col border border-slate-800 rounded bg-slate-900/40 hover:bg-slate-800/50 transition-colors">
+                     <div key={`${event.sourceIp}-${event.timestamp}-${idx}`} className="flex flex-col border border-slate-800 rounded bg-slate-900/40 hover:bg-slate-800/50 transition-colors">
                      <div
                        className={`grid grid-cols-6 gap-4 items-center p-3 text-sm text-slate-300 font-mono cursor-pointer ${isActionLoading ? 'opacity-50 pointer-events-none' : ''}`}
                        onClick={() => setExpandedRow(isExpanded ? null : idx)}
@@ -1373,7 +1386,7 @@ export default function LiveThreatFeed() {
                   </div>
                ) : (
                  paginatedAudit.map((event, idx) => (
-                   <div key={idx} className="grid grid-cols-4 gap-4 items-center p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono">
+                   <div key={`${event.target || "target"}-${event.timestamp}-${idx}`} className="grid grid-cols-4 gap-4 items-center p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono">
                      <div className="text-slate-500">
                         {new Date(event.timestamp).toLocaleString('en-GB')}
                      </div>
@@ -1459,7 +1472,7 @@ export default function LiveThreatFeed() {
                   </div>
                ) : (
                  filteredDlq.map((event, idx) => (
-                   <div key={event.id || idx} className="grid grid-cols-5 gap-4 items-center p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono">
+                   <div key={`${event.originNode || "origin"}-${event.timestamp}-${idx}`} className="grid grid-cols-5 gap-4 items-center p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono">
                      <div className="text-slate-500">
                         {new Date(event.timestamp).toLocaleString('en-GB')}
                      </div>
