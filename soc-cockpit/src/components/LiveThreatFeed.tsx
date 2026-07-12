@@ -1263,6 +1263,11 @@ export default function LiveThreatFeed() {
                    <div key={idx} className={`flex flex-col gap-2 p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono ${isLifting ? 'opacity-50 pointer-events-none' : ''}`}>
                      <div className="flex justify-between items-center">
                        <div className="flex items-center min-w-0">
+                         {keyName.startsWith('wallet:') && (
+                           <span className="text-[9px] font-bold px-1.5 py-0.5 rounded text-amber-400 border border-amber-900/50 bg-amber-950/20 mr-2">
+                             WALLET
+                           </span>
+                         )}
                          <span className="truncate">{keyName}</span>
                          {blockItem.expiration && (
                            <LeaseTimer expiration={blockItem.expiration} />
