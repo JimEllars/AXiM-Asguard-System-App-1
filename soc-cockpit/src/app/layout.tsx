@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import jwt from "jsonwebtoken";
 import "./globals.css";
+import { ThirdwebProvider } from "thirdweb/react";
 
 export const metadata: Metadata = {
   title: "AXiM Asguard SOC Cockpit",
@@ -49,7 +50,8 @@ export default async function RootLayout({
   return (
     <html lang="en">
       <body className="min-h-screen bg-slate-900 text-slate-50">
-        <div className="flex flex-col h-screen">
+        <ThirdwebProvider>
+          <div className="flex flex-col h-screen">
           <header className="border-b border-slate-800 bg-slate-950 p-4 flex justify-between items-center">
             <h1 className="text-xl font-bold tracking-tight text-blue-400">AXiM Asguard</h1>
             <nav className="flex gap-4">
@@ -66,6 +68,7 @@ export default async function RootLayout({
             {children}
           </main>
         </div>
+        </ThirdwebProvider>
       </body>
     </html>
   );

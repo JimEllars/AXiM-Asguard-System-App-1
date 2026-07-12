@@ -642,4 +642,32 @@ describe("Asguard Interceptor", () => {
     expect(mockTelemetryKV.delete).toHaveBeenCalledWith("dlq:12345");
   });
 
+
+  it("Task 1: Enforce Multi-Vector Wallet Blacklisting - blocks when wallet is blacklisted", async () => {
+    mockKV.get.mockImplementation(async (key: string) => {
+      if (key === "wallet:0x9999999999999999999999999999999999999999") return "1";
+      return null;
+    });
+
+    const request = new Request("https://production-domain.com/telemetry", {
+      method: "POST",
+      headers: { "Origin": "https://production-domain.com", "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sourceIp: "127.0.0.1",
+        timestamp: Date.now(),
+        eventType: "suspicious_activity",
+        severity: "medium",
+        web3WalletAddress: "0x9999999999999999999999999999999999999999"
+      })
+    });
+
+        const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
+      ASGUARD_API_KEY: "secret-key",
+      ASGUARD_BLACKLIST: mockKV as any,
+      ASGUARD_TELEMETRY: mockTelemetryKV as any,
+    };
+    const ctx = { waitUntil: vi.fn().mockImplementation((p) => p) } as any;
+    const res = await worker.fetch(request, env, ctx);
+    expect(res.status).toBe(403);
+  });
 });

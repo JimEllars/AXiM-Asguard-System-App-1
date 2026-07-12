@@ -269,6 +269,8 @@ export default function LiveThreatFeed() {
         }
       } catch (err) {
         console.error("Background polling failed", err);
+        setHealthStatus('degraded');
+        // Gracefully preserve last indexed edgeMetrics allocation sizes by not overwriting them
       }
     };
 

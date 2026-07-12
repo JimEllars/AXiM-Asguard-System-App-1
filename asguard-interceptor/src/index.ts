@@ -185,6 +185,27 @@ export default {
       }
     }
 
+    // Task 1: Multi-Vector Wallet Blacklisting
+    if (request.method === "POST" && request.body) {
+      try {
+        // We must clone the request to avoid consuming the body for downstream handlers
+        const clonedRequest = request.clone();
+        const bodyText = await clonedRequest.text();
+        if (bodyText) {
+          const bodyData = JSON.parse(bodyText);
+          if (bodyData && bodyData.web3WalletAddress && typeof bodyData.web3WalletAddress === 'string') {
+            const walletAddress = bodyData.web3WalletAddress;
+            const isWalletBlocked = await env.ASGUARD_BLACKLIST.get(`wallet:${walletAddress}`);
+            if (isWalletBlocked) {
+              return new Response("Forbidden", { status: 403, headers: getCorsHeaders(request, env, isMutation) });
+            }
+          }
+        }
+      } catch (err) {
+        // Ignore parse errors here, downstream will handle invalid JSON
+      }
+    }
+
     const url = new URL(request.url);
 
     if (request.method === "GET" && url.pathname === "/health") {
