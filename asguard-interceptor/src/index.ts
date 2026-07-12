@@ -123,6 +123,28 @@ export default {
     }
     const clientIp = request.headers.get("cf-connecting-ip") || "unknown";
 
+    // Task 1: Multi-Vector Wallet Blacklisting (Moved up)
+    let extractedWalletAddress: string | null = null;
+    if (request.method === "POST" && request.body) {
+      try {
+        // We must clone the request to avoid consuming the body for downstream handlers
+        const clonedRequest = request.clone();
+        const bodyText = await clonedRequest.text();
+        if (bodyText) {
+          const bodyData = JSON.parse(bodyText);
+          if (bodyData && bodyData.web3WalletAddress && typeof bodyData.web3WalletAddress === 'string') {
+            extractedWalletAddress = bodyData.web3WalletAddress;
+            const isWalletBlocked = await env.ASGUARD_BLACKLIST.get(`wallet:${extractedWalletAddress}`);
+            if (isWalletBlocked) {
+              return new Response("Forbidden", { status: 403, headers: getCorsHeaders(request, env, isMutation) });
+            }
+          }
+        }
+      } catch (err) {
+        // Ignore parse errors here, downstream will handle invalid JSON
+      }
+    }
+
     // Fast check against KV for blocked IP
     if (clientIp !== "unknown") {
       const isBlocked = await env.ASGUARD_BLACKLIST.get(
@@ -164,6 +186,13 @@ export default {
             console.error("Flood control block failed, buffering locally:", err);
             localEdgeLoggingBuffer.push({ type: 'blacklist_put', key: `ip:${clientIp}` });
           }));
+
+          if (extractedWalletAddress) {
+            ctx.waitUntil(env.ASGUARD_BLACKLIST.put(`wallet:${extractedWalletAddress}`, "1", { expirationTtl: 86400 }).catch(err => {
+              console.error("Flood control wallet block failed, buffering locally:", err);
+              localEdgeLoggingBuffer.push({ type: 'blacklist_put', key: `wallet:${extractedWalletAddress}` });
+            }));
+          }
         }
 
         return new Response("Too Many Requests", { status: 429, headers: getCorsHeaders(request, env, isMutation) });
@@ -182,27 +211,6 @@ export default {
       );
       if (isTokenBlocked) {
         return new Response("Forbidden", { status: 403, headers: getCorsHeaders(request, env, isMutation) });
-      }
-    }
-
-    // Task 1: Multi-Vector Wallet Blacklisting
-    if (request.method === "POST" && request.body) {
-      try {
-        // We must clone the request to avoid consuming the body for downstream handlers
-        const clonedRequest = request.clone();
-        const bodyText = await clonedRequest.text();
-        if (bodyText) {
-          const bodyData = JSON.parse(bodyText);
-          if (bodyData && bodyData.web3WalletAddress && typeof bodyData.web3WalletAddress === 'string') {
-            const walletAddress = bodyData.web3WalletAddress;
-            const isWalletBlocked = await env.ASGUARD_BLACKLIST.get(`wallet:${walletAddress}`);
-            if (isWalletBlocked) {
-              return new Response("Forbidden", { status: 403, headers: getCorsHeaders(request, env, isMutation) });
-            }
-          }
-        }
-      } catch (err) {
-        // Ignore parse errors here, downstream will handle invalid JSON
       }
     }
 
