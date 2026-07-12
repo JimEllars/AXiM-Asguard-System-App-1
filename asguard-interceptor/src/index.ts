@@ -116,6 +116,46 @@ export default {
     ctx: ExecutionContext,
   ): Promise<Response> {
     const isMutation = request.method === 'POST' || request.method === 'DELETE';
+
+    // Task 2: Cryptographic Signature Verification for Webhooks
+    const url = new URL(request.url);
+    if (request.method === "POST" && (url.pathname === "/webhooks/stripe" || url.pathname === "/api/v1/credentials/mint")) {
+      const isStripe = url.pathname === "/webhooks/stripe";
+      const sigHeader = isStripe ? "Stripe-Signature" : "X-Axim-Signature";
+      const secretKey = isStripe ? "stripe_secret" : "axim_secret";
+
+      const signature = request.headers.get(sigHeader);
+      if (!signature) {
+        return new Response("Unauthorized", { status: 401, headers: getCorsHeaders(request, env, isMutation) });
+      }
+
+      const secret = await env.ASGUARD_BLACKLIST.get(secretKey);
+      if (!secret) {
+        return new Response("Unauthorized", { status: 401, headers: getCorsHeaders(request, env, isMutation) });
+      }
+
+      const clonedRequest = request.clone();
+      const bodyText = await clonedRequest.text();
+
+      try {
+        const encoder = new TextEncoder();
+        const key = await crypto.subtle.importKey(
+          "raw", encoder.encode(secret),
+          { name: "HMAC", hash: "SHA-256" },
+          false, ["sign"]
+        );
+        const signatureBuffer = await crypto.subtle.sign("HMAC", key, encoder.encode(bodyText));
+        const signatureArray = Array.from(new Uint8Array(signatureBuffer));
+        const validSignature = signatureArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+        if (signature !== validSignature) {
+          return new Response("Unauthorized", { status: 401, headers: getCorsHeaders(request, env, isMutation) });
+        }
+      } catch (err) {
+        return new Response("Unauthorized", { status: 401, headers: getCorsHeaders(request, env, isMutation) });
+      }
+    }
+
     if (request.method === "OPTIONS") {
       const headers = getCorsHeaders(request, env, true);
       if (!headers["Access-Control-Allow-Origin"]) {
@@ -236,7 +276,6 @@ export default {
       }
     }
 
-    const url = new URL(request.url);
 
     if (request.method === "GET" && url.pathname === "/health") {
       const customAuthHeader = request.headers.get("X-Asguard-Auth");
