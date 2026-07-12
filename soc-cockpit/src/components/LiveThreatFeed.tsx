@@ -243,12 +243,20 @@ export default function LiveThreatFeed() {
       const abortController = new AbortController();
       const timeoutId = setTimeout(() => abortController.abort(), 4000);
       try {
-        const [healthRes, dlqRes] = await Promise.all([
+        const [healthRes, dlqRes, blocklistRes, auditRes] = await Promise.all([
           fetch(`${workerUrl}/health`, {
             headers: { 'X-Asguard-Auth': apiKey },
             signal: abortController.signal
           }),
           fetch(`${workerUrl}/dlq`, {
+            headers: { 'X-Asguard-Auth': apiKey },
+            signal: abortController.signal
+          }),
+          fetch(`${workerUrl}/blocklist`, {
+            headers: { 'X-Asguard-Auth': apiKey },
+            signal: abortController.signal
+          }),
+          fetch(`${workerUrl}/audit`, {
             headers: { 'X-Asguard-Auth': apiKey },
             signal: abortController.signal
           })
@@ -266,6 +274,18 @@ export default function LiveThreatFeed() {
         if (dlqRes.ok) {
           const dlqData = await dlqRes.json();
           setDlqRecords(dlqData);
+        }
+
+        if (blocklistRes.ok) {
+           const blocklistData = await blocklistRes.json();
+           const parsedBlocklist = z.array(z.object({ name: z.string(), expiration: z.number().optional(), note: z.string().optional() })).parse(blocklistData);
+           setBlocklist(parsedBlocklist);
+        }
+
+        if (auditRes.ok) {
+           const auditData = await auditRes.json();
+           const parsedAudit = z.array(AuditEventSchema).parse(auditData);
+           setAuditLog(parsedAudit);
         }
       } catch (err) {
         console.error("Background polling failed", err);

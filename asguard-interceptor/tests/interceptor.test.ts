@@ -649,16 +649,18 @@ describe("Asguard Interceptor", () => {
       return null;
     });
 
-    const request = new Request("https://production-domain.com/telemetry", {
-      method: "POST",
-      headers: { "Origin": "https://production-domain.com", "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const bodyData = JSON.stringify({
         sourceIp: "127.0.0.1",
         timestamp: Date.now(),
         eventType: "suspicious_activity",
         severity: "medium",
         web3WalletAddress: "0x9999999999999999999999999999999999999999"
-      })
+    });
+
+    const request = new Request("https://production-domain.com/telemetry", {
+      method: "POST",
+      headers: { "Origin": "https://production-domain.com", "Content-Type": "application/json", "Content-Length": bodyData.length.toString() },
+      body: bodyData
     });
 
         const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
