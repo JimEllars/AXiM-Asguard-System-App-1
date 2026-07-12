@@ -874,7 +874,7 @@ export default function LiveThreatFeed() {
         <div className="relative group text-xs font-mono border px-3 py-1.5 rounded flex items-center gap-2 bg-slate-900 border-slate-700 text-slate-400 cursor-help transition-colors hover:bg-slate-800">
            EDGE METRICS [?]
            <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max max-w-xs opacity-0 transition-opacity group-hover:opacity-100 bg-slate-800 text-slate-200 text-[10px] rounded px-3 py-2 border border-slate-600 shadow-xl z-50 whitespace-nowrap">
-             [ MAPS ALLOCATED — FLOOD LEDGER: {edgeMetrics.rateLimitSize} | PENALTY LEDGER: {edgeMetrics.penaltyLedgerSize} ]
+             [ FLOOD LEDGER: {edgeMetrics.rateLimitSize}/10000 | PENALTY LEDGER: {edgeMetrics.penaltyLedgerSize}/1000 ]
            </div>
         </div>
         <div className={`text-xs font-mono border px-3 py-1.5 rounded transition-colors duration-300 flex items-center gap-2 ${
