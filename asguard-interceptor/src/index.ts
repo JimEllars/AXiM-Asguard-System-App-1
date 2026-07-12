@@ -127,16 +127,30 @@ export default {
     let extractedWalletAddress: string | null = null;
     if (request.method === "POST" && request.body) {
       try {
-        // We must clone the request to avoid consuming the body for downstream handlers
-        const clonedRequest = request.clone();
-        const bodyText = await clonedRequest.text();
-        if (bodyText) {
-          const bodyData = JSON.parse(bodyText);
-          if (bodyData && bodyData.web3WalletAddress && typeof bodyData.web3WalletAddress === 'string') {
-            extractedWalletAddress = bodyData.web3WalletAddress;
-            const isWalletBlocked = await env.ASGUARD_BLACKLIST.get(`wallet:${extractedWalletAddress}`);
-            if (isWalletBlocked) {
-              return new Response("Forbidden", { status: 403, headers: getCorsHeaders(request, env, isMutation) });
+        const contentLengthHeader = request.headers.get("content-length");
+        let bypassParsing = false;
+        if (contentLengthHeader) {
+          const contentLength = parseInt(contentLengthHeader, 10);
+          if (isNaN(contentLength) || contentLength > 65536) {
+             bypassParsing = true;
+          }
+        } else {
+
+           bypassParsing = true;
+        }
+
+        if (!bypassParsing) {
+          // We must clone the request to avoid consuming the body for downstream handlers
+          const clonedRequest = request.clone();
+          const bodyText = await clonedRequest.text();
+          if (bodyText) {
+            const bodyData = JSON.parse(bodyText);
+            if (bodyData && bodyData.web3WalletAddress && typeof bodyData.web3WalletAddress === 'string') {
+              extractedWalletAddress = bodyData.web3WalletAddress;
+              const isWalletBlocked = await env.ASGUARD_BLACKLIST.get(`wallet:${extractedWalletAddress}`);
+              if (isWalletBlocked) {
+                return new Response("Forbidden", { status: 403, headers: getCorsHeaders(request, env, isMutation) });
+              }
             }
           }
         }
@@ -359,7 +373,7 @@ export default {
           })) || [];
         return new Response(JSON.stringify(data), {
           status: 200,
-          headers: { ...getCorsHeaders(request, env, isMutation), "Content-Type": "application/json" },
+          headers: { ...getCorsHeaders(request, env, isMutation), "Content-Type": "application/json", "Cache-Control": "private, no-cache, no-transform" },
         });
       } catch (e) {
         return new Response("Internal Server Error", {
@@ -391,7 +405,7 @@ export default {
 
         return new Response(JSON.stringify(auditEvents), {
           status: 200,
-          headers: { ...getCorsHeaders(request, env, isMutation), "Content-Type": "application/json" },
+          headers: { ...getCorsHeaders(request, env, isMutation), "Content-Type": "application/json", "Cache-Control": "private, no-cache, no-transform" },
         });
       } catch (e) {
         return new Response("Internal Server Error", {
