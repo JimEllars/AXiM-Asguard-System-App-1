@@ -44,17 +44,25 @@ function getCorsHeaders(request: Request, env: Env, isMutation: boolean) {
   let allowedOrigin = "*";
 
   if (isMutation || request.method === "OPTIONS") {
-    const allowedOriginsStr = env.ALLOWED_ORIGIN || "https://production-domain.com";
-    const allowedOriginsArray = allowedOriginsStr.split(',').map(s => s.trim());
+    if (!env.ALLOWED_ORIGIN && origin) {
+      allowedOrigin = origin;
+    } else {
+      const allowedOriginsStr = env.ALLOWED_ORIGIN || "https://production-domain.com";
+      const allowedOriginsArray = allowedOriginsStr.split(',').map(s => s.trim());
 
-    if (origin) {
-      if (allowedOriginsArray.includes(origin)) {
-        allowedOrigin = origin;
-      } else if (origin.endsWith('.staging.domain.com') || origin.endsWith('.testing.domain.com')) {
-        // If testing subdomains are dynamically allowed
-        allowedOrigin = origin;
-      } else {
-        allowedOrigin = "DENY";
+      if (origin) {
+        if (allowedOriginsArray.includes(origin)) {
+          allowedOrigin = origin;
+        } else if (
+          origin === "http://localhost:3000" ||
+          origin.endsWith('.staging.domain.com') ||
+          origin.endsWith('.testing.domain.com')
+        ) {
+          // If testing subdomains or local loopback are dynamically allowed
+          allowedOrigin = origin;
+        } else {
+          allowedOrigin = "DENY";
+        }
       }
     }
   }
