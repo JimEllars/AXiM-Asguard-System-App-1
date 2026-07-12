@@ -4,7 +4,9 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { z } from 'zod';
 import { supabase } from '@/utils/supabaseClient';
-import { useActiveAccount } from 'thirdweb/react';
+import { useActiveAccount, useReadContract } from 'thirdweb/react';
+import { createThirdwebClient, getContract } from 'thirdweb';
+import { arbitrum } from 'thirdweb/chains';
 
 
 const TelemetryPayloadSchema = z.object({
@@ -39,6 +41,16 @@ const DlqRecordSchema = z.object({
   payload: z.any().optional(),
 });
 type DlqRecord = z.infer<typeof DlqRecordSchema>;
+
+const client = createThirdwebClient({
+  clientId: process.env.NEXT_PUBLIC_THIRDWEB_CLIENT_ID || 'default-client-id',
+});
+
+const adminSbtContract = getContract({
+  client,
+  chain: arbitrum,
+  address: '0x0000000000000000000000000000000000000000',
+});
 
 
 
@@ -143,6 +155,16 @@ export default function LiveThreatFeed() {
   const velocityShift = velocityHistory.length > 0 ? velocityHistory[velocityHistory.length - 1] : 'none';
   const [realtimeStatus, setRealtimeStatus] = useState<'CONNECTED' | 'DISCONNECTED' | 'ERROR'>('DISCONNECTED');
   const activeAccount = useActiveAccount();
+
+  const { data: sbtBalance, isLoading: isSbtLoading } = useReadContract({
+    contract: adminSbtContract,
+    method: "function balanceOf(address owner) view returns (uint256)",
+    params: [activeAccount?.address || "0x0000000000000000000000000000000000000000"],
+    queryOptions: {
+      enabled: !!activeAccount?.address,
+    },
+  });
+  const hasAdminSbt: boolean = (sbtBalance && sbtBalance > BigInt(0)) ? true : false;
 
 
   const [error, setError] = useState<string | null>(null);
@@ -541,7 +563,14 @@ export default function LiveThreatFeed() {
   }, [severityFilter, searchQuery, appOriginFilter]);
 
 
+  const syncAbortControllerRef = React.useRef<AbortController | null>(null);
+
   const handleManualSync = React.useCallback(async () => {
+    if (syncAbortControllerRef.current) {
+      syncAbortControllerRef.current.abort();
+    }
+    const abortController = new AbortController();
+    syncAbortControllerRef.current = abortController;
     setIsSyncing(true);
     const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
     const apiKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY;
@@ -550,11 +579,12 @@ export default function LiveThreatFeed() {
        const authHeaders = { 'X-Asguard-Auth': apiKey };
 
        try {
+           const signal = abortController.signal;
            const [healthRes, dlqRes, blocklistRes, auditRes] = await Promise.all([
-              fetch(`${workerUrl}/health`, { headers: authHeaders }),
-              fetch(`${workerUrl}/api/dlq`, { headers: authHeaders }),
-              fetch(`${workerUrl}/blocklist`, { headers: authHeaders }),
-              fetch(`${workerUrl}/audit`, { headers: authHeaders })
+              fetch(`${workerUrl}/health`, { headers: authHeaders, signal }),
+              fetch(`${workerUrl}/api/dlq`, { headers: authHeaders, signal }),
+              fetch(`${workerUrl}/blocklist`, { headers: authHeaders, signal }),
+              fetch(`${workerUrl}/audit`, { headers: authHeaders, signal })
            ]);
 
            if (healthRes.ok) {
@@ -574,7 +604,7 @@ export default function LiveThreatFeed() {
                setAuditLog(parsedAudit.slice(0, 50));
            }
 
-           const telemetryRes = await fetch(`${workerUrl}/telemetry`, { headers: authHeaders });
+           const telemetryRes = await fetch(`${workerUrl}/telemetry`, { headers: authHeaders, signal: abortController.signal });
            if (telemetryRes.ok) {
               const telemetryData = await telemetryRes.json();
               const parsedData = z.array(TelemetryPayloadSchema).parse(telemetryData).slice(0, 50);
@@ -582,7 +612,11 @@ export default function LiveThreatFeed() {
               setLastSynced(new Date());
            }
        } catch (err) {
-           console.error("Manual sync failed", err);
+           if ((err as Error).name === 'AbortError') {
+               console.log('Manual sync aborted due to new request');
+           } else {
+               console.error("Manual sync failed", err);
+           }
        }
     }
 

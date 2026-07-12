@@ -87,6 +87,36 @@ export default {
     },
     async handle(request, env, ctx) {
         const isMutation = request.method === 'POST' || request.method === 'DELETE';
+        // Task 2: Cryptographic Signature Verification for Webhooks
+        const url = new URL(request.url);
+        if (request.method === "POST" && (url.pathname === "/webhooks/stripe" || url.pathname === "/api/v1/credentials/mint")) {
+            const isStripe = url.pathname === "/webhooks/stripe";
+            const sigHeader = isStripe ? "Stripe-Signature" : "X-Axim-Signature";
+            const secretKey = isStripe ? "stripe_secret" : "axim_secret";
+            const signature = request.headers.get(sigHeader);
+            if (!signature) {
+                return new Response("Unauthorized", { status: 401, headers: getCorsHeaders(request, env, isMutation) });
+            }
+            const secret = await env.ASGUARD_BLACKLIST.get(secretKey);
+            if (!secret) {
+                return new Response("Unauthorized", { status: 401, headers: getCorsHeaders(request, env, isMutation) });
+            }
+            const clonedRequest = request.clone();
+            const bodyText = await clonedRequest.text();
+            try {
+                const encoder = new TextEncoder();
+                const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+                const signatureBuffer = await crypto.subtle.sign("HMAC", key, encoder.encode(bodyText));
+                const signatureArray = Array.from(new Uint8Array(signatureBuffer));
+                const validSignature = signatureArray.map(b => b.toString(16).padStart(2, '0')).join('');
+                if (signature !== validSignature) {
+                    return new Response("Unauthorized", { status: 401, headers: getCorsHeaders(request, env, isMutation) });
+                }
+            }
+            catch (err) {
+                return new Response("Unauthorized", { status: 401, headers: getCorsHeaders(request, env, isMutation) });
+            }
+        }
         if (request.method === "OPTIONS") {
             const headers = getCorsHeaders(request, env, true);
             if (!headers["Access-Control-Allow-Origin"]) {
@@ -192,7 +222,6 @@ export default {
                 return new Response("Forbidden", { status: 403, headers: getCorsHeaders(request, env, isMutation) });
             }
         }
-        const url = new URL(request.url);
         if (request.method === "GET" && url.pathname === "/health") {
             const customAuthHeader = request.headers.get("X-Asguard-Auth");
             if (!env.ASGUARD_API_KEY || customAuthHeader !== env.ASGUARD_API_KEY) {
@@ -632,6 +661,21 @@ export default {
 const localEdgeLoggingBuffer = [];
 async function logTelemetry(data, env) {
     try {
+        // Age-based eviction: remove items older than 15 minutes (900,000ms)
+        const now = Date.now();
+        for (let i = localEdgeLoggingBuffer.length - 1; i >= 0; i--) {
+            const item = localEdgeLoggingBuffer[i];
+            let itemTimestamp = 0;
+            if (item && item.type && item.payload && item.payload.timestamp) {
+                itemTimestamp = item.payload.timestamp;
+            }
+            else if (item && item.timestamp) {
+                itemTimestamp = item.timestamp;
+            }
+            if (itemTimestamp > 0 && now - itemTimestamp > 900000) {
+                localEdgeLoggingBuffer.splice(i, 1);
+            }
+        }
         // Capture a snapshot of the current buffer
         const bufferSnapshot = [...localEdgeLoggingBuffer];
         // Filter out mutation errors (which have a "type" field like blacklist_put or audit)

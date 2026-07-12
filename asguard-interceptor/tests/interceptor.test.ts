@@ -672,4 +672,59 @@ describe("Asguard Interceptor", () => {
     const res = await worker.fetch(request, env, ctx);
     expect(res.status).toBe(403);
   });
+
+  it("Task 2: Webhooks - Rejects Stripe webhook with invalid signature", async () => {
+    mockKV.get.mockImplementation(async (key: string) => {
+      if (key === "stripe_secret") return "test_stripe_secret";
+      return null;
+    });
+    const bodyData = JSON.stringify({ type: "payment_intent.succeeded" });
+    const req = new Request("https://production-domain.com/webhooks/stripe", {
+      method: "POST",
+      headers: { "Stripe-Signature": "invalid_sig" },
+      body: bodyData
+    });
+    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
+      ASGUARD_API_KEY: "test-auth-key",
+      ASGUARD_BLACKLIST: mockKV as any,
+      ASGUARD_TELEMETRY: mockTelemetryKV as any,
+    };
+    const ctx = { waitUntil: vi.fn().mockImplementation((p) => p) } as any;
+    const res = await worker.fetch(req, env, ctx);
+    expect(res.status).toBe(401);
+  });
+
+  it("Task 2: Webhooks - Allows Stripe webhook with valid signature", async () => {
+    const secret = "test_stripe_secret";
+    mockKV.get.mockImplementation(async (key: string) => {
+      if (key === "stripe_secret") return secret;
+      return null;
+    });
+    const bodyData = JSON.stringify({ type: "payment_intent.succeeded" });
+
+    // Compute valid signature
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      "raw", encoder.encode(secret),
+      { name: "HMAC", hash: "SHA-256" },
+      false, ["sign"]
+    );
+    const signatureBuffer = await crypto.subtle.sign("HMAC", key, encoder.encode(bodyData));
+    const signatureArray = Array.from(new Uint8Array(signatureBuffer));
+    const validSignature = signatureArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+    const req = new Request("https://production-domain.com/webhooks/stripe", {
+      method: "POST",
+      headers: { "Stripe-Signature": validSignature },
+      body: bodyData
+    });
+    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
+      ASGUARD_API_KEY: "test-auth-key",
+      ASGUARD_BLACKLIST: mockKV as any,
+      ASGUARD_TELEMETRY: mockTelemetryKV as any,
+    };
+    const ctx = { waitUntil: vi.fn().mockImplementation((p) => p) } as any;
+    const res = await worker.fetch(req, env, ctx);
+    expect(res.status).toBe(200);
+  });
 });
