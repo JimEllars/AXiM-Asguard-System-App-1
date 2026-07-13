@@ -673,6 +673,27 @@ describe("Asguard Interceptor", () => {
     expect(res.status).toBe(403);
   });
 
+  it("mock a transaction heading to /webhooks/stripe without signature metadata, confirming that it returns a 401 Unauthorized status", async () => {
+    mockKV.get.mockImplementation(async (key: string) => {
+      if (key === "stripe_secret") return "test_stripe_secret";
+      return null;
+    });
+    const bodyData = JSON.stringify({ type: "payment_intent.succeeded" });
+    const req = new Request("https://production-domain.com/webhooks/stripe", {
+      method: "POST",
+      headers: {},
+      body: bodyData
+    });
+    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
+      ASGUARD_API_KEY: "test-auth-key",
+      ASGUARD_BLACKLIST: mockKV as any,
+      ASGUARD_TELEMETRY: mockTelemetryKV as any,
+    };
+    const ctx = { waitUntil: vi.fn().mockImplementation((p) => p) } as any;
+    const res = await worker.fetch(req, env, ctx);
+    expect(res.status).toBe(401);
+  });
+
   it("Task 2: Webhooks - Rejects Stripe webhook with invalid signature", async () => {
     mockKV.get.mockImplementation(async (key: string) => {
       if (key === "stripe_secret") return "test_stripe_secret";
@@ -694,7 +715,7 @@ describe("Asguard Interceptor", () => {
     expect(res.status).toBe(401);
   });
 
-  it("Task 2: Webhooks - Allows Stripe webhook with valid signature", async () => {
+  it("must supply a valid pre-computed HMAC hex signature against a mock payload string and verify that the endpoint successfully authenticates", async () => {
     const secret = "test_stripe_secret";
     mockKV.get.mockImplementation(async (key: string) => {
       if (key === "stripe_secret") return secret;
