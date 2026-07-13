@@ -280,12 +280,14 @@ export default {
                 const timestamp = Date.now();
                 ctx.waitUntil((async () => {
                     try {
-                        await env.ASGUARD_TELEMETRY.put(`audit:${timestamp}`, JSON.stringify({
-                            action: "dlq_replay",
-                            target: body.id,
-                            timestamp: timestamp
-                        }));
-                        await env.ASGUARD_TELEMETRY.delete(targetKvKey);
+                        await Promise.all([
+                            env.ASGUARD_TELEMETRY.put(`audit:${timestamp}`, JSON.stringify({
+                                action: "dlq_replay",
+                                target: body.id,
+                                timestamp: timestamp
+                            })),
+                            env.ASGUARD_TELEMETRY.delete(targetKvKey)
+                        ]);
                     }
                     catch (err) {
                         console.error("Failed to process DLQ replay", err);

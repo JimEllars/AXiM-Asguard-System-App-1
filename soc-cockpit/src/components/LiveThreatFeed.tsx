@@ -611,17 +611,18 @@ export default function LiveThreatFeed() {
               setData(parsedData);
               setLastSynced(new Date());
            }
+           setIsSyncing(false);
+           addToast("SYNC COMPLETE", "emerald");
        } catch (err) {
            if ((err as Error).name === 'AbortError') {
                console.log('Manual sync aborted due to new request');
+               setIsSyncing(false);
            } else {
                console.error("Manual sync failed", err);
+               setIsSyncing(false);
            }
        }
     }
-
-    setIsSyncing(false);
-    addToast("SYNC COMPLETE", "emerald");
   }, [addToast]);
 
   const getSeverityColor = (severity: TelemetryPayload['severity']) => {
@@ -937,6 +938,18 @@ export default function LiveThreatFeed() {
     }
     return { isAnomaly: false, ip: '', percentage: 0 };
   }, [data]);
+
+  if (activeAccount?.address && !isSbtLoading && !hasAdminSbt) {
+    return (
+      <div className="flex items-center justify-center h-full w-full bg-slate-950">
+        <div className="bg-slate-900 border border-red-900 p-8 rounded-lg max-w-2xl w-full text-center">
+          <p className="text-red-500 font-mono text-lg font-bold tracking-widest uppercase">
+            [ CRYPTOGRAPHIC AUTHORIZATION FAILURE: AXIM SECURITY ADMIN SOULBOUND TOKEN REQUIRED ]
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-4 h-full flex-1 min-h-0 relative">
