@@ -356,6 +356,15 @@ export default {
                 ]);
              } catch (err) {
                 console.error("Failed to process DLQ replay", err);
+                localEdgeLoggingBuffer.push({
+                  type: "dlq_replay_error",
+                  key: `audit:${timestamp}`,
+                  payload: {
+                    action: "dlq_replay",
+                    target: body.id,
+                    timestamp: timestamp
+                  }
+                });
              }
           })()
         );
