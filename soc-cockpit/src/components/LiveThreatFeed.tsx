@@ -610,9 +610,9 @@ export default function LiveThreatFeed() {
               const parsedData = z.array(TelemetryPayloadSchema).parse(telemetryData).slice(0, 50);
               setData(parsedData);
               setLastSynced(new Date());
+              setIsSyncing(false);
+              addToast("SYNC COMPLETE", "emerald");
            }
-           setIsSyncing(false);
-           addToast("SYNC COMPLETE", "emerald");
        } catch (err) {
            if ((err as Error).name === 'AbortError') {
                console.log('Manual sync aborted due to new request');
