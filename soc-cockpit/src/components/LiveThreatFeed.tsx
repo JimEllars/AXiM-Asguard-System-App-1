@@ -21,6 +21,7 @@ const TelemetryPayloadSchema = z.object({
   country: z.string().optional(),
   colo: z.string().optional(),
   edgeBotScore: z.number().optional(),
+  appOrigin: z.string().optional(),
 });
 type TelemetryPayload = z.infer<typeof TelemetryPayloadSchema>;
 
@@ -881,8 +882,7 @@ export default function LiveThreatFeed() {
       // 2. Filter by app origin
       let matchesAppOrigin = true;
       if (appOriginFilter !== 'all') {
-         // Assuming origin is stored in event.details?.origin as instructed or we can check details.origin string match
-         const origin = (event.details && (event.details as Record<string, unknown>).origin) ? (event.details as Record<string, unknown>).origin : 'unknown';
+         const origin = event.appOrigin || 'unknown';
          matchesAppOrigin = origin === appOriginFilter;
       }
 
@@ -1283,7 +1283,7 @@ export default function LiveThreatFeed() {
                    const isActionLoading = actionLoading[event.sourceIp];
 
                    return (
-                     <div key={`${event.sourceIp}-${event.timestamp}-${idx}`} className="flex flex-col border border-slate-800/50 bg-slate-950/40 font-mono tracking-tight hover:bg-slate-800/50 transition-colors">
+                     <div key={`${event.sourceIp}-${event.timestamp}-${idx}`} className={`flex flex-col border font-mono tracking-tight transition-all duration-500 ${flash && idx === 0 && telemetryPage === 0 ? 'bg-emerald-950/30 border-l-2 border-l-emerald-500 border-y-slate-800/50 border-r-slate-800/50' : 'border-slate-800/50 bg-slate-950/40 hover:bg-slate-800/50'}`}>
                      <div
                        className={`grid grid-cols-6 gap-4 items-center p-3 text-sm text-slate-300 font-mono cursor-pointer ${isActionLoading ? 'opacity-50 pointer-events-none' : ''}`}
                        onClick={() => setExpandedRow(isExpanded ? null : idx)}
