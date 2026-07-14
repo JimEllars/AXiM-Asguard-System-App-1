@@ -678,7 +678,7 @@ describe("Asguard Interceptor", () => {
       if (key === "stripe_secret") return "test_stripe_secret";
       return null;
     });
-    const bodyData = JSON.stringify({ type: "payment_intent.succeeded" });
+    const bodyData = JSON.stringify({ type: "payment_intent.succeeded", timestamp: Date.now() });
     const req = new Request("https://production-domain.com/webhooks/stripe", {
       method: "POST",
       headers: {},
@@ -699,7 +699,7 @@ describe("Asguard Interceptor", () => {
       if (key === "stripe_secret") return "test_stripe_secret";
       return null;
     });
-    const bodyData = JSON.stringify({ type: "payment_intent.succeeded" });
+    const bodyData = JSON.stringify({ type: "payment_intent.succeeded", timestamp: Date.now() });
     const req = new Request("https://production-domain.com/webhooks/stripe", {
       method: "POST",
       headers: { "Stripe-Signature": "invalid_sig" },
@@ -721,7 +721,7 @@ describe("Asguard Interceptor", () => {
       if (key === "stripe_secret") return secret;
       return null;
     });
-    const bodyData = JSON.stringify({ type: "payment_intent.succeeded" });
+    const bodyData = JSON.stringify({ type: "payment_intent.succeeded", timestamp: Date.now() });
 
     // Compute valid signature
     const encoder = new TextEncoder();
@@ -748,4 +748,25 @@ describe("Asguard Interceptor", () => {
     const res = await worker.fetch(req, env, ctx);
     expect(res.status).toBe(200);
   });
+  it("Task 1: Rejects webhook when timestamp is outside the 5-minute sliding window", async () => {
+    mockKV.get.mockImplementation(async (key: string) => {
+      if (key === "stripe_secret") return "test_stripe_secret";
+      return null;
+    });
+    const bodyData = JSON.stringify({ type: "payment_intent.succeeded", timestamp: Date.now() - 300001 }); // Older than 5 minutes
+    const req = new Request("https://production-domain.com/webhooks/stripe", {
+      method: "POST",
+      headers: { "Stripe-Signature": "valid_but_will_fail" },
+      body: bodyData
+    });
+    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
+      ASGUARD_API_KEY: "test-auth-key",
+      ASGUARD_BLACKLIST: mockKV as any,
+      ASGUARD_TELEMETRY: mockTelemetryKV as any,
+    };
+    const ctx = { waitUntil: vi.fn().mockImplementation((p) => p) } as any;
+    const res = await worker.fetch(req, env, ctx);
+    expect(res.status).toBe(401);
+  });
+
 });

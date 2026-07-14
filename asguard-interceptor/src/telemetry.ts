@@ -12,6 +12,7 @@ export const TelemetryPayloadSchema = z.object({
   country: z.string().optional(),
   colo: z.string().optional(),
   web3WalletAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
+  edgeBotScore: z.number().optional(),
   botScore: z.number().optional(),
 });
 
