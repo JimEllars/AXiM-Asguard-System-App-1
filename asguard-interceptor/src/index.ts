@@ -745,6 +745,13 @@ export default {
         payload.country = (request.cf && request.cf.country) ? request.cf.country : "XX";
         payload.colo = (request.cf && request.cf.colo) ? request.cf.colo : "UNKNOWN";
 
+        // Task 2: Cloudflare Bot Management Telemetry Metrics
+        if (request.cf && (request.cf as any).botManagement && (request.cf as any).botManagement.score !== undefined) {
+            payload.botScore = (request.cf as any).botManagement.score;
+            if (!payload.details) payload.details = {};
+            payload.details.botScore = payload.botScore; // Inject into details block as per instructions
+        }
+
         payload.requestMethod = request.method;
         payload.targetResource = url.pathname;
         payload.signatureMetadata = request.headers.get("X-Asguard-Signature") || "UNKNOWN";

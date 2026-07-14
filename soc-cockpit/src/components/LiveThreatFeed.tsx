@@ -4,7 +4,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { z } from 'zod';
 import { supabase } from '@/utils/supabaseClient';
-import { useActiveAccount, useReadContract } from 'thirdweb/react';
+import { useActiveAccount, useReadContract, useDisconnect, useActiveWallet } from 'thirdweb/react';
 import { createThirdwebClient, getContract } from 'thirdweb';
 import { arbitrum } from 'thirdweb/chains';
 
@@ -156,6 +156,8 @@ export default function LiveThreatFeed() {
   const [realtimeStatus, setRealtimeStatus] = useState<'CONNECTED' | 'DISCONNECTED' | 'ERROR'>('DISCONNECTED');
   const activeAccount = useActiveAccount();
 
+  const { disconnect } = useDisconnect();
+  const activeWallet = useActiveWallet();
   const { data: sbtBalance, isLoading: isSbtLoading } = useReadContract({
     contract: adminSbtContract,
     method: "function balanceOf(address owner) view returns (uint256)",
@@ -946,6 +948,14 @@ export default function LiveThreatFeed() {
           <p className="text-red-500 font-mono text-lg font-bold tracking-widest uppercase">
             [ CRYPTOGRAPHIC AUTHORIZATION FAILURE: AXIM SECURITY ADMIN SOULBOUND TOKEN REQUIRED ]
           </p>
+          <div className="mt-8 flex justify-center">
+            <button
+              onClick={() => { if (activeWallet) disconnect(activeWallet); }}
+              className="px-6 py-3 bg-red-950 hover:bg-red-900 border border-red-500 text-red-500 font-mono text-sm font-bold tracking-wider uppercase transition-colors"
+            >
+              [ DISCONNECT WALLET ]
+            </button>
+          </div>
         </div>
       </div>
     );
