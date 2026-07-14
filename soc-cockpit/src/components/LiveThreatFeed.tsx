@@ -476,6 +476,7 @@ export default function LiveThreatFeed() {
 
       } catch (err: unknown) {
         console.error("Error fetching data:", err);
+        setHealthStatus('degraded');
         if (err instanceof Error && err.name === "AbortError") {
           setError("[ EDGE SYNC TIMEOUT: RETRYING ADAPTIVE INTERCEPTOR CHANNELS ]");
         } else if (err instanceof Error) {
@@ -508,7 +509,12 @@ export default function LiveThreatFeed() {
             setTimeout(() => setFlash(false), 500);
 
             if (payload.new) {
-               const newLog = payload.new;
+               const newLog: Record<string, unknown> = { ...payload.new };
+               for (const key in newLog) {
+                   if (newLog[key] === null) {
+                       newLog[key] = undefined;
+                   }
+               }
                if (newLog.eventType) {
                    const parsed = TelemetryPayloadSchema.safeParse(newLog);
                    if (parsed.success) {
@@ -623,6 +629,7 @@ export default function LiveThreatFeed() {
               addToast("SYNC COMPLETE", "emerald");
            }
        } catch (err) {
+           setHealthStatus('degraded');
            if ((err as Error).name === 'AbortError') {
                console.log('Manual sync aborted due to new request');
                setIsSyncing(false);
@@ -1276,12 +1283,12 @@ export default function LiveThreatFeed() {
                    const isActionLoading = actionLoading[event.sourceIp];
 
                    return (
-                     <div key={`${event.sourceIp}-${event.timestamp}-${idx}`} className="flex flex-col border border-slate-800 rounded bg-slate-900/40 hover:bg-slate-800/50 transition-colors">
+                     <div key={`${event.sourceIp}-${event.timestamp}-${idx}`} className="flex flex-col border border-slate-800/50 bg-slate-950/40 font-mono tracking-tight hover:bg-slate-800/50 transition-colors">
                      <div
                        className={`grid grid-cols-6 gap-4 items-center p-3 text-sm text-slate-300 font-mono cursor-pointer ${isActionLoading ? 'opacity-50 pointer-events-none' : ''}`}
                        onClick={() => setExpandedRow(isExpanded ? null : idx)}
                      >
-                       <div className="text-slate-500">
+                       <div className="text-slate-500 font-mono">
                           {new Date(event.timestamp).toLocaleTimeString('en-GB')}
                        </div>
                        <div className="text-slate-300 truncate">
@@ -1291,7 +1298,7 @@ export default function LiveThreatFeed() {
                           <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-900/50 text-indigo-300 border border-indigo-700/50">
                              {event.country || 'XX'}
                           </span>
-                          <span className="text-[10px] text-slate-500 font-mono tracking-tighter">
+                          <span className="text-[10px] text-slate-500 font-mono tracking-tight">
                              [{event.colo || 'N/A'}]
                           </span>
                        </div>
@@ -1428,7 +1435,7 @@ export default function LiveThreatFeed() {
                    const keyName = blockItem.name;
                    const isLifting = actionLoading[keyName];
                    return (
-                   <div key={idx} className={`flex flex-col gap-2 p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono ${isLifting ? 'opacity-50 pointer-events-none' : ''}`}>
+                   <div key={idx} className={`flex flex-col gap-2 p-3 rounded border border-slate-800/50 bg-slate-950/40 font-mono tracking-tight hover:bg-slate-800/50 transition-colors text-sm text-slate-300 ${isLifting ? 'opacity-50 pointer-events-none' : ''}`}>
                      <div className="flex justify-between items-center">
                        <div className="flex items-center min-w-0">
                          {keyName.startsWith('wallet:') && (
@@ -1436,7 +1443,7 @@ export default function LiveThreatFeed() {
                              WALLET
                            </span>
                          )}
-                         <span className="truncate">{keyName}</span>
+                         <span className="truncate font-mono">{keyName}</span>
                          {blockItem.expiration && (
                            <LeaseTimer expiration={blockItem.expiration} />
                          )}
@@ -1521,8 +1528,8 @@ export default function LiveThreatFeed() {
                   </div>
                ) : (
                  paginatedAudit.map((event, idx) => (
-                   <div key={`${event.target || "target"}-${event.timestamp}-${idx}`} className="grid grid-cols-4 gap-4 items-center p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono">
-                     <div className="text-slate-500">
+                   <div key={`${event.target || "target"}-${event.timestamp}-${idx}`} className="grid grid-cols-4 gap-4 items-center p-3 rounded border border-slate-800/50 bg-slate-950/40 font-mono tracking-tight hover:bg-slate-800/50 transition-colors text-sm text-slate-300">
+                     <div className="text-slate-500 font-mono">
                         {new Date(event.timestamp).toLocaleString('en-GB')}
                      </div>
                      <div>
@@ -1608,7 +1615,7 @@ export default function LiveThreatFeed() {
                ) : (
                  filteredDlq.map((event, idx) => (
                    <div key={`${event.originNode || "origin"}-${event.timestamp}-${idx}`} className="grid grid-cols-5 gap-4 items-center p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono">
-                     <div className="text-slate-500">
+                     <div className="text-slate-500 font-mono">
                         {new Date(event.timestamp).toLocaleString('en-GB')}
                      </div>
                      <div>
