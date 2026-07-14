@@ -139,14 +139,14 @@ export default {
 
       try {
         const bodyData = JSON.parse(bodyText);
-        const timestamp: number = bodyData.timestamp;
+        const incomingTimestamp: number = bodyData.timestamp;
 
-        if (!timestamp || typeof timestamp !== 'number') {
+        if (!incomingTimestamp || typeof incomingTimestamp !== 'number') {
           return new Response("Unauthorized", { status: 401, headers: getCorsHeaders(request, env, isMutation) });
         }
 
-        const now = Date.now();
-        if (Math.abs(now - timestamp) > 300000) {
+        const currentTime = Date.now();
+        if (Math.abs(currentTime - incomingTimestamp) > 300000) {
           return new Response("Unauthorized", { status: 401, headers: getCorsHeaders(request, env, isMutation) });
         }
 

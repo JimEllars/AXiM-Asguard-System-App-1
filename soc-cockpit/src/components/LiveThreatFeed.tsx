@@ -20,6 +20,7 @@ const TelemetryPayloadSchema = z.object({
   details: z.record(z.unknown()).optional(),
   country: z.string().optional(),
   colo: z.string().optional(),
+  edgeBotScore: z.number().optional(),
 });
 type TelemetryPayload = z.infer<typeof TelemetryPayloadSchema>;
 
@@ -1319,6 +1320,19 @@ export default function LiveThreatFeed() {
                      </div>
                      {isExpanded && (
                        <div className="p-4 bg-slate-950 border-t border-slate-800 m-1 rounded overflow-x-auto relative">
+                         {typeof event.edgeBotScore === 'number' && (
+                           <div className="mb-2">
+                             {event.edgeBotScore < 30 ? (
+                               <span className="inline-block bg-red-950/50 text-red-500 font-bold border border-red-900 px-2 py-1 rounded text-xs">
+                                 [ ANTIBOT TRIAGE &mdash; BOT SCORE: {event.edgeBotScore} ]
+                               </span>
+                             ) : (
+                               <span className="inline-block bg-slate-800 text-slate-400 border border-slate-700 px-2 py-1 rounded text-xs">
+                                 [ BOT SCORE: {event.edgeBotScore} ]
+                               </span>
+                             )}
+                           </div>
+                         )}
                          <div className="flex justify-between items-center mb-2">
                            <div className="text-xs text-slate-500 uppercase tracking-wider">Raw Payload Inspector</div>
                            <button
