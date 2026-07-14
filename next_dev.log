@@ -1,0 +1,34 @@
+
+> soc-cockpit@0.1.0 dev
+> next dev
+
+   ▲ Next.js 15.5.2
+   - Local:        http://localhost:3000
+   - Network:      http://192.168.0.2:3000
+
+ ✓ Starting...
+ ✓ Ready in 2.1s
+ ○ Compiling / ...
+ ⚠ ./node_modules/@coinbase/cdp-sdk/node_modules/ox/_esm/tempo/internal/virtualMasterPool.js
+Critical dependency: the request of a dependency is an expression
+
+Import trace for requested module:
+./node_modules/@coinbase/cdp-sdk/node_modules/ox/_esm/tempo/internal/virtualMasterPool.js
+./node_modules/@coinbase/cdp-sdk/node_modules/ox/_esm/tempo/VirtualMaster.js
+./node_modules/@coinbase/cdp-sdk/node_modules/ox/_esm/tempo/index.js
+./node_modules/@coinbase/cdp-sdk/node_modules/viem/_esm/tempo/chainConfig.js
+./node_modules/@coinbase/cdp-sdk/node_modules/viem/_esm/chains/definitions/tempo.js
+./node_modules/@coinbase/cdp-sdk/node_modules/viem/_esm/chains/index.js
+./node_modules/@coinbase/cdp-sdk/_esm/accounts/evm/networkToChainResolver.js
+./node_modules/@coinbase/cdp-sdk/_esm/accounts/evm/toEvmSmartAccount.js
+./node_modules/@coinbase/cdp-sdk/_esm/accounts/evm/toEvmDelegatedAccount.js
+./node_modules/@coinbase/cdp-sdk/_esm/index.js
+./node_modules/@base-org/account/dist/interface/payment/getOrCreateSubscriptionOwnerWallet.js
+./node_modules/@base-org/account/dist/interface/payment/index.node.js
+./node_modules/@base-org/account/dist/index.node.js
+./node_modules/thirdweb/dist/esm/wallets/base-account/base-account-web.js
+./node_modules/thirdweb/dist/esm/wallets/create-wallet.js
+./node_modules/thirdweb/dist/esm/react/web/hooks/wallets/useAutoConnect.js
+./node_modules/thirdweb/dist/esm/exports/react.js
+./src/app/layout.tsx
+ GET / 200 in 294ms
