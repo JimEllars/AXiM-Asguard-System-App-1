@@ -138,6 +138,18 @@ export default {
       const bodyText = await clonedRequest.text();
 
       try {
+        const bodyData = JSON.parse(bodyText);
+        const timestamp: number = bodyData.timestamp;
+
+        if (!timestamp || typeof timestamp !== 'number') {
+          return new Response("Unauthorized", { status: 401, headers: getCorsHeaders(request, env, isMutation) });
+        }
+
+        const now = Date.now();
+        if (Math.abs(now - timestamp) > 300000) {
+          return new Response("Unauthorized", { status: 401, headers: getCorsHeaders(request, env, isMutation) });
+        }
+
         const encoder = new TextEncoder();
         const key = await crypto.subtle.importKey(
           "raw", encoder.encode(secret),
@@ -749,7 +761,7 @@ export default {
         if (request.cf && (request.cf as any).botManagement && (request.cf as any).botManagement.score !== undefined) {
             payload.botScore = (request.cf as any).botManagement.score;
             if (!payload.details) payload.details = {};
-            payload.details.botScore = payload.botScore; // Inject into details block as per instructions
+            payload.details.edgeBotScore = payload.botScore; // Inject into details block as per instructions
         }
 
         payload.requestMethod = request.method;

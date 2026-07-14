@@ -158,10 +158,15 @@ export default function LiveThreatFeed() {
 
   const { disconnect } = useDisconnect();
   const activeWallet = useActiveWallet();
+  const [sbtEvalTrigger, setSbtEvalTrigger] = useState<number>(Date.now());
+
+  // Restrict re-evaluation loops to manual synchronization events or on page mount
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const sbtParams = React.useMemo(() => [activeAccount?.address || "0x0000000000000000000000000000000000000000"] as const, [activeAccount?.address, sbtEvalTrigger]);
   const { data: sbtBalance, isLoading: isSbtLoading } = useReadContract({
     contract: adminSbtContract,
     method: "function balanceOf(address owner) view returns (uint256)",
-    params: [activeAccount?.address || "0x0000000000000000000000000000000000000000"],
+    params: sbtParams as readonly [string],
     queryOptions: {
       enabled: !!activeAccount?.address,
     },
@@ -574,6 +579,7 @@ export default function LiveThreatFeed() {
     const abortController = new AbortController();
     syncAbortControllerRef.current = abortController;
     setIsSyncing(true);
+    setSbtEvalTrigger(Date.now());
     const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
     const apiKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY;
     if (workerUrl && apiKey) {
