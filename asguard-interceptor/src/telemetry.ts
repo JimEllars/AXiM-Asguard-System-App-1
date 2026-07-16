@@ -14,6 +14,7 @@ export const TelemetryPayloadSchema = z.object({
   web3WalletAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
   edgeBotScore: z.number().optional(),
   botScore: z.number().optional(),
+  appOrigin: z.string().optional(),
 });
 
 export type TelemetryPayload = z.infer<typeof TelemetryPayloadSchema>;

@@ -142,12 +142,12 @@ export default {
         const incomingTimestamp: number = bodyData.timestamp;
 
         if (!incomingTimestamp || typeof incomingTimestamp !== 'number') {
-          return new Response("Unauthorized", { status: 401, headers: getCorsHeaders(request, env, isMutation) });
+          throw new Error("Invalid timestamp");
         }
 
         const currentTime = Date.now();
         if (Math.abs(currentTime - incomingTimestamp) > 300000) {
-          return new Response("Unauthorized", { status: 401, headers: getCorsHeaders(request, env, isMutation) });
+          throw new Error("Timestamp out of bounds");
         }
 
         const encoder = new TextEncoder();
@@ -161,9 +161,26 @@ export default {
         const validSignature = signatureArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
         if (signature !== validSignature) {
-          return new Response("Unauthorized", { status: 401, headers: getCorsHeaders(request, env, isMutation) });
+          throw new Error("Signature mismatch");
         }
       } catch (err) {
+        const timestamp = Date.now();
+        const payload = {
+          sourceIp: request.headers.get("cf-connecting-ip") || "unknown",
+          timestamp: timestamp,
+          eventType: "signature_tampering",
+          severity: "high",
+          requestMethod: request.method,
+          targetResource: url.pathname,
+          appOrigin: request.headers.get("X-Axim-App-ID") || "AXiM Macro Core Gateway",
+          details: {
+            error: err instanceof Error ? err.message : String(err)
+          },
+          country: (request.cf && request.cf.country) ? request.cf.country : "XX",
+          colo: (request.cf && request.cf.colo) ? request.cf.colo : "UNKNOWN"
+        };
+        ctx.waitUntil(logTelemetry(payload, env));
+
         return new Response("Unauthorized", { status: 401, headers: getCorsHeaders(request, env, isMutation) });
       }
     }
@@ -716,7 +733,8 @@ export default {
             fileTrace: rawPayload.fileTrace || "Unknown Stack Trace"
           },
           country: (request.cf && request.cf.country) ? request.cf.country : "XX",
-          colo: (request.cf && request.cf.colo) ? request.cf.colo : "UNKNOWN"
+          colo: (request.cf && request.cf.colo) ? request.cf.colo : "UNKNOWN",
+          appOrigin: request.headers.get("X-Axim-App-ID") || "AXiM Macro Core Gateway"
         };
 
         const parseResult = TelemetryPayloadSchema.safeParse(payload);
@@ -756,6 +774,14 @@ export default {
         // Enrich with Cloudflare metadata
         payload.country = (request.cf && request.cf.country) ? request.cf.country : "XX";
         payload.colo = (request.cf && request.cf.colo) ? request.cf.colo : "UNKNOWN";
+
+        // Task 1: Map Tenant App-ID Headers
+        const appIdHeader = request.headers.get("X-Axim-App-ID");
+        if (appIdHeader) {
+            payload.appOrigin = appIdHeader;
+        } else {
+            payload.appOrigin = "AXiM Macro Core Gateway";
+        }
 
         // Task 2: Cloudflare Bot Management Telemetry Metrics
         if (request.cf && (request.cf as any).botManagement && (request.cf as any).botManagement.score !== undefined) {
