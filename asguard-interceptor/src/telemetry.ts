@@ -14,7 +14,13 @@ export const TelemetryPayloadSchema = z.object({
   web3WalletAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
   edgeBotScore: z.number().optional(),
   botScore: z.number().optional(),
-  appOrigin: z.string().optional(),
+  appOrigin: z.enum([
+    'AXiM Academy',
+    'The Green Machine',
+    'Nexus CRM',
+    'Web3 Frontend',
+    'AXiM Macro Core Gateway'
+  ]).catch('AXiM Macro Core Gateway'),
 });
 
 export type TelemetryPayload = z.infer<typeof TelemetryPayloadSchema>;
