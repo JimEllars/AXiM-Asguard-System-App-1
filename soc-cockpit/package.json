@@ -23,6 +23,7 @@
     "zod": "^3.22.0"
   },
   "devDependencies": {
+    "@eslint/eslintrc": "^3.3.6",
     "@opennextjs/cloudflare": "^1.20.1",
     "@tailwindcss/postcss": "^4",
     "@types/jsonwebtoken": "^9.0.10",

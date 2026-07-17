@@ -178,10 +178,10 @@ export default function LiveThreatFeed() {
 
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState(false);
-  const [severityFilter, setSeverityFilter] = useState<'all' | 'high' | 'medium' | 'low'>((searchParams.get('severity') as 'all' | 'high' | 'medium' | 'low') || 'all');
-  const [appOriginFilter, setAppOriginFilter] = useState<string>(searchParams.get('origin') || 'all');
-    const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
-  const [localSearchQuery, setLocalSearchQuery] = useState(searchParams.get('search') || '');
+  const [severityFilter, setSeverityFilter] = useState<'all' | 'high' | 'medium' | 'low'>((searchParams?.get('severity') as 'all' | 'high' | 'medium' | 'low') || 'all');
+  const [appOriginFilter, setAppOriginFilter] = useState<string>(searchParams?.get('origin') || 'all');
+    const [searchQuery, setSearchQuery] = useState(searchParams?.get('search') || '');
+  const [localSearchQuery, setLocalSearchQuery] = useState(searchParams?.get('search') || '');
   const [auditSearchQuery, setAuditSearchQuery] = useState('');
   const [localAuditSearchQuery, setLocalAuditSearchQuery] = useState('');
 
@@ -229,7 +229,7 @@ export default function LiveThreatFeed() {
       isInitialMount.current = false;
       return;
     }
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams(searchParams?.toString() || "");
     if (searchQuery) {
       params.set('search', searchQuery);
     } else {
