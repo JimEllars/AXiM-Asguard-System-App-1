@@ -31,6 +31,7 @@ const AuditEventSchema = z.object({
   ttl: z.number().optional(),
   timestamp: z.number(),
   signature: z.string().optional(),
+  authorizedByWallet: z.string().optional(),
 });
 type AuditEvent = z.infer<typeof AuditEventSchema>;
 
@@ -1192,34 +1193,40 @@ export default function LiveThreatFeed() {
       </div>
 
       {/* Filter Bar */}
-      <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-4 flex gap-4 items-center">
-        <input
-          type="text"
-          placeholder="Search by IP or Signature..."
-          className="bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-sm text-slate-200 w-64 focus:outline-none focus:border-slate-500 font-mono"
-          value={localSearchQuery}
-          onChange={(e) => setLocalSearchQuery(e.target.value)}
-        />
-        <select
-          className="bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-500 uppercase tracking-wider font-semibold"
-          value={appOriginFilter}
-          onChange={(e) => setAppOriginFilter(e.target.value)}
-        >
-          <option value="all">App Origin: ALL</option>
-          <option value="VendOS">App Origin: VendOS</option>
-          <option value="B2B Scrapers">App Origin: B2B Scrapers</option>
-          <option value="CRM Bridge">App Origin: CRM Bridge</option>
-        </select>
-        <select
-          className="bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-500 uppercase tracking-wider font-semibold"
-          value={severityFilter}
-          onChange={(e) => setSeverityFilter(e.target.value as 'all' | 'high' | 'medium' | 'low')}
-        >
-          <option value="all">Severity: ALL</option>
-          <option value="high">Severity: HIGH / CRITICAL</option>
-          <option value="medium">Severity: MEDIUM</option>
-          <option value="low">Severity: LOW</option>
-        </select>
+      <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-4 flex flex-col gap-4">
+        <div className="flex gap-4 items-center w-full">
+          <input
+            type="text"
+            placeholder="Search by IP or Signature..."
+            className="bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-sm text-slate-200 w-64 focus:outline-none focus:border-slate-500 font-mono"
+            value={localSearchQuery}
+            onChange={(e) => setLocalSearchQuery(e.target.value)}
+          />
+          <select
+            className="bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-500 uppercase tracking-wider font-semibold"
+            value={severityFilter}
+            onChange={(e) => setSeverityFilter(e.target.value as 'all' | 'high' | 'medium' | 'low')}
+          >
+            <option value="all">Severity: ALL</option>
+            <option value="high">Severity: HIGH / CRITICAL</option>
+            <option value="medium">Severity: MEDIUM</option>
+            <option value="low">Severity: LOW</option>
+          </select>
+        </div>
+
+        {/* App Origin Pill Selectors */}
+        <div className="flex gap-2 items-center flex-wrap">
+          <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mr-2">App Origin:</div>
+          {['all', 'AXiM Academy', 'The Green Machine', 'Nexus CRM', 'Web3 Frontend', 'AXiM Macro Core Gateway'].map(origin => (
+            <button
+              key={origin}
+              onClick={() => setAppOriginFilter(origin)}
+              className={`px-3 py-1 rounded-full text-xs font-mono transition-colors border ${appOriginFilter === origin ? 'bg-indigo-900/50 text-indigo-300 border-indigo-700' : 'bg-slate-950/50 text-slate-400 border-slate-800 hover:bg-slate-800/80 hover:text-slate-300'}`}
+            >
+              {origin === 'all' ? 'ALL ORIGINS' : origin}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Transient Error Banner */}
@@ -1510,6 +1517,7 @@ export default function LiveThreatFeed() {
                  <div>Action</div>
                  <div>Target</div>
                  <div>TTL</div>
+                 <div>Authorized By</div>
               </div>
             </div>
 
@@ -1528,7 +1536,7 @@ export default function LiveThreatFeed() {
                   </div>
                ) : (
                  paginatedAudit.map((event, idx) => (
-                   <div key={`${event.target || "target"}-${event.timestamp}-${idx}`} className="grid grid-cols-4 gap-4 items-center p-3 rounded border border-slate-800/50 bg-slate-950/40 font-mono tracking-tight hover:bg-slate-800/50 transition-colors text-sm text-slate-300">
+                   <div key={`${event.target || "target"}-${event.timestamp}-${idx}`} className="grid grid-cols-5 gap-4 items-center p-3 rounded border border-slate-800/50 bg-slate-950/40 font-mono tracking-tight hover:bg-slate-800/50 transition-colors text-sm text-slate-300">
                      <div className="text-slate-500 font-mono">
                         {new Date(event.timestamp).toLocaleString('en-GB')}
                      </div>
@@ -1542,6 +1550,9 @@ export default function LiveThreatFeed() {
                      </div>
                      <div className="text-slate-500">
                         {event.ttl ? `${event.ttl}s` : 'N/A'}
+                     </div>
+                     <div className="text-slate-400 truncate">
+                        {event.authorizedByWallet || 'N/A'}
                      </div>
                    </div>
                  ))

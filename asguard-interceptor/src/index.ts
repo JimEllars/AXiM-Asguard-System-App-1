@@ -678,6 +678,7 @@ export default {
         }
 
         const timestamp = Date.now();
+        const authorizedByWallet = request.headers.get("X-Asguard-Signature") || "UNKNOWN";
         const ttl =
           payload.action === "block" ? payload.ttl || 86400 : undefined;
         ctx.waitUntil(
@@ -691,6 +692,7 @@ export default {
                     target: payload.key,
                     ttl: ttl,
                     timestamp: timestamp,
+                    authorizedByWallet: payload.action === "unblock" ? authorizedByWallet : undefined,
                   })
                 );
               };
@@ -708,6 +710,7 @@ export default {
                   target: payload.key,
                   ttl: ttl,
                   timestamp: timestamp,
+                  authorizedByWallet: payload.action === "unblock" ? authorizedByWallet : undefined,
                 }
               });
               if (localEdgeLoggingBuffer.length > 100) {
