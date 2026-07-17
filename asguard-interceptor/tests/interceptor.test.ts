@@ -340,6 +340,35 @@ describe("Asguard Interceptor", () => {
     expect(data).toEqual([{ name: "ip:1.2.3.4", expiration: 1234567890 }, { name: "token:abc" }]);
   });
 
+  it("POST /blocklist should block manual requests from revoked admin wallets", async () => {
+    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
+      ASGUARD_API_KEY: "test-api-key",
+      ASGUARD_BLACKLIST: {
+         get: vi.fn().mockImplementation(async (key: string) => {
+            if (key === "wallet:0xRevokedAdmin") return "1";
+            return null;
+         }),
+         put: vi.fn(),
+         delete: vi.fn()
+      } as any,
+      ASGUARD_TELEMETRY: { get: vi.fn(), put: vi.fn(), delete: vi.fn() } as any,
+    };
+    const ctx = { waitUntil: vi.fn() } as any;
+
+    const req = new Request("https://asguard.local/blocklist", {
+      method: "POST",
+      headers: {
+         "X-Asguard-Auth": "test-api-key",
+         "X-Asguard-Signature": "0xRevokedAdmin"
+      },
+      body: JSON.stringify({ key: "test-ip", action: "block" })
+    });
+    const res = await worker.fetch(req, env, ctx);
+    expect(res.status).toBe(403);
+    const text = await res.text();
+    expect(text).toContain("Forbidden");
+  });
+
   it("handles POST /blocklist to block an IP", async () => {
     const request = new Request("https://example.com/blocklist", {
       method: "POST",

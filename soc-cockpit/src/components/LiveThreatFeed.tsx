@@ -138,6 +138,7 @@ export default function LiveThreatFeed() {
   const [isLoading, setIsLoading] = useState(true);
   const [healthStatus, setHealthStatus] = useState<'ok' | 'degraded' | 'unknown'>('unknown');
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isCooldown, setIsCooldown] = useState(false);
   const [edgeMetrics, setEdgeMetrics] = useState({ rateLimitSize: 0, penaltyLedgerSize: 0 });
   const [edgeLatency, setEdgeLatency] = useState<string | null>(null);
   const [velocityHistory, setVelocityHistory] = useState<('up' | 'down' | 'none')[]>(() => {
@@ -588,6 +589,8 @@ export default function LiveThreatFeed() {
     const abortController = new AbortController();
     syncAbortControllerRef.current = abortController;
     setIsSyncing(true);
+    setIsCooldown(true);
+    setTimeout(() => setIsCooldown(false), 2000);
     setSbtEvalTrigger(Date.now());
     const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
     const apiKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY;
@@ -1008,8 +1011,8 @@ export default function LiveThreatFeed() {
       )}
 
       {/* Synchronization Clock */}
-      <div className="flex flex-col sm:flex-row justify-between items-center gap-2">
-        <div className={`text-xs font-mono border px-3 py-1.5 rounded flex items-center gap-2 ${
+      <div className="flex flex-col sm:flex-row flex-wrap justify-between items-center gap-2 md:gap-3">
+        <div className={`text-xs font-mono border px-2 py-1.5 md:px-3 md:py-2 rounded flex items-center gap-2 ${
           healthStatus === 'ok'
             ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300'
             : healthStatus === 'degraded'
@@ -1020,7 +1023,7 @@ export default function LiveThreatFeed() {
         </div>
 
         {/* Memory Allocation Tooltip */}
-        <div className="relative group text-xs font-mono border px-3 py-1.5 rounded flex items-center gap-2 bg-slate-900 border-slate-700 text-slate-400 cursor-help transition-colors hover:bg-slate-800">
+        <div className="relative group text-xs font-mono border px-2 py-1.5 md:px-3 md:py-2 rounded flex items-center gap-2 bg-slate-900 border-slate-700 text-slate-400 cursor-help transition-colors hover:bg-slate-800">
            EDGE METRICS [?]
            <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max max-w-xs opacity-0 transition-opacity group-hover:opacity-100 bg-slate-800 text-slate-200 text-[10px] rounded px-3 py-2 border border-slate-600 shadow-xl z-50 whitespace-nowrap">
              [ FLOOD LEDGER: {edgeMetrics.rateLimitSize}/10000 | PENALTY LEDGER: {edgeMetrics.penaltyLedgerSize}/1000 ]
@@ -1028,14 +1031,14 @@ export default function LiveThreatFeed() {
         </div>
 
         {/* Wallet Status Badge */}
-        <div className="text-xs font-mono border px-3 py-1.5 rounded transition-colors duration-300 flex items-center gap-2 bg-slate-950/80 border-slate-700 text-slate-300">
+        <div className="text-xs font-mono border px-2 py-1.5 md:px-3 md:py-2 rounded transition-colors duration-300 flex items-center gap-2 bg-slate-950/80 border-slate-700 text-slate-300">
           {activeAccount ? (
             <span>WALLET: {activeAccount.address.slice(0, 4)}...{activeAccount.address.slice(-2)}</span>
           ) : (
             <span>[ AUTH: WEB2 PROXIED GATEWAY MODE ]</span>
           )}
         </div>
-        <div className={`text-xs font-mono border px-3 py-1.5 rounded transition-colors duration-300 flex items-center gap-2 ${
+        <div className={`text-xs font-mono border px-2 py-1.5 md:px-3 md:py-2 rounded transition-colors duration-300 flex items-center gap-2 ${
           realtimeStatus === 'CONNECTED'
             ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300'
             : 'bg-amber-950/80 border-amber-500 text-amber-300'
@@ -1052,15 +1055,15 @@ export default function LiveThreatFeed() {
             <span>Realtime Sync Interrupted — Re-establishing Edge Uplink...</span>
           )}
         </div>
-        <div className={`text-xs font-mono border px-3 py-1.5 rounded transition-colors duration-300 ${flash ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300' : 'bg-slate-900 border-slate-700 text-slate-400'}`}>
+        <div className={`text-xs font-mono border px-2 py-1.5 md:px-3 md:py-2 rounded transition-colors duration-300 ${flash ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300' : 'bg-slate-900 border-slate-700 text-slate-400'}`}>
           SYNC INTERVAL: 5000MS | LAST INDEXED: {lastSynced ? lastSynced.toLocaleTimeString('en-GB') : '--:--:--'}
         </div>
         <button
            onClick={handleManualSync}
-           disabled={isSyncing}
-           className="text-xs font-mono border px-3 py-1.5 rounded transition-colors duration-300 bg-slate-800 hover:bg-slate-700 border-slate-600 text-slate-300 flex items-center gap-2 disabled:opacity-50"
+           disabled={isSyncing || isCooldown}
+           className={`text-xs font-mono border px-2 py-1.5 md:px-3 md:py-2 rounded transition-colors duration-300 bg-slate-800 hover:bg-slate-700 border-slate-600 text-slate-300 flex items-center gap-2 disabled:opacity-50 ${isCooldown && !isSyncing ? 'opacity-50' : ''}`}
         >
-           {isSyncing ? '[ SYNCING LOGS... ]' : 'SYNC NOW'}
+           {isSyncing ? '[ SYNCING LOGS... ]' : isCooldown ? '[ COOLING DOWN... ]' : 'SYNC NOW'}
         </button>
       </div>
 
