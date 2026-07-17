@@ -3,6 +3,7 @@ import { TelemetryPayloadSchema } from "./telemetry";
 const rateLimitMap = new Map<string, { count: number; timestamp: number }>();
 const penaltyLedger = new Map<string, { consecutive: number; timestamp: number }>();
 const clientErrorThrottleMap = new Map<string, number[]>();
+const webhookRateLimitMap = new Map<string, number[]>();
 
 function pruneRateLimitMap() {
   const now = Date.now();
@@ -17,6 +18,17 @@ function pruneRateLimitMap() {
     for (const [key, value] of penaltyLedger.entries()) {
       if (now - value.timestamp > 10000) {
         penaltyLedger.delete(key);
+      }
+    }
+  }
+
+  if (webhookRateLimitMap.size > 10000) {
+    for (const [key, timestamps] of webhookRateLimitMap.entries()) {
+      const valid = timestamps.filter(t => now - t <= 60000); // 60s sliding window
+      if (valid.length === 0) {
+        webhookRateLimitMap.delete(key);
+      } else {
+        webhookRateLimitMap.set(key, valid);
       }
     }
   }
@@ -120,6 +132,21 @@ export default {
     // Task 2: Cryptographic Signature Verification for Webhooks
     const url = new URL(request.url);
     if (request.method === "POST" && (url.pathname === "/webhooks/stripe" || url.pathname === "/api/v1/credentials/mint")) {
+
+      // Rate limiting for cryptographic routes (60-second window, max 3 requests)
+      const clientIp = request.headers.get("cf-connecting-ip") || "unknown";
+      if (clientIp !== "unknown") {
+        const now = Date.now();
+        let timestamps = webhookRateLimitMap.get(clientIp) || [];
+        timestamps = timestamps.filter(t => now - t <= 60000);
+        timestamps.push(now);
+        webhookRateLimitMap.set(clientIp, timestamps);
+
+        if (timestamps.length > 3) {
+            return new Response("Too Many Requests", { status: 429, headers: getCorsHeaders(request, env, isMutation) });
+        }
+      }
+
       const isStripe = url.pathname === "/webhooks/stripe";
       const sigHeader = isStripe ? "Stripe-Signature" : "X-Axim-Signature";
       const secretKey = isStripe ? "stripe_secret" : "axim_secret";
@@ -172,7 +199,11 @@ export default {
           severity: "high",
           requestMethod: request.method,
           targetResource: url.pathname,
-          appOrigin: request.headers.get("X-Axim-App-ID") || "AXiM Macro Core Gateway",
+          appOrigin: (() => {
+            const appId = request.headers.get("X-Axim-App-ID");
+            const VALID_APP_IDS = ["AXiM Academy", "The Green Machine", "Nexus CRM", "Web3 Frontend"];
+            return (appId && VALID_APP_IDS.includes(appId)) ? appId : "AXiM Macro Core Gateway";
+          })(),
           details: {
             error: err instanceof Error ? err.message : String(err)
           },
@@ -734,7 +765,11 @@ export default {
           },
           country: (request.cf && request.cf.country) ? request.cf.country : "XX",
           colo: (request.cf && request.cf.colo) ? request.cf.colo : "UNKNOWN",
-          appOrigin: request.headers.get("X-Axim-App-ID") || "AXiM Macro Core Gateway"
+          appOrigin: (() => {
+            const appId = request.headers.get("X-Axim-App-ID");
+            const VALID_APP_IDS = ["AXiM Academy", "The Green Machine", "Nexus CRM", "Web3 Frontend"];
+            return (appId && VALID_APP_IDS.includes(appId)) ? appId : "AXiM Macro Core Gateway";
+          })()
         };
 
         const parseResult = TelemetryPayloadSchema.safeParse(payload);
@@ -776,8 +811,9 @@ export default {
         payload.colo = (request.cf && request.cf.colo) ? request.cf.colo : "UNKNOWN";
 
         // Task 1: Map Tenant App-ID Headers
+        const VALID_APP_IDS = ["AXiM Academy", "The Green Machine", "Nexus CRM", "Web3 Frontend"];
         const appIdHeader = request.headers.get("X-Axim-App-ID");
-        if (appIdHeader) {
+        if (appIdHeader && VALID_APP_IDS.includes(appIdHeader)) {
             payload.appOrigin = appIdHeader;
         } else {
             payload.appOrigin = "AXiM Macro Core Gateway";

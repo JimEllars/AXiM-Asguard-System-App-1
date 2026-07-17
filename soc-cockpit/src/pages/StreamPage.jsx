@@ -51,7 +51,7 @@ export default function StreamPage() {
         </div>
       </div>
 
-      <div className="flex flex-col lg:flex-row gap-6 w-full max-w-7xl mx-auto">
+      <div className="flex flex-col lg:flex-row gap-6 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8">
         <div className="flex-1">
       <div className="w-full max-w-5xl mx-auto">
         <div className="relative aspect-video rounded-xl overflow-hidden border-2 border-slate-700 bg-black/50 backdrop-blur-md shadow-2xl">
