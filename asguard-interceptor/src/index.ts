@@ -587,6 +587,17 @@ export default {
         });
       }
 
+      const operatorWallet = request.headers.get("X-Asguard-Signature");
+      if (operatorWallet) {
+        const isRevoked = await env.ASGUARD_BLACKLIST.get(`wallet:${operatorWallet}`);
+        if (isRevoked) {
+          return new Response("Forbidden: Admin wallet revoked", {
+            status: 403,
+            headers: getCorsHeaders(request, env, isMutation),
+          });
+        }
+      }
+
       const invalidateCacheUrl = new URL(request.url);
       ctx.waitUntil((caches as any).default.delete(new Request(invalidateCacheUrl.toString())));
 
