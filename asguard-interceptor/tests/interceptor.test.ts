@@ -799,3 +799,67 @@ describe("Asguard Interceptor", () => {
   });
 
 });
+describe("Autonomous Blocklist Endpoint", () => {
+  it("rejects autonomous block if no key is provided", async () => {
+    const request = new Request("http://localhost/blocklist/autonomous", {
+      method: "POST",
+      headers: {
+        "Authorization": "Bearer test-ai-mutation-key",
+      },
+      body: JSON.stringify({}),
+    });
+    const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+    const ctx = { waitUntil: vi.fn() } as any;
+    const response = await worker.fetch(request, env as any, ctx);
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects autonomous block if key targets wallet namespace", async () => {
+    const request = new Request("http://localhost/blocklist/autonomous", {
+      method: "POST",
+      headers: {
+        "Authorization": "Bearer test-ai-mutation-key",
+      },
+      body: JSON.stringify({
+        key: "wallet:0x12345"
+      }),
+    });
+    const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+    const ctx = { waitUntil: vi.fn() } as any;
+    const response = await worker.fetch(request, env as any, ctx);
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects autonomous block with invalid token", async () => {
+    const request = new Request("http://localhost/blocklist/autonomous", {
+      method: "POST",
+      headers: {
+        "Authorization": "Bearer wrong-token",
+      },
+      body: JSON.stringify({
+        key: "ip:1.1.1.1"
+      }),
+    });
+    const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+    const ctx = { waitUntil: vi.fn() } as any;
+    const response = await worker.fetch(request, env as any, ctx);
+    expect(response.status).toBe(401);
+  });
+
+  it("applies autonomous block with valid key and caps ttl", async () => {
+    const request = new Request("http://localhost/blocklist/autonomous", {
+      method: "POST",
+      headers: {
+        "Authorization": "Bearer test-ai-mutation-key",
+      },
+      body: JSON.stringify({
+        key: "ip:1.1.1.1",
+        ttl: 1000000 // greater than 7 days max
+      }),
+    });
+    const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+    const ctx = { waitUntil: vi.fn() } as any;
+    const response = await worker.fetch(request, env as any, ctx);
+    expect(response.status).toBe(200);
+  });
+});
