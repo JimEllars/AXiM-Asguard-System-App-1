@@ -49,6 +49,7 @@ export interface Env {
   ASGUARD_TELEMETRY: KVNamespace;
   ASGUARD_API_KEY: string;
   ALLOWED_ORIGIN?: string;
+  ASGUARD_AI_MUTATION_KEY?: string;
 }
 
 function getCorsHeaders(request: Request, env: Env, isMutation: boolean) {
@@ -573,6 +574,68 @@ export default {
       } catch (e) {
         return new Response("Internal Server Error", {
           status: 500,
+          headers: getCorsHeaders(request, env, isMutation),
+        });
+      }
+    }
+
+    if (request.method === "POST" && url.pathname === "/blocklist/autonomous") {
+      const authHeader = request.headers.get("Authorization");
+      if (!env.ASGUARD_AI_MUTATION_KEY || authHeader !== `Bearer ${env.ASGUARD_AI_MUTATION_KEY}`) {
+        return new Response("Unauthorized", {
+          status: 401,
+          headers: getCorsHeaders(request, env, isMutation),
+        });
+      }
+
+      try {
+        const payload = (await request.json()) as {
+          key?: string;
+          ttl?: number;
+          note?: string;
+        };
+
+        if (!payload.key || payload.key.startsWith("wallet:")) {
+          return new Response("Bad Request: Invalid key structural fence", {
+            status: 400,
+            headers: getCorsHeaders(request, env, isMutation),
+          });
+        }
+
+        const maxTtl = 604800; // 7 days in seconds
+        const ttl = (payload.ttl && payload.ttl <= maxTtl) ? payload.ttl : maxTtl;
+
+        const options: KVNamespacePutOptions = {
+          expirationTtl: ttl,
+        };
+
+        if (payload.note !== undefined) {
+          options.metadata = { note: payload.note };
+        } else {
+          options.metadata = { note: "Autonomous AI Triage Mitigation" };
+        }
+
+        ctx.waitUntil(
+          (async () => {
+            try {
+              await Promise.race([
+                env.ASGUARD_BLACKLIST.put(payload.key!, "1", options),
+                new Promise((_, r) => setTimeout(() => r(new Error("Timeout")), 5000))
+              ]);
+            } catch (e) {
+              console.error("Failed to update blocklist", e);
+              localEdgeLoggingBuffer.push({ type: 'blacklist_put_autonomous', key: payload.key, options });
+            }
+          })()
+        );
+
+        return new Response("Autonomous Mitigation Applied", {
+          status: 200,
+          headers: getCorsHeaders(request, env, isMutation),
+        });
+      } catch (e) {
+        return new Response("Bad Request", {
+          status: 400,
           headers: getCorsHeaders(request, env, isMutation),
         });
       }

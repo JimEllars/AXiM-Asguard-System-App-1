@@ -1453,6 +1453,11 @@ export default function LiveThreatFeed() {
                              WALLET
                            </span>
                          )}
+                         {(blockItem.note && typeof blockItem.note === 'string' && (blockItem.note.toLowerCase().includes('autonomous') || blockItem.note.toLowerCase().includes('ai'))) && (
+                           <span className="text-[9px] font-bold px-1.5 py-0.5 rounded text-indigo-400 border border-indigo-900/50 bg-indigo-950/30 mr-2">
+                             AUTONOMOUS BLOCK
+                           </span>
+                         )}
                          <span className="truncate font-mono">{keyName}</span>
                          {blockItem.expiration && (
                            <LeaseTimer expiration={blockItem.expiration} />
