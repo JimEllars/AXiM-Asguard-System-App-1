@@ -101,6 +101,48 @@ export default {
         } catch (e) {
           console.error("Scheduled cleanup failed", e);
         }
+
+        if (localEdgeLoggingBuffer.length > 0) {
+          try {
+            const bufferSnapshot = [...localEdgeLoggingBuffer];
+            const promises = bufferSnapshot.map(async (item) => {
+              if (item.type === 'blacklist_put' || item.type === 'blacklist_put_autonomous') {
+                return env.ASGUARD_BLACKLIST.put(item.key, "1", item.options || { expirationTtl: 86400 });
+              } else if (item.type === 'blacklist_delete') {
+                return env.ASGUARD_BLACKLIST.delete(item.key);
+              } else if (item.type === 'audit' || item.type === 'audit_error') {
+                const recentEventsStr = await env.ASGUARD_TELEMETRY.get("recent_events", { type: "json" }) || [];
+                const existing = Array.isArray(recentEventsStr) ? recentEventsStr : [];
+                const payload = item.payload || item;
+                const toSave = [payload, ...existing].slice(0, 50);
+                return env.ASGUARD_TELEMETRY.put("recent_events", JSON.stringify(toSave));
+              } else if (item.type === 'dlq_replay_error') {
+                // Not standard, skip or treat as telemetry
+                return Promise.resolve();
+              } else {
+                // Default telemetry event
+                const recentEventsStr = await env.ASGUARD_TELEMETRY.get("recent_events", { type: "json" }) || [];
+                const existing = Array.isArray(recentEventsStr) ? recentEventsStr : [];
+                const toSave = [item, ...existing].slice(0, 50);
+                return env.ASGUARD_TELEMETRY.put("recent_events", JSON.stringify(toSave));
+              }
+            });
+
+            const results = await Promise.allSettled(promises);
+
+            // Remove successful items from local buffer
+            for (let i = results.length - 1; i >= 0; i--) {
+               if (results[i].status === 'fulfilled') {
+                  const idx = localEdgeLoggingBuffer.indexOf(bufferSnapshot[i]);
+                  if (idx !== -1) {
+                     localEdgeLoggingBuffer.splice(idx, 1);
+                  }
+               }
+            }
+          } catch (err) {
+            console.error("Scheduled buffer flush failed", err);
+          }
+        }
       })()
     );
   },
@@ -364,7 +406,7 @@ export default {
           timestamp: Date.now()
         }), {
           status: 200,
-          headers: { ...getCorsHeaders(request, env, isMutation), "Content-Type": "application/json" }
+          headers: { ...getCorsHeaders(request, env, isMutation), "Content-Type": "application/json", "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" }
         });
       } catch (err: any) {
         return new Response(JSON.stringify({
@@ -373,7 +415,7 @@ export default {
           timestamp: Date.now()
         }), {
           status: 500,
-          headers: { ...getCorsHeaders(request, env, isMutation), "Content-Type": "application/json" }
+          headers: { ...getCorsHeaders(request, env, isMutation), "Content-Type": "application/json", "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" }
         });
       }
     }
@@ -468,7 +510,7 @@ export default {
         const validRecords = records.filter(r => r !== null);
         return new Response(JSON.stringify(validRecords), {
           status: 200,
-          headers: { ...getCorsHeaders(request, env, isMutation), "Content-Type": "application/json" },
+          headers: { ...getCorsHeaders(request, env, isMutation), "Content-Type": "application/json", "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" },
         });
       } catch (e) {
         return new Response("Internal Server Error", {
