@@ -236,6 +236,15 @@ export default function LiveThreatFeed() {
   const [dlqSearchQuery, setDlqSearchQuery] = useState('');
   const [debouncedDlqSearch, setDebouncedDlqSearch] = useState('');
   const [replayingState, setReplayingState] = useState<Record<string, boolean>>({});
+  const [copiedAuditRow, setCopiedAuditRow] = useState<string | null>(null);
+
+  const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
+    navigator.clipboard.writeText(JSON.stringify(event, null, 2));
+    setCopiedAuditRow(rowId);
+    setTimeout(() => {
+      setCopiedAuditRow(null);
+    }, 1500);
+  };
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -1553,12 +1562,13 @@ export default function LiveThreatFeed() {
                   Export JSON
                 </button>
               </div>
-              <div className="grid grid-cols-5 gap-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mt-4">
+              <div className="grid grid-cols-6 gap-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mt-4">
                  <div>Timestamp</div>
                  <div>Action</div>
                  <div>Target</div>
                  <div>TTL</div>
                  <div>Authorized By</div>
+                 <div className="text-right">Actions</div>
               </div>
             </div>
 
@@ -1576,8 +1586,10 @@ export default function LiveThreatFeed() {
                      </div>
                   </div>
                ) : (
-                 paginatedAudit.map((event, idx) => (
-                   <div key={`${event.target || "target"}-${event.timestamp}-${idx}`} className="grid grid-cols-5 gap-4 items-center p-3 rounded border border-slate-800/50 bg-slate-950/40 font-mono tracking-tight hover:bg-slate-800/50 transition-colors text-sm text-slate-300">
+                 paginatedAudit.map((event, idx) => {
+                 const rowId = `${event.target || "target"}-${event.timestamp}-${idx}`;
+                 return (
+                   <div key={rowId} className="grid grid-cols-6 gap-4 items-center p-3 rounded border border-slate-800/50 bg-slate-950/40 font-mono tracking-tight hover:bg-slate-800/50 transition-colors text-sm text-slate-300">
                      <div className="text-slate-500 font-mono">
                         {new Date(event.timestamp).toLocaleString('en-GB')}
                      </div>
@@ -1595,8 +1607,17 @@ export default function LiveThreatFeed() {
                      <div className="text-slate-400 truncate">
                         {event.authorizedByWallet || 'N/A'}
                      </div>
+                     <div className="text-right">
+                        <button
+                           onClick={() => handleCopyAuditRow(event, rowId)}
+                           className="font-mono text-[10px] text-slate-400 hover:text-white transition-colors uppercase cursor-pointer"
+                        >
+                           {copiedAuditRow === rowId ? <span className="text-emerald-400 bg-emerald-950/50 border border-emerald-900 px-1 py-0.5 rounded">[ COPIED! ]</span> : "[ COPY ]"}
+                        </button>
+                     </div>
                    </div>
-                 ))
+                 );
+                 })
                )}
             </div>
             <div className="border-t border-slate-800 p-2 flex justify-between items-center bg-slate-900/50">
