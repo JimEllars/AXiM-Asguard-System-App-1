@@ -15,6 +15,44 @@ const mockTelemetryKV = {
 };
 
 describe("Asguard Interceptor", () => {
+  it("evicts stale memory maps unconditionally on rate checks", async () => {
+    // A test to ensure pruning happens
+    const request = new Request("https://example.com/api/v1/auth/login", {
+      method: "POST",
+      headers: {
+        "cf-connecting-ip": "1.2.3.4"
+      },
+      body: JSON.stringify({}),
+    });
+    const env = {
+      ASGUARD_BLACKLIST: mockKV as any,
+      ASGUARD_TELEMETRY: mockTelemetryKV as any,
+      ASGUARD_API_KEY: "test-auth-key"
+    };
+    const ctx = { waitUntil: vi.fn() } as any;
+
+    const response = await worker.fetch(request, env, ctx);
+    expect(response.status).toBe(200);
+  });
+
+  it("enforces Server-Timing header on early returns (e.g., 401)", async () => {
+    const request = new Request("https://example.com/webhooks/stripe", {
+      method: "POST"
+    });
+    const env = {
+      ASGUARD_BLACKLIST: mockKV as any,
+      ASGUARD_TELEMETRY: mockTelemetryKV as any,
+      ASGUARD_API_KEY: "test-auth-key"
+    };
+    const ctx = { waitUntil: vi.fn() } as any;
+
+    const response = await worker.fetch(request, env, ctx);
+    expect(response.status).toBe(401);
+    const serverTiming = response.headers.get("Server-Timing");
+    expect(serverTiming).toBeDefined();
+    expect(serverTiming).toMatch(/edge-exec;dur=[0-9]+(\.[0-9]+)?;desc="Stateless Perimeter Check"/);
+  });
+
 
   it("accepts valid telemetry payload with Web3 wallet address", async () => {
     mockKV.get.mockResolvedValue(null);

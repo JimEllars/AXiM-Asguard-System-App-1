@@ -7,39 +7,35 @@ const webhookRateLimitMap = new Map<string, number[]>();
 
 function pruneRateLimitMap() {
   const now = Date.now();
-  if (rateLimitMap.size > 10000) {
-    for (const [key, value] of rateLimitMap.entries()) {
-      if (now - value.timestamp > 10000) {
-        rateLimitMap.delete(key);
-      }
-    }
-  }
-  if (penaltyLedger.size > 1000) {
-    for (const [key, value] of penaltyLedger.entries()) {
-      if (now - value.timestamp > 10000) {
-        penaltyLedger.delete(key);
-      }
+
+  // Sweep unconditionally regardless of size to prevent stale keys across interval spikes
+  for (const [key, value] of rateLimitMap.entries()) {
+    if (now - value.timestamp > 10000) {
+      rateLimitMap.delete(key);
     }
   }
 
-  if (webhookRateLimitMap.size > 10000) {
-    for (const [key, timestamps] of webhookRateLimitMap.entries()) {
-      const valid = timestamps.filter(t => now - t <= 60000); // 60s sliding window
-      if (valid.length === 0) {
-        webhookRateLimitMap.delete(key);
-      } else {
-        webhookRateLimitMap.set(key, valid);
-      }
+  for (const [key, value] of penaltyLedger.entries()) {
+    if (now - value.timestamp > 10000) {
+      penaltyLedger.delete(key);
     }
   }
-  if (clientErrorThrottleMap.size > 10000) {
-    for (const [key, timestamps] of clientErrorThrottleMap.entries()) {
-      const valid = timestamps.filter(t => now - t <= 10000);
-      if (valid.length === 0) {
-        clientErrorThrottleMap.delete(key);
-      } else {
-        clientErrorThrottleMap.set(key, valid);
-      }
+
+  for (const [key, timestamps] of webhookRateLimitMap.entries()) {
+    const valid = timestamps.filter(t => now - t <= 60000); // 60s sliding window
+    if (valid.length === 0) {
+      webhookRateLimitMap.delete(key);
+    } else {
+      webhookRateLimitMap.set(key, valid);
+    }
+  }
+
+  for (const [key, timestamps] of clientErrorThrottleMap.entries()) {
+    const valid = timestamps.filter(t => now - t <= 10000);
+    if (valid.length === 0) {
+      clientErrorThrottleMap.delete(key);
+    } else {
+      clientErrorThrottleMap.set(key, valid);
     }
   }
 }
@@ -115,7 +111,13 @@ export default {
     ctx: ExecutionContext,
   ): Promise<Response> {
     const startTime = Date.now();
-    const response = await this.handle(request, env, ctx);
+    let response: Response;
+    try {
+      response = await this.handle(request, env, ctx);
+    } catch (error) {
+      // In case handle throws an error not caught within it
+      response = new Response("Internal Server Error", { status: 500 });
+    }
     const duration = Date.now() - startTime;
 
     const newResponse = new Response(response.body, response);
