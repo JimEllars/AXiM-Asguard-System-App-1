@@ -91,6 +91,36 @@ function LeaseTimer({ expiration }: { expiration: number }) {
 }
 
 export default function LiveThreatFeed() {
+  const handleExportAuditCSV = () => {
+    if (!auditLog || auditLog.length === 0) return;
+    const header = "Timestamp,Action,Target Key,TTL,Authorized Wallet\n";
+    const rows = auditLog.map(event => {
+      const timestamp = new Date(event.timestamp).toISOString();
+      const action = event.action || "";
+      const target = event.target || "";
+      const ttl = event.ttl !== undefined ? event.ttl.toString() : "";
+      const wallet = event.authorizedByWallet || "";
+      // Escape fields containing commas or quotes
+      const row = [timestamp, action, target, ttl, wallet].map(field => {
+        if (field.includes(',') || field.includes('"')) {
+          return `"${field.replace(/"/g, '""')}"`;
+        }
+        return field;
+      }).join(',');
+      return row;
+    });
+    const csvString = header + rows.join('\n');
+    const blob = new Blob([csvString], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `asguard_audit_log_${Date.now()}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
 
   const [annotations, setAnnotations] = React.useState<Record<string, string>>(() => {
     if (typeof window === 'undefined') return {};
@@ -1501,8 +1531,11 @@ export default function LiveThreatFeed() {
             <div className="z-10 bg-slate-900/80 backdrop-blur-sm border-b border-slate-800 p-4 sticky top-0">
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-4">
-                  <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                     Edge Security Audit Trail
+                  <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-4">
+                     <span>Edge Security Audit Trail</span>
+                     <button onClick={handleExportAuditCSV} className="font-mono text-[10px] text-cyan-400 hover:text-cyan-300 border border-cyan-800 hover:border-cyan-600 bg-cyan-950/30 px-2 py-0.5 rounded transition-colors cursor-pointer">
+                       [ EXPORT CSV ]
+                     </button>
                   </div>
                   <input
                     type="text"
