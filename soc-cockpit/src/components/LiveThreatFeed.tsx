@@ -1059,6 +1059,7 @@ export default function LiveThreatFeed() {
             : 'bg-slate-900 border-slate-700 text-slate-400'
         }`}>
           {healthStatus === 'ok' ? 'STATUS: PERIMETER SECURE' : healthStatus === 'degraded' ? 'STATUS: PERIMETER DEGRADED' : 'STATUS: UNKNOWN'}
+          <span className={`h-2 w-2 rounded-full ${healthStatus === 'ok' ? 'bg-emerald-500 animate-pulse' : healthStatus === 'degraded' ? 'bg-amber-500 animate-pulse' : 'bg-red-500'}`}></span>
         </div>
 
         {/* Memory Allocation Tooltip */}
