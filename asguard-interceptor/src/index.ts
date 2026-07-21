@@ -46,6 +46,7 @@ export interface Env {
   ASGUARD_API_KEY: string;
   ALLOWED_ORIGIN?: string;
   ASGUARD_AI_MUTATION_KEY?: string;
+  ASGUARD_ALERT_WEBHOOK_URL?: string;
 }
 
 function getCorsHeaders(request: Request, env: Env, isMutation: boolean) {
@@ -80,8 +81,30 @@ function getCorsHeaders(request: Request, env: Env, isMutation: boolean) {
     "Access-Control-Allow-Origin": allowedOrigin !== "DENY" ? allowedOrigin : "",
     "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Asguard-Auth, X-Asguard-Signature",
-    "Access-Control-Expose-Headers": "Server-Timing",
+    "Access-Control-Expose-Headers": "Server-Timing, X-Asguard-RateLimit-Remaining, X-Asguard-Colo, X-Asguard-Req-Id",
   };
+}
+
+
+async function dispatchCriticalAlert(env: Env, eventPayload: any) {
+  try {
+    if (!env.ASGUARD_ALERT_WEBHOOK_URL) return;
+    if (eventPayload.severity !== "critical" && eventPayload.severity !== "high") return;
+
+    // Non-blocking fetch
+    await fetch(env.ASGUARD_ALERT_WEBHOOK_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        alert: "Critical Security Incident",
+        event: eventPayload
+      })
+    });
+  } catch (e) {
+    console.error("Webhook dispatch failed", e);
+  }
 }
 
 export default {
@@ -924,6 +947,7 @@ export default {
         }
 
         ctx.waitUntil(logTelemetry(parseResult.data, env));
+        ctx.waitUntil(dispatchCriticalAlert(env, parseResult.data));
 
         return new Response("OK", {
           status: 202,
@@ -984,6 +1008,7 @@ export default {
 
         // Securely log telemetry asynchronously
         ctx.waitUntil(logTelemetry(parseResult.data, env));
+        ctx.waitUntil(dispatchCriticalAlert(env, parseResult.data));
 
         return new Response("Telemetry accepted", {
           status: 202,
