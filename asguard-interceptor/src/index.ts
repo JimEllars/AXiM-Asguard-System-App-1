@@ -93,7 +93,7 @@ export default {
     ctx.waitUntil(
       (async () => {
         try {
-          const listResult = await env.ASGUARD_BLACKLIST.list();
+          const listResult = await env.ASGUARD_BLACKLIST.list({ limit: 100 });
           const now = Date.now();
           const expiredKeys = listResult.keys.filter(k => k.expiration && k.expiration < now / 1000);
 
@@ -461,6 +461,19 @@ export default {
                 ]);
              } catch (err) {
                 console.error("Failed to process DLQ replay", err);
+
+                // Track cumulative replay retries on DLQ failures
+                try {
+                  const existingDlqDataStr = await env.ASGUARD_TELEMETRY.get(targetKvKey);
+                  if (existingDlqDataStr) {
+                    const existingDlqData = JSON.parse(existingDlqDataStr);
+                    existingDlqData.retryCount = (existingDlqData.retryCount || 0) + 1;
+                    await env.ASGUARD_TELEMETRY.put(targetKvKey, JSON.stringify(existingDlqData));
+                  }
+                } catch (retryErr) {
+                  console.error("Failed to update DLQ retry count", retryErr);
+                }
+
                 localEdgeLoggingBuffer.push({
                   type: "dlq_replay_error",
                   key: `audit:${timestamp}`,
@@ -496,7 +509,7 @@ export default {
       }
 
       try {
-        const listResult = await env.ASGUARD_TELEMETRY.list({ prefix: "dlq:" });
+        const listResult = await env.ASGUARD_TELEMETRY.list({ prefix: "dlq:", limit: 100 });
         const records = await Promise.all(
           listResult.keys.map(async (key) => {
              const data = await env.ASGUARD_TELEMETRY.get(key.name);
@@ -557,6 +570,7 @@ export default {
       try {
         const listResult = await env.ASGUARD_TELEMETRY.list({
           prefix: "audit:",
+          limit: 100
         });
         const values = await Promise.all(
           listResult.keys.map(key => env.ASGUARD_TELEMETRY.get(key.name, { type: "json" }))
@@ -599,7 +613,7 @@ export default {
       }
 
       try {
-        const listResult = await env.ASGUARD_BLACKLIST.list();
+        const listResult = await env.ASGUARD_BLACKLIST.list({ limit: 100 });
         const keys = listResult.keys.map((k) => {
           let note = undefined;
           if (k.metadata && typeof k.metadata === 'object' && 'note' in k.metadata) {
