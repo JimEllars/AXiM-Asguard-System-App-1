@@ -41,6 +41,7 @@ const DlqRecordSchema = z.object({
   originNode: z.string(),
   droppedRoute: z.string(),
   errorReason: z.string(),
+  status: z.string().optional(),
   payload: z.any().optional(),
 });
 type DlqRecord = z.infer<typeof DlqRecordSchema>;
@@ -731,6 +732,21 @@ export default function LiveThreatFeed() {
 
 
 
+
+
+  const handlePurgeDlqItem = async (id: string) => {
+    try {
+      const res = await fetch(`/api/dlq?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE'
+      });
+      if (!res.ok) throw new Error("Purge failed");
+
+      setDlqRecords(prev => prev.filter(r => r.id !== id));
+      addToast("[ ITEM PURGED ]", "success");
+    } catch (err) {
+      addToast("Failed to purge item", "error");
+    }
+  };
 
   const handleReplayPayload = async (id: string, fullEvent: unknown) => {
     setReplayingState(prev => ({ ...prev, [id]: true }));
@@ -1692,10 +1708,15 @@ export default function LiveThreatFeed() {
                      <div className="text-slate-500 font-mono">
                         {new Date(event.timestamp).toLocaleString('en-GB')}
                      </div>
-                     <div>
+                     <div className="flex items-center gap-2">
                         <span className="px-2 py-1 rounded text-xs border whitespace-nowrap text-amber-400 bg-amber-950/50 border-amber-900">
                           {event.originNode}
                         </span>
+                        {event.status === "quarantined" && (
+                           <span className="px-2 py-1 rounded text-xs border whitespace-nowrap text-amber-500 bg-amber-900/50 border-amber-500/50 font-bold">
+                              [ QUARANTINED ]
+                           </span>
+                        )}
                      </div>
                      <div className="truncate text-slate-300">
                         {event.droppedRoute}
@@ -1703,12 +1724,17 @@ export default function LiveThreatFeed() {
                      <div className="text-slate-400 truncate">
                         {event.errorReason}
                      </div>
-                     <div className="text-right">
+                     <div className="text-right flex items-center justify-end gap-3">
                         <button
                            onClick={() => event.id && handleReplayPayload(event.id, event)}
                            disabled={event.id ? replayingState[event.id] : false}
-                           className="text-amber-400 hover:text-amber-300 disabled:text-amber-700 disabled:cursor-not-allowed transition-colors text-xs font-semibold uppercase">
-                           {event.id && replayingState[event.id] ? "[ REPLAYING... ]" : "Replay Payload"}
+                           className="text-amber-400 hover:text-amber-300 disabled:text-amber-700 disabled:cursor-not-allowed transition-colors text-[10px] font-semibold uppercase border border-transparent hover:border-amber-900 px-2 py-1 rounded">
+                           {event.id && replayingState[event.id] ? "[ REPLAYING... ]" : "Replay"}
+                        </button>
+                        <button
+                           onClick={() => event.id && handlePurgeDlqItem(event.id)}
+                           className="text-red-400 hover:text-red-300 transition-colors text-[10px] font-semibold uppercase border border-red-900/50 hover:bg-red-950/30 px-2 py-1 rounded">
+                           [ PURGE ]
                         </button>
                      </div>
                    </div>
