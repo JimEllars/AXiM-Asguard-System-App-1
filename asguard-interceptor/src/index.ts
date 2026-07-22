@@ -556,6 +556,151 @@ export default {
       }
     }
 
+    if (request.method === "DELETE" && (url.pathname === "/dlq" || url.pathname === "/api/dlq")) {
+      const customAuthHeader = request.headers.get("X-Asguard-Auth");
+      if (!env.ASGUARD_API_KEY || customAuthHeader !== env.ASGUARD_API_KEY) {
+        return new Response("Unauthorized", {
+          status: 401,
+          headers: getCorsHeaders(request, env, isMutation),
+        });
+      }
+
+      let idToPurge = url.searchParams.get("id");
+
+      if (!idToPurge) {
+        try {
+          const body = await request.json() as { id?: string };
+          idToPurge = body.id || null;
+        } catch (e) {
+          // Body might be empty or invalid json
+        }
+      }
+
+      if (!idToPurge) {
+        return new Response("Missing id parameter", {
+          status: 400,
+          headers: getCorsHeaders(request, env, isMutation),
+        });
+      }
+
+      const authorizedByWallet = request.headers.get("X-Asguard-Signature") || "UNKNOWN";
+      const targetKvKey = idToPurge.replace('dlq-', 'dlq:');
+      const timestamp = Date.now();
+
+      ctx.waitUntil(
+        (async () => {
+          try {
+            await Promise.all([
+              env.ASGUARD_TELEMETRY.put(
+                `audit:${timestamp}`,
+                JSON.stringify({
+                  action: "dlq_purge",
+                  target: targetKvKey,
+                  timestamp: timestamp,
+                  authorizedByWallet: authorizedByWallet
+                })
+              ),
+              env.ASGUARD_TELEMETRY.delete(targetKvKey)
+            ]);
+          } catch (err) {
+            console.error("Failed to process DLQ purge", err);
+            localEdgeLoggingBuffer.push({
+              type: "dlq_purge_error",
+              key: `audit:${timestamp}`,
+              payload: {
+                action: "dlq_purge",
+                target: targetKvKey,
+                timestamp: timestamp,
+                authorizedByWallet: authorizedByWallet
+              }
+            });
+          }
+        })()
+      );
+
+      return new Response("OK", {
+        status: 200,
+        headers: getCorsHeaders(request, env, isMutation),
+      });
+    }
+
+    if (request.method === "POST" && url.pathname === "/dlq/bulk-replay") {
+      const customAuthHeader = request.headers.get("X-Asguard-Auth");
+      if (!env.ASGUARD_API_KEY || customAuthHeader !== env.ASGUARD_API_KEY) {
+        return new Response("Unauthorized", {
+          status: 401,
+          headers: getCorsHeaders(request, env, isMutation),
+        });
+      }
+
+      try {
+        const body = await request.json() as any[];
+        if (!Array.isArray(body)) {
+          return new Response("Payload must be an array", {
+            status: 400,
+            headers: getCorsHeaders(request, env, isMutation),
+          });
+        }
+
+        const timestamp = Date.now();
+        let replayed = 0;
+        let failed = 0;
+
+        const replayPromises = body.map(async (record) => {
+          let targetKvKey = '';
+          let payloadToReplay = null;
+
+          if (typeof record === 'string') {
+             targetKvKey = record.replace('dlq-', 'dlq:');
+          } else if (record && record.id) {
+             targetKvKey = record.id.replace('dlq-', 'dlq:');
+             payloadToReplay = record.payload || null;
+          }
+
+          if (!targetKvKey) {
+             failed++;
+             return;
+          }
+
+          try {
+            if (payloadToReplay) {
+                // If payload is provided in the record, try to re-dispatch it
+                await logTelemetry(payloadToReplay, env);
+            }
+
+            await Promise.all([
+              env.ASGUARD_TELEMETRY.put(
+                `audit:${timestamp}-${Math.random()}`,
+                JSON.stringify({
+                  action: "dlq_replay",
+                  target: targetKvKey,
+                  timestamp: timestamp
+                })
+              ),
+              env.ASGUARD_TELEMETRY.delete(targetKvKey)
+            ]);
+            replayed++;
+          } catch (err) {
+            console.error("Failed to process DLQ bulk replay item", err);
+            failed++;
+          }
+        });
+
+        await Promise.all(replayPromises);
+
+        return new Response(JSON.stringify({ replayed, failed }), {
+          status: 200,
+          headers: { ...getCorsHeaders(request, env, isMutation), "Content-Type": "application/json", "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" },
+        });
+
+      } catch(e) {
+        return new Response("Bad Request", {
+          status: 400,
+          headers: getCorsHeaders(request, env, isMutation),
+        });
+      }
+    }
+
 
     if (request.method === "GET" && url.pathname === "/telemetry") {
       const customAuthHeader = request.headers.get("X-Asguard-Auth");
