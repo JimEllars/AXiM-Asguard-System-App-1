@@ -986,4 +986,42 @@ describe("Autonomous Blocklist Endpoint", () => {
     });
   });
 
+
+
+  describe("POST /dlq/unquarantine", () => {
+    it("should return 401 without auth", async () => {
+      const request = new Request("https://asguard.local/dlq/unquarantine", { method: "POST" });
+      const env = { ASGUARD_API_KEY: "test-key" } as any;
+      const response = await worker.fetch(request, env, {} as any);
+      expect(response.status).toBe(401);
+    });
+
+    it("should update dlq status to active and retryCount to 0", async () => {
+      const mockEnv = {
+        ASGUARD_API_KEY: "test-key",
+        ASGUARD_TELEMETRY: {
+          get: vi.fn().mockResolvedValue(JSON.stringify({ id: "dlq-123", status: "quarantined", retryCount: 5 })),
+          put: vi.fn().mockResolvedValue(undefined),
+          list: vi.fn().mockResolvedValue({ keys: [] }),
+          delete: vi.fn().mockResolvedValue(undefined),
+        },
+      } as any;
+      const mockCtx = { waitUntil: vi.fn() } as any;
+
+      const request = new Request("https://asguard.local/dlq/unquarantine", {
+        method: "POST",
+        headers: { "X-Asguard-Auth": "test-key" },
+        body: JSON.stringify({ id: "dlq-123" }),
+      });
+      const response = await worker.fetch(request, mockEnv, mockCtx);
+      expect(response.status).toBe(200);
+
+      const putCalls = mockEnv.ASGUARD_TELEMETRY.put.mock.calls;
+      const unqCall = putCalls.find((c: any) => c[0] === "dlq:123");
+      expect(unqCall).toBeDefined();
+      const payload = JSON.parse(unqCall[1]);
+      expect(payload.status).toBe("active");
+      expect(payload.retryCount).toBe(0);
+    });
+  });
 });
