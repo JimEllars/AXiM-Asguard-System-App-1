@@ -293,6 +293,7 @@ export default function LiveThreatFeed() {
   const [telemetryPage, setTelemetryPage] = useState(0);
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [auditPage, setAuditPage] = useState(0);
+  const [auditTimeRange, setAuditTimeRange] = useState<"all" | "1h" | "24h">("all");
 
   const itemsPerPage = 10;
 
@@ -978,14 +979,23 @@ export default function LiveThreatFeed() {
 
 
   const filteredAuditLog = React.useMemo(() => {
-    if (!auditSearchQuery.trim()) return auditLog;
+    let filtered = auditLog;
+
+    if (auditTimeRange !== "all") {
+      const now = Date.now();
+      const windowMs = auditTimeRange === "1h" ? 3600000 : 86400000;
+      filtered = filtered.filter(event => event.timestamp >= now - windowMs);
+    }
+
+    if (!auditSearchQuery.trim()) return filtered;
+
     const query = auditSearchQuery.toLowerCase();
-    return auditLog.filter(event =>
+    return filtered.filter(event =>
       event.action.toLowerCase().includes(query) ||
       (event.target && event.target.toLowerCase().includes(query)) ||
       (event.signature && event.signature.toLowerCase().includes(query))
     );
-  }, [auditLog, auditSearchQuery]);
+  }, [auditLog, auditSearchQuery, auditTimeRange]);
 
   const paginatedAudit = React.useMemo(() => {
     const start = auditPage * itemsPerPage;
@@ -1581,6 +1591,26 @@ export default function LiveThreatFeed() {
                     value={localAuditSearchQuery}
                     onChange={(e) => setLocalAuditSearchQuery(e.target.value)}
                   />
+                  <div className="flex items-center gap-2 ml-4">
+                    <button
+                      onClick={() => { setAuditTimeRange("all"); setAuditPage(0); }}
+                      className={`font-mono text-[10px] px-2 py-0.5 rounded transition-colors cursor-pointer border ${auditTimeRange === "all" ? "text-cyan-400 border-cyan-800 bg-cyan-950/30" : "text-slate-500 border-slate-800 hover:text-slate-400 hover:border-slate-700 bg-slate-950/30"}`}
+                    >
+                      [ ALL TIME ]
+                    </button>
+                    <button
+                      onClick={() => { setAuditTimeRange("1h"); setAuditPage(0); }}
+                      className={`font-mono text-[10px] px-2 py-0.5 rounded transition-colors cursor-pointer border ${auditTimeRange === "1h" ? "text-cyan-400 border-cyan-800 bg-cyan-950/30" : "text-slate-500 border-slate-800 hover:text-slate-400 hover:border-slate-700 bg-slate-950/30"}`}
+                    >
+                      [ 1 HOUR ]
+                    </button>
+                    <button
+                      onClick={() => { setAuditTimeRange("24h"); setAuditPage(0); }}
+                      className={`font-mono text-[10px] px-2 py-0.5 rounded transition-colors cursor-pointer border ${auditTimeRange === "24h" ? "text-cyan-400 border-cyan-800 bg-cyan-950/30" : "text-slate-500 border-slate-800 hover:text-slate-400 hover:border-slate-700 bg-slate-950/30"}`}
+                    >
+                      [ 24 HOURS ]
+                    </button>
+                  </div>
                 </div>
                 <button
                   onClick={handleExportAuditTrail}
