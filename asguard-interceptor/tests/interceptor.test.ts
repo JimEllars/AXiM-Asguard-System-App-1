@@ -900,4 +900,90 @@ describe("Autonomous Blocklist Endpoint", () => {
     const response = await worker.fetch(request, env as any, ctx);
     expect(response.status).toBe(200);
   });
+
+  describe("DELETE /dlq", () => {
+    it("returns 401 if unauthorized", async () => {
+      const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+      const ctx = { waitUntil: vi.fn() } as any;
+      const request = new Request("https://asguard.local/dlq?id=dlq-123", { method: "DELETE" });
+      const response = await worker.fetch(request, env as any, ctx);
+      expect(response.status).toBe(401);
+    });
+
+    it("returns 400 if id is missing", async () => {
+      const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+      const ctx = { waitUntil: vi.fn() } as any;
+      const request = new Request("https://asguard.local/dlq", {
+        method: "DELETE",
+        headers: { "X-Asguard-Auth": "test-auth-key" }
+      });
+      const response = await worker.fetch(request, env as any, ctx);
+      expect(response.status).toBe(400);
+    });
+
+    it("deletes the dlq entry and audits it", async () => {
+      const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+      const ctx = { waitUntil: vi.fn() } as any;
+      const request = new Request("https://asguard.local/dlq?id=dlq-123", {
+        method: "DELETE",
+        headers: { "X-Asguard-Auth": "test-auth-key", "X-Asguard-Signature": "0xABC" }
+      });
+      const response = await worker.fetch(request, env as any, ctx);
+      expect(response.status).toBe(200);
+
+      const calls = mockTelemetryKV.delete.mock.calls;
+      expect(calls.some((c: any) => c[0] === "dlq:123")).toBe(true);
+
+      const putCalls = mockTelemetryKV.put.mock.calls;
+      const auditCall = putCalls.find((c: any) => c[0].startsWith("audit:") && c[1].includes("dlq_purge"));
+      expect(auditCall).toBeDefined();
+      expect(auditCall[1]).toContain("0xABC");
+    });
+  });
+
+  describe("POST /dlq/bulk-replay", () => {
+    it("returns 401 if unauthorized", async () => {
+      const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+      const ctx = { waitUntil: vi.fn() } as any;
+      const request = new Request("https://asguard.local/dlq/bulk-replay", { method: "POST" });
+      const response = await worker.fetch(request, env as any, ctx);
+      expect(response.status).toBe(401);
+    });
+
+    it("returns 400 if payload is not array", async () => {
+      const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+      const ctx = { waitUntil: vi.fn() } as any;
+      const request = new Request("https://asguard.local/dlq/bulk-replay", {
+        method: "POST",
+        headers: { "X-Asguard-Auth": "test-auth-key", "Content-Type": "application/json" },
+        body: JSON.stringify({ id: "dlq-1" }),
+      });
+      const response = await worker.fetch(request, env as any, ctx);
+      expect(response.status).toBe(400);
+    });
+
+    it("replays multiple dlq items", async () => {
+      const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+      const ctx = { waitUntil: vi.fn() } as any;
+      const body = [
+        "dlq-123",
+        { id: "dlq-456", payload: { timestamp: 12345, eventType: "client_error" } }
+      ];
+      const request = new Request("https://asguard.local/dlq/bulk-replay", {
+        method: "POST",
+        headers: { "X-Asguard-Auth": "test-auth-key", "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const response = await worker.fetch(request, env as any, ctx);
+      expect(response.status).toBe(200);
+      const respData = await (response as any).json();
+      expect(respData.replayed).toBe(2);
+      expect(respData.failed).toBe(0);
+
+      const calls = mockTelemetryKV.delete.mock.calls;
+      expect(calls.some((c: any) => c[0] === "dlq:123")).toBe(true);
+      expect(calls.some((c: any) => c[0] === "dlq:456")).toBe(true);
+    });
+  });
+
 });

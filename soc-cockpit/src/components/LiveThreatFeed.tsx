@@ -736,8 +736,19 @@ export default function LiveThreatFeed() {
 
   const handlePurgeDlqItem = async (id: string) => {
     try {
-      const res = await fetch(`/api/dlq?id=${encodeURIComponent(id)}`, {
-        method: 'DELETE'
+      const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
+      const apiKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY;
+
+      if (!workerUrl || !apiKey) {
+        throw new Error("Missing environment credentials");
+      }
+
+      const res = await fetch(`${workerUrl}/dlq?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: {
+          'X-Asguard-Auth': apiKey,
+          'X-Asguard-Signature': activeAccount?.address || 'UNKNOWN'
+        }
       });
       if (!res.ok) throw new Error("Purge failed");
 
