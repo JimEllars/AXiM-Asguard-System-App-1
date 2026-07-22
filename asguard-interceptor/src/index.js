@@ -35,6 +35,26 @@ function pruneRateLimitMap() {
         }
     }
 }
+function structuredLog(level, event, request, details) {
+    let colo = "UNKNOWN";
+    let clientIp = "UNKNOWN";
+    if (request) {
+        colo = request.cf?.colo || "UNKNOWN";
+        clientIp = request.headers.get("CF-Connecting-IP") || "UNKNOWN";
+    }
+    // Format the details safely
+    const formattedDetails = details instanceof Error
+        ? { message: details.message, stack: details.stack }
+        : details;
+    console.error(JSON.stringify({
+        timestamp: Date.now(),
+        level,
+        colo,
+        clientIp,
+        event,
+        details: formattedDetails
+    }));
+}
 function getCorsHeaders(request, env, isMutation) {
     let origin = request.headers.get("Origin");
     let allowedOrigin = "*";
@@ -87,7 +107,7 @@ async function dispatchCriticalAlert(env, eventPayload) {
         });
     }
     catch (e) {
-        console.error("Webhook dispatch failed", e);
+        structuredLog("error", "Webhook dispatch failed", null, e);
     }
 }
 export default {
@@ -100,7 +120,7 @@ export default {
                 await Promise.all(expiredKeys.map(k => env.ASGUARD_BLACKLIST.delete(k.name)));
             }
             catch (e) {
-                console.error("Scheduled cleanup failed", e);
+                structuredLog("error", "Scheduled cleanup failed", null, e);
             }
             if (localEdgeLoggingBuffer.length > 0) {
                 try {
@@ -143,7 +163,7 @@ export default {
                     }
                 }
                 catch (err) {
-                    console.error("Scheduled buffer flush failed", err);
+                    structuredLog("error", "Scheduled buffer flush failed", null, err);
                 }
             }
         })());
@@ -316,12 +336,12 @@ export default {
                 penaltyLedger.set(clientIp, penalty);
                 if (penalty.consecutive > 3) {
                     ctx.waitUntil(env.ASGUARD_BLACKLIST.put(`ip:${clientIp}`, "1", { expirationTtl: 86400 }).catch(err => {
-                        console.error("Flood control block failed, buffering locally:", err);
+                        structuredLog("error", "Flood control block failed", request, err);
                         localEdgeLoggingBuffer.push({ type: 'blacklist_put', key: `ip:${clientIp}` });
                     }));
                     if (extractedWalletAddress) {
                         ctx.waitUntil(env.ASGUARD_BLACKLIST.put(`wallet:${extractedWalletAddress}`, "1", { expirationTtl: 86400 }).catch(err => {
-                            console.error("Flood control wallet block failed, buffering locally:", err);
+                            structuredLog("error", "Flood control wallet block failed", request, err);
                             localEdgeLoggingBuffer.push({ type: 'blacklist_put', key: `wallet:${extractedWalletAddress}` });
                         }));
                     }
@@ -397,6 +417,45 @@ export default {
                 // We need to map it back to the KV key which is 'dlq:1234' for deletion.
                 const targetKvKey = body.id.replace('dlq-', 'dlq:');
                 const timestamp = Date.now();
+                try {
+                    const existingDlqDataStr = await env.ASGUARD_TELEMETRY.get(targetKvKey);
+                    if (existingDlqDataStr) {
+                        const existingDlqData = JSON.parse(existingDlqDataStr);
+                        if (existingDlqData.retryCount && existingDlqData.retryCount >= 3) {
+                            existingDlqData.status = "quarantined";
+                            ctx.waitUntil((async () => {
+                                try {
+                                    await Promise.all([
+                                        env.ASGUARD_TELEMETRY.put(targetKvKey, JSON.stringify(existingDlqData)),
+                                        env.ASGUARD_TELEMETRY.put(`audit:${timestamp}`, JSON.stringify({
+                                            action: "dlq_quarantined",
+                                            target: body.id,
+                                            timestamp: timestamp
+                                        }))
+                                    ]);
+                                }
+                                catch (e) {
+                                    localEdgeLoggingBuffer.push({
+                                        type: "dlq_quarantine_error",
+                                        key: `audit:${timestamp}`,
+                                        payload: {
+                                            action: "dlq_quarantined",
+                                            target: body.id,
+                                            timestamp: timestamp
+                                        }
+                                    });
+                                }
+                            })());
+                            return new Response("Unprocessable Entity: DLQ item quarantined", {
+                                status: 422,
+                                headers: getCorsHeaders(request, env, isMutation),
+                            });
+                        }
+                    }
+                }
+                catch (err) {
+                    // Ignore fetch error, proceed with replay attempt
+                }
                 ctx.waitUntil((async () => {
                     try {
                         await Promise.all([
@@ -409,7 +468,7 @@ export default {
                         ]);
                     }
                     catch (err) {
-                        console.error("Failed to process DLQ replay", err);
+                        structuredLog("error", "Failed to process DLQ replay", request, err);
                         // Track cumulative replay retries on DLQ failures
                         try {
                             const existingDlqDataStr = await env.ASGUARD_TELEMETRY.get(targetKvKey);
@@ -420,7 +479,7 @@ export default {
                             }
                         }
                         catch (retryErr) {
-                            console.error("Failed to update DLQ retry count", retryErr);
+                            structuredLog("error", "Failed to update DLQ retry count", request, retryErr);
                         }
                         localEdgeLoggingBuffer.push({
                             type: "dlq_replay_error",
@@ -464,7 +523,7 @@ export default {
                         return null;
                     }
                 }));
-                const validRecords = records.filter(r => r !== null);
+                const validRecords = records.filter(r => r !== null && r.status !== "quarantined");
                 return new Response(JSON.stringify(validRecords), {
                     status: 200,
                     headers: { ...getCorsHeaders(request, env, isMutation), "Content-Type": "application/json", "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" },
@@ -517,7 +576,7 @@ export default {
                     ]);
                 }
                 catch (err) {
-                    console.error("Failed to process DLQ purge", err);
+                    structuredLog("error", "Failed to process DLQ purge", request, err);
                     localEdgeLoggingBuffer.push({
                         type: "dlq_purge_error",
                         key: `audit:${timestamp}`,
@@ -569,6 +628,19 @@ export default {
                         return;
                     }
                     try {
+                        const existingDataStr = await env.ASGUARD_TELEMETRY.get(targetKvKey);
+                        if (existingDataStr) {
+                            const existingData = JSON.parse(existingDataStr);
+                            if (existingData.status === "quarantined") {
+                                // Skip quarantined items
+                                return;
+                            }
+                        }
+                    }
+                    catch (e) {
+                        // Ignore fetch error
+                    }
+                    try {
                         if (payloadToReplay) {
                             // If payload is provided in the record, try to re-dispatch it
                             await logTelemetry(payloadToReplay, env);
@@ -584,7 +656,7 @@ export default {
                         replayed++;
                     }
                     catch (err) {
-                        console.error("Failed to process DLQ bulk replay item", err);
+                        structuredLog("error", "Failed to process DLQ bulk replay item", request, err);
                         failed++;
                     }
                 });
@@ -729,7 +801,7 @@ export default {
                         ]);
                     }
                     catch (e) {
-                        console.error("Failed to update blocklist", e);
+                        structuredLog("error", "Failed to update blocklist", request, e);
                         localEdgeLoggingBuffer.push({ type: 'blacklist_put_autonomous', key: payload.key, options });
                     }
                 })());
@@ -792,7 +864,7 @@ export default {
                             ]);
                         }
                         catch (e) {
-                            console.error("Failed to update blocklist", e);
+                            structuredLog("error", "Failed to update blocklist", request, e);
                             localEdgeLoggingBuffer.push({ type: 'blacklist_put', key: payload.key, options });
                         }
                     })());
@@ -807,7 +879,7 @@ export default {
                                 }));
                             }
                             catch (e) {
-                                console.error("Failed to log update_note audit", e);
+                                structuredLog("error", "Failed to log update_note audit", request, e);
                                 localEdgeLoggingBuffer.push({
                                     type: "audit_error",
                                     key: `audit:${ts}`,
@@ -830,7 +902,7 @@ export default {
                             ]);
                         }
                         catch (e) {
-                            console.error("Failed to delete from blocklist", e);
+                            structuredLog("error", "Failed to delete from blocklist", request, e);
                             localEdgeLoggingBuffer.push({ type: 'blacklist_delete', key: payload.key });
                         }
                     })());
@@ -859,7 +931,7 @@ export default {
                         await Promise.race([auditDbOp(), auditTimeout]);
                     }
                     catch (err) {
-                        console.error("Failed to log audit telemetry, buffering locally:", err);
+                        structuredLog("error", "Failed to log audit telemetry", request, err);
                         localEdgeLoggingBuffer.push({
                             type: "audit",
                             key: `audit:${timestamp}`,
@@ -1065,7 +1137,7 @@ async function logTelemetry(data, env) {
         }
     }
     catch (err) {
-        console.error("Failed to log telemetry, buffering locally:", err);
+        structuredLog("error", "Failed to log telemetry", null, err);
         localEdgeLoggingBuffer.push(data);
         // Keep local buffer bounded
         if (localEdgeLoggingBuffer.length > 100) {
