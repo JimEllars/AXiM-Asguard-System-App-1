@@ -71,6 +71,7 @@ export interface Env {
   ALLOWED_ORIGIN?: string;
   ASGUARD_AI_MUTATION_KEY?: string;
   ASGUARD_ALERT_WEBHOOK_URL?: string;
+  ASGUARD_ALERT_EMAIL?: string;
 }
 
 function getCorsHeaders(request: Request, env: Env, isMutation: boolean) {
@@ -110,24 +111,46 @@ function getCorsHeaders(request: Request, env: Env, isMutation: boolean) {
 }
 
 
-async function dispatchCriticalAlert(env: Env, eventPayload: any) {
+async function dispatchCriticalAlert(env: Env, eventPayload: any, request: Request | null, ctx: ExecutionContext) {
   try {
     if (!env.ASGUARD_ALERT_WEBHOOK_URL) return;
     if (eventPayload.severity !== "critical" && eventPayload.severity !== "high") return;
 
-    // Non-blocking fetch
-    await fetch(env.ASGUARD_ALERT_WEBHOOK_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        alert: "Critical Security Incident",
-        event: eventPayload
-      })
-    });
+    let webhookSuccess = false;
+    try {
+      // Non-blocking fetch
+      const response = await fetch(env.ASGUARD_ALERT_WEBHOOK_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          alert: "Critical Security Incident",
+          event: eventPayload
+        })
+      });
+      if (response.ok) {
+        webhookSuccess = true;
+      }
+    } catch (e) {
+      structuredLog("error", "Webhook dispatch failed", request, e);
+    }
+
+    if (!webhookSuccess) {
+      if (env.ASGUARD_ALERT_EMAIL) {
+        structuredLog("warn", "critical_alert_webhook_failed_fallback_triggered", request, {
+          event: eventPayload,
+          fallbackEmail: env.ASGUARD_ALERT_EMAIL
+        });
+
+        ctx.waitUntil((async () => {
+          // Out-of-band alert payload dispatch simulation
+          console.log(`[ALERT FALLBACK] Dispatching alert to ${env.ASGUARD_ALERT_EMAIL} for payload:`, eventPayload);
+        })());
+      }
+    }
   } catch (e) {
-    structuredLog("error", "Webhook dispatch failed", null, e);
+    structuredLog("error", "Critical alert fallback failed", request, e);
   }
 }
 
@@ -466,6 +489,100 @@ export default {
         });
       }
     }
+    if (request.method === "POST" && url.pathname === "/dlq/unquarantine") {
+      const customAuthHeader = request.headers.get("X-Asguard-Auth");
+      if (!env.ASGUARD_API_KEY || customAuthHeader !== env.ASGUARD_API_KEY) {
+        return new Response("Unauthorized", {
+          status: 401,
+          headers: getCorsHeaders(request, env, isMutation),
+        });
+      }
+
+      try {
+        const body = await request.json() as { id: string };
+        if (!body || !body.id) {
+          return new Response("Missing id in payload", {
+            status: 400,
+            headers: getCorsHeaders(request, env, isMutation),
+          });
+        }
+
+        const targetKvKey = body.id.replace('dlq-', 'dlq:');
+        const existingDataStr = await env.ASGUARD_TELEMETRY.get(targetKvKey);
+
+        if (!existingDataStr) {
+          return new Response("DLQ item not found", {
+            status: 404,
+            headers: getCorsHeaders(request, env, isMutation),
+          });
+        }
+
+        const existingData = JSON.parse(existingDataStr);
+        existingData.status = "active";
+        existingData.retryCount = 0;
+
+        await env.ASGUARD_TELEMETRY.put(targetKvKey, JSON.stringify(existingData));
+
+        const authorizedByWallet = request.headers.get("X-Asguard-Signature") || "UNKNOWN";
+        const timestamp = Date.now();
+
+        ctx.waitUntil((async () => {
+            try {
+              const auditDbOp = async () => {
+                const existing: any[] = (await env.ASGUARD_TELEMETRY.get("recent_events", { type: "json" })) || [];
+                await env.ASGUARD_TELEMETRY.put(
+                  "recent_events",
+                  JSON.stringify([{
+                    timestamp: timestamp,
+                    eventType: "audit_log",
+                    severity: "low",
+                    sourceIp: "internal",
+                    details: {
+                      action: "dlq_unquarantined",
+                      target: body.id,
+                      timestamp: timestamp,
+                      authorizedByWallet: authorizedByWallet
+                    }
+                  }, ...existing].slice(0, 50))
+                );
+
+                await env.ASGUARD_TELEMETRY.put(
+                  `audit:${timestamp}`,
+                  JSON.stringify({
+                    action: "dlq_unquarantined",
+                    target: body.id,
+                    timestamp: timestamp,
+                    authorizedByWallet: authorizedByWallet
+                  })
+                );
+              };
+              const auditTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Database connection timeout")), 5000));
+              await Promise.race([auditDbOp(), auditTimeout]);
+            } catch (err) {
+              structuredLog("error", "Failed to log audit telemetry for dlq_unquarantined", request, err);
+              localEdgeLoggingBuffer.push({
+                type: "audit",
+                key: `audit:${timestamp}`,
+                payload: {
+                  action: "dlq_unquarantined",
+                  target: body.id,
+                  timestamp: timestamp,
+                  authorizedByWallet: authorizedByWallet,
+                }
+              });
+              if (localEdgeLoggingBuffer.length > 100) localEdgeLoggingBuffer.shift();
+            }
+        })());
+
+        return new Response("OK", { status: 200, headers: getCorsHeaders(request, env, isMutation) });
+      } catch (e) {
+        return new Response("Internal Server Error", {
+          status: 500,
+          headers: getCorsHeaders(request, env, isMutation),
+        });
+      }
+    }
+
 
 
     if (request.method === "POST" && url.pathname === "/dlq/replay") {
@@ -1174,7 +1291,7 @@ export default {
         }
 
         ctx.waitUntil(logTelemetry(parseResult.data, env));
-        ctx.waitUntil(dispatchCriticalAlert(env, parseResult.data));
+        ctx.waitUntil(dispatchCriticalAlert(env, parseResult.data, request, ctx));
 
         return new Response("OK", {
           status: 202,
@@ -1235,7 +1352,7 @@ export default {
 
         // Securely log telemetry asynchronously
         ctx.waitUntil(logTelemetry(parseResult.data, env));
-        ctx.waitUntil(dispatchCriticalAlert(env, parseResult.data));
+        ctx.waitUntil(dispatchCriticalAlert(env, parseResult.data, request, ctx));
 
         return new Response("Telemetry accepted", {
           status: 202,

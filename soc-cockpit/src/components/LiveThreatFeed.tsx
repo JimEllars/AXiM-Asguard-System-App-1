@@ -855,6 +855,50 @@ export default function LiveThreatFeed() {
     }
   };
 
+
+  const handleBlock = async (key: string, ttl: number, reason: string) => {
+    setActionLoading(prev => ({ ...prev, [key]: true }));
+    const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
+    const apiKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY;
+
+    if (!workerUrl || !apiKey) {
+      console.error("Missing credentials for action");
+      setActionLoading(prev => ({ ...prev, [key]: false }));
+      return;
+    }
+
+    const abortController = new AbortController();
+    const timeoutIdFetch = setTimeout(() => abortController.abort(), 4000);
+    try {
+      const res = await fetch(`${workerUrl}/blocklist`, {
+        method: 'POST',
+        headers: {
+          'X-Asguard-Auth': apiKey,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ key, action: 'block', ttl, details: { reason } }),
+        signal: abortController.signal
+      });
+      clearTimeout(timeoutIdFetch);
+
+      if (!res.ok) {
+        throw new Error('Failed to block');
+      }
+
+      // Optimistically update the blocklist
+      setBlocklist(prev => {
+        return prev.some(item => item.name === key) ? prev : [...prev, { name: key, expiration: Math.floor(Date.now() / 1000) + ttl }];
+      });
+      addToast("[ MITIGATION APPLIED ]", "emerald");
+
+    } catch (err) {
+      console.error("Error blocking:", err);
+      addToast("Error updating edge rule", "error");
+    } finally {
+      setActionLoading(prev => ({ ...prev, [key]: false }));
+    }
+  };
+
   const handleDropIp = async (ip: string) => {
     setActionLoading(prev => ({ ...prev, [ip]: true }));
     const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
@@ -1429,6 +1473,32 @@ export default function LiveThreatFeed() {
                          )}
                          <div className="flex justify-between items-center mb-2">
                            <div className="text-xs text-slate-500 uppercase tracking-wider">Raw Payload Inspector</div>
+
+                           <div className="flex gap-2">
+                             {event.sourceIp && !blocklist.some(b => b.name === `ip:${event.sourceIp}`) && (
+                               <button
+                                 onClick={(e) => {
+                                   e.stopPropagation();
+                                   handleBlock(`ip:${event.sourceIp}`, 86400, "Blocked via Live Threat Inspector");
+                                 }}
+                                 disabled={actionLoading[`ip:${event.sourceIp}`]}
+                                 className="text-[10px] bg-red-950/30 hover:bg-red-900/50 border border-red-900 text-red-400 px-2 py-1 rounded transition-colors font-mono disabled:opacity-50"
+                               >
+                                 {actionLoading[`ip:${event.sourceIp}`] ? '[ COMMITTING... ]' : `[ BLOCK IP: ${event.sourceIp} ]`}
+                               </button>
+                             )}
+                             {!!(event as Record<string, unknown>).web3WalletAddress && !blocklist.some(b => b.name === `wallet:${(event as Record<string, unknown>).web3WalletAddress}`) && (
+                               <button
+                                 onClick={(e) => {
+                                   e.stopPropagation();
+                                   handleBlock(`wallet:${(event as Record<string, unknown>).web3WalletAddress}`, 86400, "Blocked via Live Threat Inspector");
+                                 }}
+                                 disabled={actionLoading[`wallet:${(event as Record<string, unknown>).web3WalletAddress}`]}
+                                 className="text-[10px] bg-red-950/30 hover:bg-red-900/50 border border-red-900 text-red-400 px-2 py-1 rounded transition-colors font-mono disabled:opacity-50"
+                               >
+                                 {actionLoading[`wallet:${(event as Record<string, unknown>).web3WalletAddress}`] ? '[ COMMITTING... ]' : '[ BLOCK WALLET ]'}
+                               </button>
+                             )}
                            <button
                              onClick={(e) => {
                                e.stopPropagation();
@@ -1459,6 +1529,7 @@ export default function LiveThreatFeed() {
                            >
                              {copiedRow === idx ? '[ COPIED! ]' : 'Copy JSON'}
                            </button>
+                           </div>
                          </div>
                          <pre className="text-xs text-emerald-400 font-mono whitespace-pre-wrap break-all">
                            {JSON.stringify(event, null, 2)}
