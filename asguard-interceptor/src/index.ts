@@ -278,7 +278,7 @@ export default {
         webhookRateLimitMap.set(clientIp, timestamps);
 
         if (timestamps.length > 3) {
-            return new Response("Too Many Requests", { status: 429, headers: getCorsHeaders(request, env, isMutation) });
+            return new Response("Too Many Requests", { status: 429, headers: { ...getCorsHeaders(request, env, isMutation), "Retry-After": "10", "X-RateLimit-Limit": "10", "X-RateLimit-Remaining": "0" } });
         }
       }
 
@@ -452,7 +452,7 @@ export default {
           }
         }
 
-        return new Response("Too Many Requests", { status: 429, headers: getCorsHeaders(request, env, isMutation) });
+        return new Response("Too Many Requests", { status: 429, headers: { ...getCorsHeaders(request, env, isMutation), "Retry-After": "10", "X-RateLimit-Limit": "10", "X-RateLimit-Remaining": "0" } });
       } else {
         penaltyLedger.delete(clientIp);
       }
@@ -666,7 +666,7 @@ export default {
 
               return new Response("Unprocessable Entity: DLQ item quarantined", {
                 status: 422,
-                headers: getCorsHeaders(request, env, isMutation),
+                headers: { ...getCorsHeaders(request, env, isMutation), "Retry-After": "10", "X-RateLimit-Limit": "10", "X-RateLimit-Remaining": "0" },
               });
             }
           }
@@ -1290,7 +1290,7 @@ export default {
       if (timestamps.length > 5) {
         return new Response("Too Many Requests", {
           status: 429,
-          headers: getCorsHeaders(request, env, isMutation),
+          headers: { ...getCorsHeaders(request, env, isMutation), "Retry-After": "10", "X-RateLimit-Limit": "10", "X-RateLimit-Remaining": "0" },
         });
       }
 
@@ -1298,7 +1298,7 @@ export default {
         const rawPayload = await request.json() as any;
 
         // Ensure payload has the expected schema format and enforce correct properties.
-        const payload = {
+        const payload: any = {
           sourceIp: clientIp, // Use standard client IP from connection
           timestamp: rawPayload.timestamp || Date.now(),
           eventType: "client_error",
