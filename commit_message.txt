@@ -1,0 +1,15 @@
+feat: Implement DLQ Quarantine workflow, 422 CORS handling, and Autonomous Key response differentiation
+
+Task 1:
+- Added a toggle button group in `LiveThreatFeed.tsx` for `ACTIVE DLQ` and `QUARANTINED` views.
+- Rendered quarantined items dynamically and allowed quick unquarantine via a `POST /dlq/unquarantine` action.
+
+Task 2:
+- Handled edge cases by explicitly supplying CORS headers in `POST /dlq/replay` (and verifying this in `/dlq/unquarantine` via `index.ts`) for `422 Unprocessable Entity` responses.
+
+Task 3:
+- Extended the logic for `POST /blocklist/autonomous` to return a `200 OK` (with text "Autonomous Mitigation Extended") if a key already exists, while keeping the standard `201 Created` for novel triages.
+
+Task 4:
+- All Next.js UI unit build diagnostics run and cleanly resolved with `npm run build`.
+- Monorepo backend `vitest` suite executes 100% reliably.

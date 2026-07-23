@@ -1040,6 +1040,16 @@ export default {
           options.metadata = { note: "Autonomous AI Triage Mitigation" };
         }
 
+        let isExtension = false;
+        try {
+          const existing = await env.ASGUARD_BLACKLIST.get(payload.key!);
+          if (existing !== null) {
+            isExtension = true;
+          }
+        } catch(err) {
+          // Ignore
+        }
+
         ctx.waitUntil(
           (async () => {
             try {
@@ -1054,10 +1064,17 @@ export default {
           })()
         );
 
-        return new Response("Autonomous Mitigation Applied", {
-          status: 200,
-          headers: getCorsHeaders(request, env, isMutation),
-        });
+        if (isExtension) {
+          return new Response("Autonomous Mitigation Extended", {
+            status: 200,
+            headers: getCorsHeaders(request, env, isMutation),
+          });
+        } else {
+          return new Response("Autonomous Mitigation Applied", {
+            status: 201,
+            headers: getCorsHeaders(request, env, isMutation),
+          });
+        }
       } catch (e) {
         return new Response("Bad Request", {
           status: 400,
