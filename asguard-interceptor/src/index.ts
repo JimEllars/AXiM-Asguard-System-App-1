@@ -126,7 +126,7 @@ async function evaluateEdgeSafety(env: Env, inputContent: string) {
     }
     return { safe: true, threatCategory: null };
   } catch (err) {
-    console.warn('[WORKERS_AI] Llama Guard evaluation bypassed on exception:', err);
+    structuredLog("warn", "workers_ai_evaluation_bypassed", null, { error: String(err) });
     return { safe: true, threatCategory: null };
   }
 }
@@ -1055,6 +1055,14 @@ export default {
         };
 
         if (payload.note !== undefined) {
+          const safetyEval = await evaluateEdgeSafety(env, payload.note);
+          if (!safetyEval.safe) {
+            structuredLog("warn", "autonomous_note_ai_unsafe", request, { note: payload.note, threatCategory: safetyEval.threatCategory });
+            return new Response("Bad Request: Autonomous note flagged as unsafe by Llama Guard", {
+              status: 400,
+              headers: getCorsHeaders(request, env, isMutation),
+            });
+          }
           options.metadata = { note: payload.note };
         } else {
           options.metadata = { note: "Autonomous AI Triage Mitigation" };

@@ -213,6 +213,7 @@ export default function LiveThreatFeed() {
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState(false);
   const [severityFilter, setSeverityFilter] = useState<'all' | 'high' | 'medium' | 'low'>((searchParams?.get('severity') as 'all' | 'high' | 'medium' | 'low') || 'all');
+  const [aiUnsafeOnly, setAiUnsafeOnly] = useState<boolean>(false);
   const [appOriginFilter, setAppOriginFilter] = useState<string>(searchParams?.get('origin') || 'all');
     const [searchQuery, setSearchQuery] = useState(searchParams?.get('search') || '');
   const [localSearchQuery, setLocalSearchQuery] = useState(searchParams?.get('search') || '');
@@ -1041,9 +1042,15 @@ const handlePurgeDlqItem = async (id: string) => {
           JSON.stringify(event.details || {}).toLowerCase().includes(query);
       }
 
-      return matchesSeverity && matchesAppOrigin && matchesSearch;
+      // 4. Filter by AI Unsafe Only
+      let matchesAiUnsafe = true;
+      if (aiUnsafeOnly) {
+          matchesAiUnsafe = event.aiThreatFlag === true;
+      }
+
+      return matchesSeverity && matchesAppOrigin && matchesSearch && matchesAiUnsafe;
     });
-  }, [data, severityFilter, searchQuery, appOriginFilter]);
+  }, [data, severityFilter, searchQuery, appOriginFilter, aiUnsafeOnly]);
 
   const paginatedTelemetry = React.useMemo(() => {
     const start = telemetryPage * itemsPerPage;
@@ -1372,6 +1379,16 @@ const handlePurgeDlqItem = async (id: string) => {
             <option value="medium">Severity: MEDIUM</option>
             <option value="low">Severity: LOW</option>
           </select>
+          <button
+            onClick={() => setAiUnsafeOnly(prev => !prev)}
+            className={`px-3 py-1 rounded-full text-xs font-mono transition-colors border ${
+              aiUnsafeOnly
+                ? 'bg-purple-900/60 text-purple-300 border-purple-600'
+                : 'bg-slate-950/50 text-slate-400 border-slate-800 hover:bg-slate-800/80 hover:text-slate-300'
+            }`}
+          >
+            [ AI-UNSAFE ONLY ]
+          </button>
         </div>
 
         {/* App Origin Pill Selectors */}
