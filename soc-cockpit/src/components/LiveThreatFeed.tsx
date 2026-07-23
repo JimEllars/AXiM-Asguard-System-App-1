@@ -235,6 +235,7 @@ export default function LiveThreatFeed() {
 
   const [dlqRecords, setDlqRecords] = useState<DlqRecord[]>([]);
   const [dlqSearchQuery, setDlqSearchQuery] = useState('');
+  const [dlqView, setDlqView] = useState<'active' | 'quarantined'>('active');
   const [debouncedDlqSearch, setDebouncedDlqSearch] = useState('');
   const [replayingState, setReplayingState] = useState<Record<string, boolean>>({});
   const [copiedAuditRow, setCopiedAuditRow] = useState<string | null>(null);
@@ -255,7 +256,7 @@ export default function LiveThreatFeed() {
   }, [dlqSearchQuery]);
 
 
-  const filteredDlq = dlqRecords.filter(record =>
+  const filteredDlq = dlqRecords.filter(record => dlqView === 'quarantined' ? record.status === 'quarantined' : record.status !== 'quarantined').filter(record =>
     record.originNode.toLowerCase().includes(debouncedDlqSearch.toLowerCase()) ||
     record.droppedRoute.toLowerCase().includes(debouncedDlqSearch.toLowerCase()) ||
     record.errorReason.toLowerCase().includes(debouncedDlqSearch.toLowerCase())
@@ -735,7 +736,35 @@ export default function LiveThreatFeed() {
 
 
 
-  const handlePurgeDlqItem = async (id: string) => {
+
+  const handleUnquarantine = async (id: string) => {
+    try {
+      const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
+      const apiKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY;
+
+      if (!workerUrl || !apiKey) {
+        throw new Error("Missing environment credentials");
+      }
+
+      const res = await fetch(`${workerUrl}/dlq/unquarantine`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Asguard-Auth': apiKey,
+          'X-Asguard-Signature': activeAccount?.address || 'UNKNOWN'
+        },
+        body: JSON.stringify({ id })
+      });
+      if (!res.ok) throw new Error("Unquarantine failed");
+
+      setDlqRecords(prev => prev.map(r => r.id === id ? { ...r, status: undefined } : r));
+      addToast("[ ITEM UNQUARANTINED ]", "success");
+    } catch (err) {
+      addToast("Failed to unquarantine DLQ item", "error");
+    }
+  };
+
+const handlePurgeDlqItem = async (id: string) => {
     try {
       const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
       const apiKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY;
@@ -1783,6 +1812,10 @@ export default function LiveThreatFeed() {
                   <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
                      Ecosystem Dead Letter Queue (DLQ)
                   </div>
+                  <div className="flex bg-slate-950 border border-slate-700 rounded overflow-hidden">
+                    <button onClick={() => setDlqView('active')} className={`px-3 py-1 text-[10px] font-mono uppercase transition-colors ${dlqView === 'active' ? 'bg-slate-800 text-emerald-400' : 'text-slate-500 hover:text-slate-300'}`}>[ ACTIVE DLQ ]</button>
+                    <button onClick={() => setDlqView('quarantined')} className={`px-3 py-1 text-[10px] font-mono uppercase border-l border-slate-700 transition-colors ${dlqView === 'quarantined' ? 'bg-slate-800 text-amber-400' : 'text-slate-500 hover:text-slate-300'}`}>[ QUARANTINED ]</button>
+                  </div>
                   <input
                     type="text"
                     placeholder="Search DLQ..."
@@ -1843,6 +1876,13 @@ export default function LiveThreatFeed() {
                            className="text-amber-400 hover:text-amber-300 disabled:text-amber-700 disabled:cursor-not-allowed transition-colors text-[10px] font-semibold uppercase border border-transparent hover:border-amber-900 px-2 py-1 rounded">
                            {event.id && replayingState[event.id] ? "[ REPLAYING... ]" : "Replay"}
                         </button>
+                        {event.status === "quarantined" && (
+                          <button
+                             onClick={() => event.id && handleUnquarantine(event.id)}
+                             className="text-emerald-400 hover:text-emerald-300 transition-colors text-[10px] font-semibold uppercase border border-emerald-900/50 hover:bg-emerald-950/30 px-2 py-1 rounded">
+                             [ UNQUARANTINE ]
+                          </button>
+                        )}
                         <button
                            onClick={() => event.id && handlePurgeDlqItem(event.id)}
                            className="text-red-400 hover:text-red-300 transition-colors text-[10px] font-semibold uppercase border border-red-900/50 hover:bg-red-950/30 px-2 py-1 rounded">

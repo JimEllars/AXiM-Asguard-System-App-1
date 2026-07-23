@@ -898,7 +898,7 @@ describe("Autonomous Blocklist Endpoint", () => {
     const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
     const ctx = { waitUntil: vi.fn() } as any;
     const response = await worker.fetch(request, env as any, ctx);
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(201);
   });
 
   describe("DELETE /dlq", () => {
