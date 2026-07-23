@@ -65,6 +65,7 @@ function structuredLog(level: "error" | "warn", event: string, request: Request 
 }
 
 export interface Env {
+  AI?: any;
   ASGUARD_BLACKLIST: KVNamespace;
   ASGUARD_TELEMETRY: KVNamespace;
   ASGUARD_API_KEY: string;
@@ -110,6 +111,25 @@ function getCorsHeaders(request: Request, env: Env, isMutation: boolean) {
   };
 }
 
+
+
+async function evaluateEdgeSafety(env: Env, inputContent: string) {
+  if (!env.AI) return { safe: true, threatCategory: null };
+  try {
+    const response = await env.AI.run('@cf/meta/llama-guard-3-8b', {
+      messages: [{ role: 'user', content: inputContent }]
+    });
+
+    const output = typeof response === 'string' ? response : (response as any)?.response || '';
+    if (output.toLowerCase().includes('unsafe')) {
+      return { safe: false, threatCategory: output };
+    }
+    return { safe: true, threatCategory: null };
+  } catch (err) {
+    console.warn('[WORKERS_AI] Llama Guard evaluation bypassed on exception:', err);
+    return { safe: true, threatCategory: null };
+  }
+}
 
 async function dispatchCriticalAlert(env: Env, eventPayload: any, request: Request | null, ctx: ExecutionContext) {
   try {
@@ -1291,6 +1311,24 @@ export default {
           })()
         };
 
+        // evaluate AI Threat
+        let contentToEvaluate = "";
+        if (payload.details) {
+            contentToEvaluate = typeof payload.details === 'string' ? payload.details : JSON.stringify(payload.details);
+        }
+
+        if (contentToEvaluate) {
+            const aiSafety = await evaluateEdgeSafety(env, contentToEvaluate);
+            if (!aiSafety.safe) {
+                payload.severity = "critical";
+                payload.aiThreatFlag = true;
+                if (!payload.details) payload.details = {};
+                if (typeof payload.details === 'object') {
+                    payload.details.aiThreatCategory = aiSafety.threatCategory;
+                }
+            }
+        }
+
         const parseResult = TelemetryPayloadSchema.safeParse(payload);
         if (!parseResult.success) {
            ctx.waitUntil(env.ASGUARD_TELEMETRY.put(`dlq:${Date.now()}`, JSON.stringify({
@@ -1350,6 +1388,24 @@ export default {
         payload.targetResource = url.pathname;
         payload.signatureMetadata = request.headers.get("X-Asguard-Signature") || "UNKNOWN";
 
+        // evaluate AI Threat
+        let contentToEvaluate = "";
+        if (payload.details) {
+            contentToEvaluate = typeof payload.details === 'string' ? payload.details : JSON.stringify(payload.details);
+        }
+
+        if (contentToEvaluate) {
+            const aiSafety = await evaluateEdgeSafety(env, contentToEvaluate);
+            if (!aiSafety.safe) {
+                payload.severity = "critical";
+                payload.aiThreatFlag = true;
+                if (!payload.details) payload.details = {};
+                if (typeof payload.details === 'object') {
+                    payload.details.aiThreatCategory = aiSafety.threatCategory;
+                }
+            }
+        }
+
         const parseResult = TelemetryPayloadSchema.safeParse(payload);
 
         if (!parseResult.success) {
@@ -1368,7 +1424,19 @@ export default {
         }
 
         // Securely log telemetry asynchronously
-        ctx.waitUntil(logTelemetry(parseResult.data, env));
+        if (parseResult.data.aiThreatFlag) {
+            // Divert to DLQ automatically
+            ctx.waitUntil(env.ASGUARD_TELEMETRY.put(`dlq:${Date.now()}`, JSON.stringify({
+               id: `dlq-${Date.now()}`,
+               timestamp: Date.now(),
+               originNode: payload.colo || "UNKNOWN",
+               droppedRoute: url.pathname,
+               errorReason: "AI Threat Detected - Quarantined",
+               payload: parseResult.data
+            })));
+        } else {
+            ctx.waitUntil(logTelemetry(parseResult.data, env));
+        }
         ctx.waitUntil(dispatchCriticalAlert(env, parseResult.data, request, ctx));
 
         return new Response("Telemetry accepted", {

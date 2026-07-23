@@ -21,6 +21,7 @@ const TelemetryPayloadSchema = z.object({
   country: z.string().optional(),
   colo: z.string().optional(),
   edgeBotScore: z.number().optional(),
+  aiThreatFlag: z.boolean().optional(),
   appOrigin: z.string().optional(),
 });
 type TelemetryPayload = z.infer<typeof TelemetryPayloadSchema>;
@@ -1159,6 +1160,12 @@ const handlePurgeDlqItem = async (id: string) => {
         </div>
       )}
 
+      {/* AI Guard Status */}
+      <div className="text-xs bg-purple-950/50 border border-purple-900 px-3 py-1.5 rounded-md text-purple-400 font-mono flex items-center gap-2 mb-2 w-max">
+        <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
+        WORKERS_AI_GUARD: LLAMA-GUARD-3 ACTIVE
+      </div>
+
       {/* Synchronization Clock */}
       <div className="flex flex-col sm:flex-row flex-wrap justify-between items-center gap-2 md:gap-3">
         <div className={`text-xs font-mono border px-2 py-1.5 md:px-3 md:py-2 rounded flex items-center gap-2 ${
@@ -1462,7 +1469,12 @@ const handlePurgeDlqItem = async (id: string) => {
                              [{event.colo || 'N/A'}]
                           </span>
                        </div>
-                       <div className="truncate">
+                       <div className="truncate flex items-center gap-2">
+                          {event.aiThreatFlag && (
+                             <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-950/80 text-purple-400 border border-purple-700/50 uppercase">
+                               [ AI-UNSAFE ]
+                             </span>
+                          )}
                           {getEventName(event.eventType)}
                        </div>
                        <div>
