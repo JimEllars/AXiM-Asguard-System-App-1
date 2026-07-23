@@ -166,6 +166,10 @@ export default function LiveThreatFeed() {
 
   const [data, setData] = useState<TelemetryPayload[]>([]);
   const [blocklist, setBlocklist] = useState<{ name: string; expiration?: number; note?: string }[]>([]);
+  const [autoRefresh, setAutoRefresh] = useState<boolean>(true);
+  const autoRefreshRef = useRef(autoRefresh);
+  useEffect(() => { autoRefreshRef.current = autoRefresh; }, [autoRefresh]);
+  const [selectedIps, setSelectedIps] = useState<Set<string>>(new Set());
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [healthStatus, setHealthStatus] = useState<'ok' | 'degraded' | 'unknown'>('unknown');
@@ -382,6 +386,7 @@ export default function LiveThreatFeed() {
 
   useEffect(() => {
     const fetchTelemetry = async () => {
+      if (!autoRefreshRef.current) return;
       const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
       const apiKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY;
 
@@ -555,7 +560,7 @@ export default function LiveThreatFeed() {
             setFlash(true);
             setTimeout(() => setFlash(false), 500);
 
-            if (payload.new) {
+            if (payload.new && autoRefreshRef.current) {
                const newLog: Record<string, unknown> = { ...payload.new };
                for (const key in newLog) {
                    if (newLog[key] === null) {
@@ -1223,6 +1228,16 @@ const handlePurgeDlqItem = async (id: string) => {
           SYNC INTERVAL: 5000MS | LAST INDEXED: {lastSynced ? lastSynced.toLocaleTimeString('en-GB') : '--:--:--'}
         </div>
         <button
+           onClick={() => setAutoRefresh(prev => !prev)}
+           className={`px-2 py-1 rounded text-[10px] font-mono transition-colors border ${
+             autoRefresh
+               ? "bg-emerald-950/50 text-emerald-400 border-emerald-800"
+               : "bg-amber-950/50 text-amber-400 border-amber-800"
+           }`}
+        >
+           {autoRefresh ? "[ AUTO-REFRESH: ON ]" : "[ PAUSED ]"}
+        </button>
+        <button
            onClick={handleManualSync}
            disabled={isSyncing || isCooldown}
            className={`text-xs font-mono border px-2 py-1.5 md:px-3 md:py-2 rounded transition-colors duration-300 bg-slate-800 hover:bg-slate-700 border-slate-600 text-slate-300 flex items-center gap-2 disabled:opacity-50 ${isCooldown && !isSyncing ? 'opacity-50' : ''}`}
@@ -1435,7 +1450,13 @@ const handlePurgeDlqItem = async (id: string) => {
             <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: `linear-gradient(to right, #334155 1px, transparent 1px), linear-gradient(to bottom, #334155 1px, transparent 1px)`, backgroundSize: '40px 40px' }}></div>
 
             <div className="z-10 bg-slate-900/80 backdrop-blur-sm border-b border-slate-800 p-4 sticky top-0 flex justify-between items-center">
-              <div className="grid grid-cols-6 gap-4 text-xs font-semibold text-slate-400 uppercase tracking-wider w-full">
+              {selectedIps.size > 0 && (
+                 <button onClick={() => { selectedIps.forEach(ip => handleBlock(`ip:${ip}`, 86400, "Batch Block via Threat Feed")); setSelectedIps(new Set()); addToast("[ BATCH MITIGATION APPLIED ]", "success"); }} className="absolute right-4 top-2 text-[10px] font-mono bg-red-950/80 text-red-400 border border-red-900 px-3 py-1 rounded hover:bg-red-900/50 transition-colors z-20">
+                   [ BLOCK SELECTED ({selectedIps.size}) ]
+                 </button>
+              )}
+              <div className="grid grid-cols-[auto_1fr_1fr_1fr_1fr_1fr_1fr] gap-4 text-xs font-semibold text-slate-400 uppercase tracking-wider w-full">
+                 <div></div>
                  <div>Timestamp</div>
                  <div>Source IP</div>
                  <div>Origin</div>
@@ -1469,9 +1490,10 @@ const handlePurgeDlqItem = async (id: string) => {
                    return (
                      <div key={`${event.sourceIp}-${event.timestamp}-${idx}`} className={`flex flex-col border font-mono tracking-tight transition-all duration-500 ${flash && idx === 0 && telemetryPage === 0 ? 'bg-emerald-950/30 border-l-2 border-l-emerald-500 border-y-slate-800/50 border-r-slate-800/50' : 'border-slate-800/50 bg-slate-950/40 hover:bg-slate-800/50'}`}>
                      <div
-                       className={`grid grid-cols-6 gap-4 items-center p-3 text-sm text-slate-300 font-mono cursor-pointer ${isActionLoading ? 'opacity-50 pointer-events-none' : ''}`}
+                       className={`grid grid-cols-[auto_1fr_1fr_1fr_1fr_1fr_1fr] gap-4 items-center p-3 text-sm text-slate-300 font-mono cursor-pointer ${isActionLoading ? 'opacity-50 pointer-events-none' : ''}`}
                        onClick={() => setExpandedRow(isExpanded ? null : idx)}
                      >
+                       <div><input type="checkbox" onClick={(e) => e.stopPropagation()} onChange={(e) => { const ip = event.sourceIp; setSelectedIps(prev => { const next = new Set(prev); if (e.target.checked) next.add(ip); else next.delete(ip); return next; }); }} checked={selectedIps.has(event.sourceIp)} className="cursor-pointer" /></div>
                        <div className="text-slate-500 font-mono">
                           {new Date(event.timestamp).toLocaleTimeString('en-GB')}
                        </div>
