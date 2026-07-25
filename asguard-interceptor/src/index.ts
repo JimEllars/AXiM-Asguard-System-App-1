@@ -257,7 +257,11 @@ export default {
     const duration = Date.now() - startTime;
 
     const newResponse = new Response(response.body, response);
-    newResponse.headers.set("Server-Timing", `edge-exec;dur=${duration};desc="Stateless Perimeter Check"`);
+    let serverTiming = `edge-exec;dur=${duration};desc="Stateless Perimeter Check"`;
+    if ((request as any).aiDuration) {
+      serverTiming += `, ai-eval;dur=${(request as any).aiDuration};desc="Llama Guard 3 8B"`;
+    }
+    newResponse.headers.set("Server-Timing", serverTiming);
     return newResponse;
   },
 
