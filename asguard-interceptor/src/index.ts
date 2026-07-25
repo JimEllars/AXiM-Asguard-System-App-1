@@ -108,26 +108,30 @@ function getCorsHeaders(request: Request, env: Env, isMutation: boolean) {
     "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Asguard-Auth, X-Asguard-Signature",
     "Access-Control-Expose-Headers": "Server-Timing, X-Asguard-RateLimit-Remaining, X-Asguard-Colo, X-Asguard-Req-Id",
+    ...( (request as any).aiDuration ? { "Server-Timing": `ai-eval;dur=${(request as any).aiDuration};desc="Llama Guard 3 8B"` } : {} ),
   };
 }
 
 
 
 async function evaluateEdgeSafety(env: Env, inputContent: string) {
-  if (!env.AI) return { safe: true, threatCategory: null };
+  if (!env.AI) return { safe: true, threatCategory: null, aiDuration: 0 };
+  const aiStart = Date.now();
   try {
     const response = await env.AI.run('@cf/meta/llama-guard-3-8b', {
       messages: [{ role: 'user', content: inputContent }]
     });
 
+    const aiDuration = Date.now() - aiStart;
     const output = typeof response === 'string' ? response : (response as any)?.response || '';
     if (output.toLowerCase().includes('unsafe')) {
-      return { safe: false, threatCategory: output };
+      return { safe: false, threatCategory: output, aiDuration };
     }
-    return { safe: true, threatCategory: null };
+    return { safe: true, threatCategory: null, aiDuration };
   } catch (err) {
+    const aiDuration = Date.now() - aiStart;
     structuredLog("warn", "workers_ai_evaluation_bypassed", null, { error: String(err) });
-    return { safe: true, threatCategory: null };
+    return { safe: true, threatCategory: null, aiDuration };
   }
 }
 
@@ -1327,6 +1331,9 @@ export default {
 
         if (contentToEvaluate) {
             const aiSafety = await evaluateEdgeSafety(env, contentToEvaluate);
+            if (aiSafety.aiDuration) {
+               (request as any).aiDuration = ((request as any).aiDuration || 0) + aiSafety.aiDuration;
+            }
             if (!aiSafety.safe) {
                 payload.severity = "critical";
                 payload.aiThreatFlag = true;
@@ -1404,6 +1411,9 @@ export default {
 
         if (contentToEvaluate) {
             const aiSafety = await evaluateEdgeSafety(env, contentToEvaluate);
+            if (aiSafety.aiDuration) {
+               (request as any).aiDuration = ((request as any).aiDuration || 0) + aiSafety.aiDuration;
+            }
             if (!aiSafety.safe) {
                 payload.severity = "critical";
                 payload.aiThreatFlag = true;
