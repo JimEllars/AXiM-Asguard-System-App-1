@@ -1456,7 +1456,27 @@ const handlePurgeDlqItem = async (id: string) => {
                  </button>
               )}
               <div className="grid grid-cols-[auto_1fr_1fr_1fr_1fr_1fr_1fr] gap-4 text-xs font-semibold text-slate-400 uppercase tracking-wider w-full">
-                 <div></div>
+                 <div>
+                   <input
+                     type="checkbox"
+                     className="cursor-pointer"
+                     checked={paginatedTelemetry.length > 0 && paginatedTelemetry.every(item => selectedIps.has(item.sourceIp))}
+                     onChange={(e) => {
+                       const checked = e.target.checked;
+                       setSelectedIps(prev => {
+                         const next = new Set(prev);
+                         paginatedTelemetry.forEach(item => {
+                           if (checked) {
+                             next.add(item.sourceIp);
+                           } else {
+                             next.delete(item.sourceIp);
+                           }
+                         });
+                         return next;
+                       });
+                     }}
+                   />
+                 </div>
                  <div>Timestamp</div>
                  <div>Source IP</div>
                  <div>Origin</div>

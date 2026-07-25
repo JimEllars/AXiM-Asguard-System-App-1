@@ -143,6 +143,9 @@ describe("Asguard Interceptor", () => {
     const req = createReq();
     const res = await worker.fetch(req, env, ctx);
     expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBe("10");
+    expect(res.headers.get("X-RateLimit-Limit")).toBe("10");
+    expect(res.headers.get("X-RateLimit-Remaining")).toBe("0");
   });
 
 
