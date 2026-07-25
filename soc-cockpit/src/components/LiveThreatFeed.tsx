@@ -94,9 +94,10 @@ function LeaseTimer({ expiration }: { expiration: number }) {
 
 export default function LiveThreatFeed() {
   const handleExportAuditCSV = () => {
-    if (!auditLog || auditLog.length === 0) return;
+    const dataToExport = filteredAuditLog || auditLog;
+    if (!dataToExport || dataToExport.length === 0) return;
     const header = "Timestamp,Action,Target Key,TTL,Authorized Wallet\n";
-    const rows = auditLog.map(event => {
+    const rows = dataToExport.map(event => {
       const timestamp = new Date(event.timestamp).toISOString();
       const action = event.action || "";
       const target = event.target || "";
@@ -150,7 +151,7 @@ export default function LiveThreatFeed() {
       await fetch(`${workerUrl}/blocklist`, {
         method: 'POST',
         headers: {
-          'X-Asguard-Auth': apiKey,
+          'X-Asguard-Auth': apiKey || '',
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ key, action: 'update_note', note: annotations[key] || '' })
@@ -240,6 +241,8 @@ export default function LiveThreatFeed() {
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
 
   const [dlqRecords, setDlqRecords] = useState<DlqRecord[]>([]);
+  const [selectedDlqIds, setSelectedDlqIds] = useState<string[]>([]);
+  const [isBatchProcessing, setIsBatchProcessing] = useState(false);
   const [dlqSearchQuery, setDlqSearchQuery] = useState('');
   const [dlqView, setDlqView] = useState<'active' | 'quarantined'>('active');
   const [debouncedDlqSearch, setDebouncedDlqSearch] = useState('');
@@ -744,6 +747,36 @@ export default function LiveThreatFeed() {
 
 
 
+
+  const handleBulkUnquarantine = async () => {
+    if (selectedDlqIds.length === 0) return;
+    setIsBatchProcessing(true);
+    try {
+      const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
+      const apiKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY;
+      await Promise.all(
+        selectedDlqIds.map(id =>
+          fetch(`${workerUrl}/dlq/unquarantine`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Asguard-Auth': apiKey || '',
+              'X-Asguard-Signature': activeAccount?.address || 'UNKNOWN'
+            },
+            body: JSON.stringify({ id })
+          })
+        )
+      );
+      setDlqRecords(prev => prev.map(r => selectedDlqIds.includes(r.id) ? { ...r, status: undefined } : r));
+      setSelectedDlqIds([]);
+      addToast("[ BULK UNQUARANTINE COMPLETE ]", "success");
+    } catch (err) {
+      addToast("Bulk unquarantine failed", "error");
+    } finally {
+      setIsBatchProcessing(false);
+    }
+  };
+
   const handleUnquarantine = async (id: string) => {
     try {
       const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
@@ -757,7 +790,7 @@ export default function LiveThreatFeed() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Asguard-Auth': apiKey,
+          'X-Asguard-Auth': apiKey || '',
           'X-Asguard-Signature': activeAccount?.address || 'UNKNOWN'
         },
         body: JSON.stringify({ id })
@@ -783,7 +816,7 @@ const handlePurgeDlqItem = async (id: string) => {
       const res = await fetch(`${workerUrl}/dlq?id=${encodeURIComponent(id)}`, {
         method: 'DELETE',
         headers: {
-          'X-Asguard-Auth': apiKey,
+          'X-Asguard-Auth': apiKey || '',
           'X-Asguard-Signature': activeAccount?.address || 'UNKNOWN'
         }
       });
@@ -812,7 +845,7 @@ const handlePurgeDlqItem = async (id: string) => {
       const response = await fetch(`${workerUrl}/api/dlq/bulk-replay`, {
         method: 'POST',
         headers: {
-          'X-Asguard-Auth': apiKey,
+          'X-Asguard-Auth': apiKey || '',
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(fullEvent),
@@ -868,7 +901,7 @@ const handlePurgeDlqItem = async (id: string) => {
       const res = await fetch(`${workerUrl}/blocklist`, {
         method: 'POST',
         headers: {
-          'X-Asguard-Auth': apiKey,
+          'X-Asguard-Auth': apiKey || '',
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ key, action: 'unblock' }),
@@ -909,7 +942,7 @@ const handlePurgeDlqItem = async (id: string) => {
       const res = await fetch(`${workerUrl}/blocklist`, {
         method: 'POST',
         headers: {
-          'X-Asguard-Auth': apiKey,
+          'X-Asguard-Auth': apiKey || '',
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ key, action: 'block', ttl, details: { reason } }),
@@ -952,7 +985,7 @@ const handlePurgeDlqItem = async (id: string) => {
       const res = await fetch(`${workerUrl}/blocklist`, {
         method: 'POST',
         headers: {
-          'X-Asguard-Auth': apiKey,
+          'X-Asguard-Auth': apiKey || '',
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ key: `ip:${ip}`, action: 'block' }),
@@ -1896,12 +1929,39 @@ const handlePurgeDlqItem = async (id: string) => {
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-5 gap-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mt-4">
+              <div className="grid grid-cols-[auto_1fr_1fr_1fr_1fr_auto] gap-4 mb-3 px-3 text-xs font-semibold text-slate-500 uppercase tracking-wider mt-4 font-mono">
+                 <div className="w-8 flex items-center justify-center">
+                    {dlqView === 'quarantined' && (
+                       <input
+                          type="checkbox"
+                          className="accent-amber-500 bg-slate-900 border-slate-700 cursor-pointer"
+                          checked={selectedDlqIds.length > 0 && selectedDlqIds.length === filteredDlq.filter(r => r.id).length}
+                          onChange={(e) => {
+                             if (e.target.checked) {
+                                setSelectedDlqIds(filteredDlq.map(r => r.id).filter((id): id is string => !!id));
+                             } else {
+                                setSelectedDlqIds([]);
+                             }
+                          }}
+                       />
+                    )}
+                 </div>
                  <div>Timestamp</div>
                  <div>Origin Node</div>
                  <div>Dropped Route</div>
                  <div>Error Reason</div>
-                 <div>Action</div>
+                 <div className="text-right flex items-center justify-end gap-2">
+                    {dlqView === 'quarantined' && selectedDlqIds.length > 0 && (
+                       <button
+                          onClick={handleBulkUnquarantine}
+                          disabled={isBatchProcessing}
+                          className="text-[10px] bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-400 border border-emerald-800 px-2 py-1 rounded transition-colors"
+                       >
+                          {isBatchProcessing ? "[ PROCESSING... ]" : "[ UNQUARANTINE SELECTED ]"}
+                       </button>
+                    )}
+                    Actions
+                 </div>
               </div>
             </div>
 
@@ -1920,7 +1980,23 @@ const handlePurgeDlqItem = async (id: string) => {
                   </div>
                ) : (
                  filteredDlq.map((event, idx) => (
-                   <div key={`${event.originNode || "origin"}-${event.timestamp}-${idx}`} className="grid grid-cols-5 gap-4 items-center p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono">
+                   <div key={`${event.originNode || "origin"}-${event.timestamp}-${idx}`} className="grid grid-cols-[auto_1fr_1fr_1fr_1fr_auto] gap-4 items-center p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono">
+                     <div className="w-8 flex items-center justify-center">
+                        {dlqView === 'quarantined' && event.id && (
+                           <input
+                              type="checkbox"
+                              className="accent-amber-500 bg-slate-900 border-slate-700"
+                              checked={selectedDlqIds.includes(event.id)}
+                              onChange={(e) => {
+                                 if (e.target.checked && event.id) {
+                                    setSelectedDlqIds(prev => [...prev, event.id!]);
+                                 } else {
+                                    setSelectedDlqIds(prev => prev.filter(id => id !== event.id));
+                                 }
+                              }}
+                           />
+                        )}
+                     </div>
                      <div className="text-slate-500 font-mono">
                         {new Date(event.timestamp).toLocaleString('en-GB')}
                      </div>
