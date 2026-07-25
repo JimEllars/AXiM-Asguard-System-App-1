@@ -1044,8 +1044,15 @@ export default {
           note?: string;
         };
 
-        if (!payload.key || payload.key.startsWith("wallet:")) {
-          return new Response("Bad Request: Invalid key structural fence", {
+        if (
+          !payload.key ||
+          payload.key.startsWith("wallet:") ||
+          payload.key.startsWith("token:axim_") ||
+          payload.key.startsWith("ip:10.") ||
+          payload.key.startsWith("ip:127.0.0.1") ||
+          payload.key.startsWith("ip:192.168.")
+        ) {
+          return new Response("Bad Request: Invalid key structural fence or protected internal target", {
             status: 400,
             headers: getCorsHeaders(request, env, isMutation),
           });
