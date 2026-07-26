@@ -748,6 +748,39 @@ export default function LiveThreatFeed() {
 
 
 
+  const handleBulkReplayDLQ = async () => {
+    if (selectedDlqIds.length === 0) return;
+    setIsBatchProcessing(true);
+    try {
+      const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
+      const apiKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+      const res = await fetch(`${workerUrl}/dlq/bulk-replay`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Asguard-Auth': apiKey || '',
+        },
+        body: JSON.stringify({ ids: selectedDlqIds }),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (!res.ok) throw new Error("Bulk replay failed");
+
+      setDlqRecords(prev => prev.filter(r => !selectedDlqIds.includes(r.id)));
+      setSelectedDlqIds([]);
+      addToast("[ BULK REPLAY COMPLETE ]", "success");
+    } catch (err) {
+      addToast("Bulk replay failed", "error");
+    } finally {
+      setIsBatchProcessing(false);
+    }
+  };
+
   const handleBulkUnquarantine = async () => {
     if (selectedDlqIds.length === 0) return;
     setIsBatchProcessing(true);
@@ -1931,10 +1964,23 @@ const handlePurgeDlqItem = async (id: string) => {
               </div>
               <div className="grid grid-cols-[auto_1fr_1fr_1fr_1fr_auto] gap-4 mb-3 px-3 text-xs font-semibold text-slate-500 uppercase tracking-wider mt-4 font-mono">
                  <div className="w-8 flex items-center justify-center">
-                    {dlqView === 'quarantined' && (
+                    {dlqView === 'quarantined' ? (
                        <input
                           type="checkbox"
                           className="accent-amber-500 bg-slate-900 border-slate-700 cursor-pointer"
+                          checked={selectedDlqIds.length > 0 && selectedDlqIds.length === filteredDlq.filter(r => r.id).length}
+                          onChange={(e) => {
+                             if (e.target.checked) {
+                                setSelectedDlqIds(filteredDlq.map(r => r.id).filter((id): id is string => !!id));
+                             } else {
+                                setSelectedDlqIds([]);
+                             }
+                          }}
+                       />
+                    ) : (
+                       <input
+                          type="checkbox"
+                          className="accent-emerald-500 bg-slate-900 border-slate-700 cursor-pointer"
                           checked={selectedDlqIds.length > 0 && selectedDlqIds.length === filteredDlq.filter(r => r.id).length}
                           onChange={(e) => {
                              if (e.target.checked) {
@@ -1960,6 +2006,15 @@ const handlePurgeDlqItem = async (id: string) => {
                           {isBatchProcessing ? "[ PROCESSING... ]" : "[ UNQUARANTINE SELECTED ]"}
                        </button>
                     )}
+                    {dlqView === 'active' && selectedDlqIds.length > 0 && (
+                       <button
+                          onClick={handleBulkReplayDLQ}
+                          disabled={isBatchProcessing}
+                          className="text-[10px] bg-amber-950/40 hover:bg-amber-900/60 text-amber-400 border border-amber-800 px-2 py-1 rounded transition-colors font-mono"
+                       >
+                          {isBatchProcessing ? "[ PROCESSING... ]" : `[ REPLAY SELECTED (${selectedDlqIds.length}) ]`}
+                       </button>
+                    )}
                     Actions
                  </div>
               </div>
@@ -1982,10 +2037,10 @@ const handlePurgeDlqItem = async (id: string) => {
                  filteredDlq.map((event, idx) => (
                    <div key={`${event.originNode || "origin"}-${event.timestamp}-${idx}`} className="grid grid-cols-[auto_1fr_1fr_1fr_1fr_auto] gap-4 items-center p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono">
                      <div className="w-8 flex items-center justify-center">
-                        {dlqView === 'quarantined' && event.id && (
+                        {(dlqView === 'quarantined' || dlqView === 'active') && event.id && (
                            <input
                               type="checkbox"
-                              className="accent-amber-500 bg-slate-900 border-slate-700"
+                              className={`${dlqView === 'quarantined' ? 'accent-amber-500' : 'accent-emerald-500'} bg-slate-900 border-slate-700`}
                               checked={selectedDlqIds.includes(event.id)}
                               onChange={(e) => {
                                  if (e.target.checked && event.id) {
