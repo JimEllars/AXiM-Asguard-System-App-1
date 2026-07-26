@@ -990,6 +990,59 @@ describe("Autonomous Blocklist Endpoint", () => {
     });
   });
 
+
+  describe("POST /dlq/bulk-purge", () => {
+    it("returns 401 if unauthorized", async () => {
+      const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+      const ctx = { waitUntil: vi.fn() } as any;
+      const request = new Request("https://asguard.local/dlq/bulk-purge", { method: "POST" });
+      const response = await worker.fetch(request, env as any, ctx);
+      expect(response.status).toBe(401);
+    });
+
+    it("returns 400 if payload is invalid", async () => {
+      const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+      const ctx = { waitUntil: vi.fn() } as any;
+      const request = new Request("https://asguard.local/dlq/bulk-purge", {
+        method: "POST",
+        headers: { "X-Asguard-Auth": "test-auth-key", "Content-Type": "application/json" },
+        body: JSON.stringify({ not_ids: "dlq-1" }),
+      });
+      const response = await worker.fetch(request, env as any, ctx);
+      expect(response.status).toBe(400);
+    });
+
+    it("purges multiple dlq items and writes audit logs with wallet auth", async () => {
+      const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+      const ctx = { waitUntil: vi.fn() } as any;
+      const body = { ids: ["dlq-123", "dlq-456"] };
+      const request = new Request("https://asguard.local/dlq/bulk-purge", {
+        method: "POST",
+        headers: {
+          "X-Asguard-Auth": "test-auth-key",
+          "X-Asguard-Signature": "0xABCDEF",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(body),
+      });
+      const response = await worker.fetch(request, env as any, ctx);
+      expect(response.status).toBe(200);
+      const respData = await (response as any).json();
+      expect(respData.purged).toBe(2);
+      expect(respData.failed).toBe(0);
+
+      const calls = mockTelemetryKV.delete.mock.calls;
+      expect(calls.some((c: any) => c[0] === "dlq:123")).toBe(true);
+      expect(calls.some((c: any) => c[0] === "dlq:456")).toBe(true);
+
+      const putCalls = mockTelemetryKV.put.mock.calls;
+      const auditCalls = putCalls.filter((c: any) => c[0].startsWith("audit:") && c[1].includes("dlq_bulk_purge"));
+      expect(auditCalls.length).toBe(2);
+      expect(auditCalls[0][1]).toContain("0xABCDEF");
+      expect(auditCalls[1][1]).toContain("0xABCDEF");
+    });
+  });
+
   describe("POST /dlq/bulk-replay", () => {
     it("returns 401 if unauthorized", async () => {
       const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };

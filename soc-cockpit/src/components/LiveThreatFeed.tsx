@@ -748,6 +748,40 @@ export default function LiveThreatFeed() {
 
 
 
+
+  const handleBulkPurgeDLQ = async () => {
+    if (selectedDlqIds.length === 0) return;
+    setIsBatchProcessing(true);
+    try {
+      const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
+      const apiKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+      const res = await fetch(`${workerUrl}/dlq/bulk-purge`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Asguard-Auth': apiKey || '',
+        },
+        body: JSON.stringify({ ids: selectedDlqIds }),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (!res.ok) throw new Error("Bulk purge failed");
+
+      setDlqRecords(prev => prev.filter(r => !selectedDlqIds.includes(r.id!)));
+      setSelectedDlqIds([]);
+      addToast("[ BULK PURGE COMPLETE ]", "success");
+    } catch (err) {
+      addToast("Bulk purge failed", "error");
+    } finally {
+      setIsBatchProcessing(false);
+    }
+  };
+
   const handleBulkReplayDLQ = async () => {
     if (selectedDlqIds.length === 0) return;
     setIsBatchProcessing(true);
@@ -2006,7 +2040,17 @@ const handlePurgeDlqItem = async (id: string) => {
                           {isBatchProcessing ? "[ PROCESSING... ]" : "[ UNQUARANTINE SELECTED ]"}
                        </button>
                     )}
-                    {dlqView === 'active' && selectedDlqIds.length > 0 && (
+
+                    {selectedDlqIds.length > 0 && (
+                       <button
+                          onClick={handleBulkPurgeDLQ}
+                          disabled={isBatchProcessing}
+                          className="text-[10px] bg-red-950/40 hover:bg-red-900/60 text-red-400 border border-red-800 px-2 py-1 rounded transition-colors font-mono"
+                       >
+                          {isBatchProcessing ? "[ PROCESSING... ]" : `[ PURGE SELECTED (${selectedDlqIds.length}) ]`}
+                       </button>
+                    )}
+{dlqView === 'active' && selectedDlqIds.length > 0 && (
                        <button
                           onClick={handleBulkReplayDLQ}
                           disabled={isBatchProcessing}
