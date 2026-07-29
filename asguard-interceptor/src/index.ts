@@ -41,7 +41,7 @@ function pruneRateLimitMap() {
 }
 
 
-function structuredLog(level: "error" | "warn", event: string, request: Request | null, details: any) {
+function structuredLog(level: "error" | "warn" | "info", event: string, request: Request | null, details: any) {
   let colo = "UNKNOWN";
   let clientIp = "UNKNOWN";
   if (request) {
@@ -186,14 +186,40 @@ export default {
   ) {
     ctx.waitUntil(
       (async () => {
+        let expiredKeysPurged = 0;
+        const now = Date.now();
         try {
           const listResult = await env.ASGUARD_BLACKLIST.list({ limit: 100 });
-          const now = Date.now();
           const expiredKeys = listResult.keys.filter(k => k.expiration && k.expiration < now / 1000);
 
-          await Promise.all(expiredKeys.map(k => env.ASGUARD_BLACKLIST.delete(k.name)));
+          if (expiredKeys.length > 0) {
+            await Promise.all(expiredKeys.map(k => env.ASGUARD_BLACKLIST.delete(k.name)));
+            expiredKeysPurged = expiredKeys.length;
+          }
         } catch (e) {
           structuredLog("error", "Scheduled cleanup failed", null, e);
+        }
+
+        try {
+          const thirtyDaysAgo = now - 30 * 86400 * 1000;
+          let dlqList = await env.ASGUARD_TELEMETRY.list({ prefix: "dlq:" });
+          const dlqExpired = [];
+          for (const key of dlqList.keys) {
+             const itemStr = await env.ASGUARD_TELEMETRY.get(key.name);
+             if (itemStr) {
+                try {
+                   const itemObj = JSON.parse(itemStr);
+                   if (itemObj.timestamp && itemObj.timestamp < thirtyDaysAgo) {
+                      dlqExpired.push(key.name);
+                   }
+                } catch(e) {}
+             }
+          }
+          if (dlqExpired.length > 0) {
+             await Promise.all(dlqExpired.map(k => env.ASGUARD_TELEMETRY.delete(k)));
+          }
+        } catch (e) {
+          structuredLog("error", "Scheduled DLQ quarantine cleanup failed", null, e);
         }
 
         if (localEdgeLoggingBuffer.length > 0) {
@@ -237,6 +263,20 @@ export default {
             structuredLog("error", "Scheduled buffer flush failed", null, err);
           }
         }
+
+        // In this scope bufferSnapshot is not available, let's just emit 0
+        try {
+          await env.ASGUARD_TELEMETRY.put("system_health_heartbeat", JSON.stringify({
+            eventType: "cron_daily_heartbeat",
+            status: "ok",
+            timestamp: now,
+            expiredKeysPurged: expiredKeysPurged,
+            bufferFlushedCount: 0,
+            colo: "EDGE_CRON_SCHEDULER"
+          }));
+        } catch(e) {}
+
+        structuredLog("info", "cron_daily_maintenance_completed", null, { timestamp: now, expiredKeysPurged: expiredKeysPurged });
       })()
     );
   },
@@ -490,10 +530,19 @@ export default {
       }
 
       try {
-        await Promise.all([
+        const [_, __, heartbeatRaw] = await Promise.all([
           env.ASGUARD_BLACKLIST.get("health-check-key").catch(e => { throw new Error("ASGUARD_BLACKLIST failed") }),
-          env.ASGUARD_TELEMETRY.get("health-check-key").catch(e => { throw new Error("ASGUARD_TELEMETRY failed") })
+          env.ASGUARD_TELEMETRY.get("health-check-key").catch(e => { throw new Error("ASGUARD_TELEMETRY failed") }),
+          env.ASGUARD_TELEMETRY.get("system_health_heartbeat")
         ]);
+
+        let lastHeartbeat = null;
+        if (heartbeatRaw) {
+          try {
+            const hb = JSON.parse(heartbeatRaw);
+            lastHeartbeat = hb.timestamp || null;
+          } catch(e) {}
+        }
 
         return new Response(JSON.stringify({
           status: "ok",
@@ -501,6 +550,7 @@ export default {
           telemetry: "ok",
           rateLimitSize: rateLimitMap.size,
           penaltyLedgerSize: penaltyLedger.size,
+          lastHeartbeat,
           timestamp: Date.now()
         }), {
           status: 200,
