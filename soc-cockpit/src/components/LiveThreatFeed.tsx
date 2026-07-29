@@ -178,6 +178,8 @@ export default function LiveThreatFeed() {
   const [isCooldown, setIsCooldown] = useState(false);
   const [edgeMetrics, setEdgeMetrics] = useState({ rateLimitSize: 0, penaltyLedgerSize: 0 });
   const [lastHeartbeat, setLastHeartbeat] = useState<number | null>(null);
+  const [heartbeatDetails, setHeartbeatDetails] = useState<Record<string, unknown> | null>(null);
+  const [showCronPopover, setShowCronPopover] = useState(false);
   const [edgeLatency, setEdgeLatency] = useState<string | null>(null);
   const [velocityHistory, setVelocityHistory] = useState<('up' | 'down' | 'none')[]>(() => {
     if (typeof window !== 'undefined') {
@@ -358,6 +360,9 @@ export default function LiveThreatFeed() {
           setEdgeMetrics({ rateLimitSize: healthData.rateLimitSize || 0, penaltyLedgerSize: healthData.penaltyLedgerSize || 0 });
           setHealthStatus(healthData.status === 'ok' && healthData.blacklist === 'ok' && healthData.telemetry === 'ok' ? 'ok' : 'degraded');
           if (healthData.lastHeartbeat) setLastHeartbeat(healthData.lastHeartbeat);
+          if (healthData.heartbeatDetails) setHeartbeatDetails(healthData.heartbeatDetails);
+          if (healthData.lastHeartbeat) setLastHeartbeat(healthData.lastHeartbeat);
+          if (healthData.heartbeatDetails) setHeartbeatDetails(healthData.heartbeatDetails);
           if (healthData.lastHeartbeat) setLastHeartbeat(healthData.lastHeartbeat);
           if (healthData.lastHeartbeat) setLastHeartbeat(healthData.lastHeartbeat);
         } else {
@@ -449,6 +454,8 @@ export default function LiveThreatFeed() {
           const healthData = await healthRes.json();
           setEdgeMetrics({ rateLimitSize: healthData.rateLimitSize || 0, penaltyLedgerSize: healthData.penaltyLedgerSize || 0 });
           setHealthStatus(healthData.status === 'ok' && healthData.blacklist === 'ok' && healthData.telemetry === 'ok' ? 'ok' : 'degraded');
+          if (healthData.lastHeartbeat) setLastHeartbeat(healthData.lastHeartbeat);
+          if (healthData.heartbeatDetails) setHeartbeatDetails(healthData.heartbeatDetails);
         } else {
           setHealthStatus('degraded');
         }
@@ -665,9 +672,12 @@ export default function LiveThreatFeed() {
 
            if (healthRes.ok) {
               const healthData = await healthRes.json();
-              setEdgeMetrics({ rateLimitSize: healthData.rateLimitSize || 0, penaltyLedgerSize: healthData.penaltyLedgerSize || 0 });
-              setHealthStatus(healthData.status === 'ok' && healthData.blacklist === 'ok' && healthData.telemetry === 'ok' ? 'ok' : 'degraded');
-              if (healthData.lastHeartbeat) setLastHeartbeat(healthData.lastHeartbeat);
+          setEdgeMetrics({ rateLimitSize: healthData.rateLimitSize || 0, penaltyLedgerSize: healthData.penaltyLedgerSize || 0 });
+          setHealthStatus(healthData.status === 'ok' && healthData.blacklist === 'ok' && healthData.telemetry === 'ok' ? 'ok' : 'degraded');
+          if (healthData.lastHeartbeat) setLastHeartbeat(healthData.lastHeartbeat);
+          if (healthData.heartbeatDetails) setHeartbeatDetails(healthData.heartbeatDetails);
+          if (healthData.lastHeartbeat) setLastHeartbeat(healthData.lastHeartbeat);
+          if (healthData.heartbeatDetails) setHeartbeatDetails(healthData.heartbeatDetails);
            }
            if (dlqRes.ok) setDlqRecords(await dlqRes.json().then(d => d.slice(0, 50)));
            if (blocklistRes.ok) {
@@ -1283,9 +1293,58 @@ const handlePurgeDlqItem = async (id: string) => {
           <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
           WORKERS_AI_GUARD: LLAMA-GUARD-3 ACTIVE
         </div>
-        <div className="text-xs bg-emerald-950/50 border border-emerald-900 px-3 py-1.5 rounded-md text-emerald-400 font-mono flex items-center gap-2 w-max">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          CRON AUTOMATION: ACTIVE [ DAILY SCHEDULED ]
+        <div className="relative">
+          <div
+            onClick={() => setShowCronPopover(prev => !prev)}
+            className="cursor-pointer hover:bg-emerald-900/50 transition-colors text-xs bg-emerald-950/50 border border-emerald-900 px-3 py-1.5 rounded-md text-emerald-400 font-mono flex items-center gap-2 w-max"
+          >
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            CRON AUTOMATION: ACTIVE [ HOURLY / DAILY ]
+          </div>
+          {showCronPopover && (
+            <div className="absolute top-full left-0 mt-2 w-max min-w-[300px] z-50 bg-slate-900/95 border border-slate-700 rounded shadow-xl p-4 font-mono text-xs">
+               <div className="text-slate-300 font-bold mb-3 uppercase tracking-wider border-b border-slate-700 pb-2 flex justify-between">
+                 <span>[ Cron Heartbeat Telemetry ]</span>
+                 <button onClick={() => setShowCronPopover(false)} className="text-slate-500 hover:text-slate-300">X</button>
+               </div>
+               {heartbeatDetails ? (
+                  <div className="space-y-2 text-slate-400">
+                     <div className="flex justify-between">
+                        <span>STATUS:</span>
+                        <span className={heartbeatDetails.status === 'ok' ? 'text-emerald-400' : 'text-amber-400'}>
+                           {heartbeatDetails.status === 'ok' ? 'OK' : 'DEGRADED'}
+                        </span>
+                     </div>
+                     <div className="flex justify-between">
+                        <span>LAST HEARTBEAT:</span>
+                        <span className="text-slate-200">
+                           {heartbeatDetails.timestamp ? new Date(heartbeatDetails.timestamp as number).toLocaleString('en-GB') : 'UNKNOWN'}
+                        </span>
+                     </div>
+                     <div className="flex justify-between">
+                        <span>EXPIRED KEYS PURGED:</span>
+                        <span className="text-slate-200">{String(heartbeatDetails.expiredKeysPurged ?? 0)}</span>
+                     </div>
+                     <div className="flex justify-between">
+                        <span>BUFFER FLUSHED:</span>
+                        <span className="text-slate-200">{String(heartbeatDetails.bufferFlushedCount ?? 0)}</span>
+                     </div>
+                     <div className="flex justify-between">
+                        <span>AI THREATS (24H):</span>
+                        <span className="text-slate-200">{String(heartbeatDetails.aiThreatCount24h ?? 0)}</span>
+                     </div>
+                     <div className="flex justify-between">
+                        <span>CRON SCHEDULE:</span>
+                        <span className="text-slate-200">{String(heartbeatDetails.cronSchedule ?? 'UNKNOWN')}</span>
+                     </div>
+                  </div>
+               ) : (
+                  <div className="text-slate-500 text-center py-2">
+                     Awaiting heartbeat sync...
+                  </div>
+               )}
+            </div>
+          )}
         </div>
       </div>
 
