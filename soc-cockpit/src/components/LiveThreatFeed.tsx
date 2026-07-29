@@ -177,6 +177,7 @@ export default function LiveThreatFeed() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isCooldown, setIsCooldown] = useState(false);
   const [edgeMetrics, setEdgeMetrics] = useState({ rateLimitSize: 0, penaltyLedgerSize: 0 });
+  const [lastHeartbeat, setLastHeartbeat] = useState<number | null>(null);
   const [edgeLatency, setEdgeLatency] = useState<string | null>(null);
   const [velocityHistory, setVelocityHistory] = useState<('up' | 'down' | 'none')[]>(() => {
     if (typeof window !== 'undefined') {
@@ -356,6 +357,9 @@ export default function LiveThreatFeed() {
           const healthData = await healthRes.json();
           setEdgeMetrics({ rateLimitSize: healthData.rateLimitSize || 0, penaltyLedgerSize: healthData.penaltyLedgerSize || 0 });
           setHealthStatus(healthData.status === 'ok' && healthData.blacklist === 'ok' && healthData.telemetry === 'ok' ? 'ok' : 'degraded');
+          if (healthData.lastHeartbeat) setLastHeartbeat(healthData.lastHeartbeat);
+          if (healthData.lastHeartbeat) setLastHeartbeat(healthData.lastHeartbeat);
+          if (healthData.lastHeartbeat) setLastHeartbeat(healthData.lastHeartbeat);
         } else {
           setHealthStatus('degraded');
         }
@@ -663,6 +667,7 @@ export default function LiveThreatFeed() {
               const healthData = await healthRes.json();
               setEdgeMetrics({ rateLimitSize: healthData.rateLimitSize || 0, penaltyLedgerSize: healthData.penaltyLedgerSize || 0 });
               setHealthStatus(healthData.status === 'ok' && healthData.blacklist === 'ok' && healthData.telemetry === 'ok' ? 'ok' : 'degraded');
+              if (healthData.lastHeartbeat) setLastHeartbeat(healthData.lastHeartbeat);
            }
            if (dlqRes.ok) setDlqRecords(await dlqRes.json().then(d => d.slice(0, 50)));
            if (blocklistRes.ok) {
@@ -1272,10 +1277,16 @@ const handlePurgeDlqItem = async (id: string) => {
         </div>
       )}
 
-      {/* AI Guard Status */}
-      <div className="text-xs bg-purple-950/50 border border-purple-900 px-3 py-1.5 rounded-md text-purple-400 font-mono flex items-center gap-2 mb-2 w-max">
-        <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
-        WORKERS_AI_GUARD: LLAMA-GUARD-3 ACTIVE
+      {/* AI Guard Status & Cron Automation */}
+      <div className="flex flex-wrap items-center gap-3 mb-2">
+        <div className="text-xs bg-purple-950/50 border border-purple-900 px-3 py-1.5 rounded-md text-purple-400 font-mono flex items-center gap-2 w-max">
+          <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
+          WORKERS_AI_GUARD: LLAMA-GUARD-3 ACTIVE
+        </div>
+        <div className="text-xs bg-emerald-950/50 border border-emerald-900 px-3 py-1.5 rounded-md text-emerald-400 font-mono flex items-center gap-2 w-max">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          CRON AUTOMATION: ACTIVE [ DAILY SCHEDULED ]
+        </div>
       </div>
 
       {/* Synchronization Clock */}
@@ -1294,8 +1305,9 @@ const handlePurgeDlqItem = async (id: string) => {
         {/* Memory Allocation Tooltip */}
         <div className="relative group text-xs font-mono border px-2 py-1.5 md:px-3 md:py-2 rounded flex items-center gap-2 bg-slate-900 border-slate-700 text-slate-400 cursor-help transition-colors hover:bg-slate-800">
            EDGE METRICS [?]
-           <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max max-w-xs opacity-0 transition-opacity group-hover:opacity-100 bg-slate-800 text-slate-200 text-[10px] rounded px-3 py-2 border border-slate-600 shadow-xl z-50 whitespace-nowrap">
-             [ FLOOD LEDGER: {edgeMetrics.rateLimitSize}/10000 | PENALTY LEDGER: {edgeMetrics.penaltyLedgerSize}/1000 ]
+           <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max max-w-xs opacity-0 transition-opacity group-hover:opacity-100 bg-slate-800 text-slate-200 text-[10px] rounded px-3 py-2 border border-slate-600 shadow-xl z-50 whitespace-nowrap flex flex-col gap-1 text-center">
+             <span>[ FLOOD LEDGER: {edgeMetrics.rateLimitSize}/10000 | PENALTY LEDGER: {edgeMetrics.penaltyLedgerSize}/1000 ]</span>
+             {lastHeartbeat && <span>[ LAST HEARTBEAT: {new Date(lastHeartbeat).toLocaleString('en-GB')} ]</span>}
            </div>
         </div>
 

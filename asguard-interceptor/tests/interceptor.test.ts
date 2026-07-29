@@ -1126,4 +1126,44 @@ describe("Autonomous Blocklist Endpoint", () => {
       expect(payload.retryCount).toBe(0);
     });
   });
+
+  describe("Scheduled Handler", () => {
+    it("executes scheduled event and logs system health heartbeat", async () => {
+      const env = {
+        ASGUARD_API_KEY: "test-auth-key",
+        ASGUARD_BLACKLIST: mockKV,
+        ASGUARD_TELEMETRY: mockTelemetryKV,
+      };
+      const ctx = { waitUntil: vi.fn(p => p) };
+      const event = {};
+
+      (mockKV as any).list = vi.fn().mockResolvedValueOnce({ keys: [{ name: "expired-key", expiration: Date.now() / 1000 - 1000 }] });
+      (mockTelemetryKV as any).list = vi.fn().mockResolvedValueOnce({ keys: [{ name: "dlq:123" }] });
+      mockTelemetryKV.get.mockImplementation(async (key) => {
+         if (key === "dlq:123") return JSON.stringify({ timestamp: Date.now() - 31 * 86400 * 1000 });
+         return null;
+      });
+
+      // ctx.waitUntil receives a promise, we need to wait for it.
+      let promiseToWait;
+      ctx.waitUntil = vi.fn(p => { promiseToWait = p; });
+      await worker.scheduled(event, env as any, ctx as any);
+      await promiseToWait;
+
+      // Verify KV delete on blacklist was called
+      expect(mockKV.delete).toHaveBeenCalledWith("expired-key");
+
+      // Verify KV delete on telemetry was called for old dlq
+      expect(mockTelemetryKV.delete).toHaveBeenCalledWith("dlq:123");
+
+      // Verify system health heartbeat
+      const putCalls = mockTelemetryKV.put.mock.calls;
+      const heartbeatCall = putCalls.find(c => c[0] === "system_health_heartbeat");
+      expect(heartbeatCall).toBeDefined();
+      const heartbeatPayload = JSON.parse(heartbeatCall[1]);
+      expect(heartbeatPayload.eventType).toBe("cron_daily_heartbeat");
+      expect(heartbeatPayload.status).toBe("ok");
+      expect(heartbeatPayload.expiredKeysPurged).toBe(1);
+    });
+  });
 });
