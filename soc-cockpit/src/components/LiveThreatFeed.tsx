@@ -179,6 +179,33 @@ export default function LiveThreatFeed() {
   const [edgeMetrics, setEdgeMetrics] = useState({ rateLimitSize: 0, penaltyLedgerSize: 0 });
   const [lastHeartbeat, setLastHeartbeat] = useState<number | null>(null);
   const [heartbeatDetails, setHeartbeatDetails] = useState<Record<string, unknown> | null>(null);
+  const [telemetrySummary, setTelemetrySummary] = useState<Record<string, unknown> | null>(null);
+  const [forceSweepLoading, setForceSweepLoading] = useState(false);
+  const [showToast, setShowToast] = useState(false);
+
+  const forceSweep = async () => {
+    try {
+      setForceSweepLoading(true);
+      const res = await fetch(`${process.env.NEXT_PUBLIC_WORKER_URL || "https://asguard.local"}/admin/cron/trigger`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Asguard-Auth": process.env.NEXT_PUBLIC_ASGUARD_API_KEY || "", "X-Asguard-Signature": activeAccount?.address || "UNKNOWN" },
+        body: JSON.stringify({ type: "hourly" })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.heartbeat) {
+          setHeartbeatDetails(data.heartbeat);
+        }
+        setShowToast(true);
+        setTimeout(() => setShowToast(false), 3000);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setForceSweepLoading(false);
+    }
+  };
+
   const [showCronPopover, setShowCronPopover] = useState(false);
   const [edgeLatency, setEdgeLatency] = useState<string | null>(null);
   const [velocityHistory, setVelocityHistory] = useState<('up' | 'down' | 'none')[]>(() => {
@@ -361,10 +388,7 @@ export default function LiveThreatFeed() {
           setHealthStatus(healthData.status === 'ok' && healthData.blacklist === 'ok' && healthData.telemetry === 'ok' ? 'ok' : 'degraded');
           if (healthData.lastHeartbeat) setLastHeartbeat(healthData.lastHeartbeat);
           if (healthData.heartbeatDetails) setHeartbeatDetails(healthData.heartbeatDetails);
-          if (healthData.lastHeartbeat) setLastHeartbeat(healthData.lastHeartbeat);
-          if (healthData.heartbeatDetails) setHeartbeatDetails(healthData.heartbeatDetails);
-          if (healthData.lastHeartbeat) setLastHeartbeat(healthData.lastHeartbeat);
-          if (healthData.lastHeartbeat) setLastHeartbeat(healthData.lastHeartbeat);
+          if (healthData.telemetrySummary) setTelemetrySummary(healthData.telemetrySummary);
         } else {
           setHealthStatus('degraded');
         }
@@ -456,6 +480,7 @@ export default function LiveThreatFeed() {
           setHealthStatus(healthData.status === 'ok' && healthData.blacklist === 'ok' && healthData.telemetry === 'ok' ? 'ok' : 'degraded');
           if (healthData.lastHeartbeat) setLastHeartbeat(healthData.lastHeartbeat);
           if (healthData.heartbeatDetails) setHeartbeatDetails(healthData.heartbeatDetails);
+          if (healthData.telemetrySummary) setTelemetrySummary(healthData.telemetrySummary);
         } else {
           setHealthStatus('degraded');
         }
@@ -676,8 +701,7 @@ export default function LiveThreatFeed() {
           setHealthStatus(healthData.status === 'ok' && healthData.blacklist === 'ok' && healthData.telemetry === 'ok' ? 'ok' : 'degraded');
           if (healthData.lastHeartbeat) setLastHeartbeat(healthData.lastHeartbeat);
           if (healthData.heartbeatDetails) setHeartbeatDetails(healthData.heartbeatDetails);
-          if (healthData.lastHeartbeat) setLastHeartbeat(healthData.lastHeartbeat);
-          if (healthData.heartbeatDetails) setHeartbeatDetails(healthData.heartbeatDetails);
+          if (healthData.telemetrySummary) setTelemetrySummary(healthData.telemetrySummary);
            }
            if (dlqRes.ok) setDlqRecords(await dlqRes.json().then(d => d.slice(0, 50)));
            if (blocklistRes.ok) {
@@ -1330,12 +1354,43 @@ const handlePurgeDlqItem = async (id: string) => {
                         <span className="text-slate-200">{String(heartbeatDetails.bufferFlushedCount ?? 0)}</span>
                      </div>
                      <div className="flex justify-between">
-                        <span>AI THREATS (24H):</span>
-                        <span className="text-slate-200">{String(heartbeatDetails.aiThreatCount24h ?? 0)}</span>
-                     </div>
-                     <div className="flex justify-between">
                         <span>CRON SCHEDULE:</span>
                         <span className="text-slate-200">{String(heartbeatDetails.cronSchedule ?? 'UNKNOWN')}</span>
+                     </div>
+
+                     {telemetrySummary && (
+                       <>
+                         <div className="border-t border-slate-700/50 my-2 pt-2 text-slate-300 font-bold text-[10px] uppercase tracking-wider">
+                           [ 24H Summary Metrics ]
+                         </div>
+                         <div className="flex justify-between">
+                            <span>TOTAL INTERCEPTED:</span>
+                            <span className="text-slate-200">{String(telemetrySummary.totalIntercepted24h ?? 0)}</span>
+                         </div>
+                         <div className="flex justify-between">
+                            <span>AI THREATS (UNSAFE):</span>
+                            <span className="text-slate-200">{String(telemetrySummary.aiUnsafeCount24h ?? 0)}</span>
+                         </div>
+                         <div className="flex justify-between">
+                            <span>FLOOD BANS:</span>
+                            <span className="text-slate-200">{String(telemetrySummary.floodBans24h ?? 0)}</span>
+                         </div>
+                       </>
+                     )}
+
+                     <div className="pt-3 border-t border-slate-700/50 mt-3 text-center flex flex-col gap-2">
+                       <button
+                          onClick={forceSweep}
+                          disabled={forceSweepLoading}
+                          className="w-full bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 border border-slate-600 rounded px-3 py-1 font-mono text-xs uppercase tracking-wider transition-colors"
+                       >
+                         {forceSweepLoading ? 'EXECUTING...' : '[ FORCE SWEEP ]'}
+                       </button>
+                       {showToast && (
+                         <div className="text-emerald-400 text-[10px] animate-pulse font-bold">
+                           [ CRON SWEEP EXECUTED ]
+                         </div>
+                       )}
                      </div>
                   </div>
                ) : (

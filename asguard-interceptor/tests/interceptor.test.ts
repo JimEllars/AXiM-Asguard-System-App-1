@@ -851,7 +851,7 @@ describe("Autonomous Blocklist Endpoint", () => {
     });
     const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
     const ctx = { waitUntil: vi.fn() } as any;
-    const response = await worker.fetch(request, env as any, ctx);
+    const response = await worker.fetch(request, env as any, ctx as any);
     expect(response.status).toBe(400);
   });
 
@@ -867,7 +867,7 @@ describe("Autonomous Blocklist Endpoint", () => {
     });
     const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
     const ctx = { waitUntil: vi.fn() } as any;
-    const response = await worker.fetch(request, env as any, ctx);
+    const response = await worker.fetch(request, env as any, ctx as any);
     expect(response.status).toBe(400);
   });
 
@@ -888,7 +888,7 @@ describe("Autonomous Blocklist Endpoint", () => {
       });
       const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
       const ctx = { waitUntil: vi.fn() } as any;
-      const response = await worker.fetch(request, env as any, ctx);
+      const response = await worker.fetch(request, env as any, ctx as any);
       expect(response.status).toBe(400);
       expect(await response.text()).toContain("protected internal target");
     }
@@ -911,7 +911,7 @@ describe("Autonomous Blocklist Endpoint", () => {
       });
       const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
       const ctx = { waitUntil: vi.fn() } as any;
-      const response = await worker.fetch(request, env as any, ctx);
+      const response = await worker.fetch(request, env as any, ctx as any);
       expect(response.status).toBe(400);
       expect(await response.text()).toContain("protected internal target");
     }
@@ -929,7 +929,7 @@ describe("Autonomous Blocklist Endpoint", () => {
     });
     const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
     const ctx = { waitUntil: vi.fn() } as any;
-    const response = await worker.fetch(request, env as any, ctx);
+    const response = await worker.fetch(request, env as any, ctx as any);
     expect(response.status).toBe(401);
   });
 
@@ -946,7 +946,7 @@ describe("Autonomous Blocklist Endpoint", () => {
     });
     const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
     const ctx = { waitUntil: vi.fn() } as any;
-    const response = await worker.fetch(request, env as any, ctx);
+    const response = await worker.fetch(request, env as any, ctx as any);
     expect(response.status).toBe(201);
   });
 
@@ -955,7 +955,7 @@ describe("Autonomous Blocklist Endpoint", () => {
       const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
       const ctx = { waitUntil: vi.fn() } as any;
       const request = new Request("https://asguard.local/dlq?id=dlq-123", { method: "DELETE" });
-      const response = await worker.fetch(request, env as any, ctx);
+      const response = await worker.fetch(request, env as any, ctx as any);
       expect(response.status).toBe(401);
     });
 
@@ -966,7 +966,7 @@ describe("Autonomous Blocklist Endpoint", () => {
         method: "DELETE",
         headers: { "X-Asguard-Auth": "test-auth-key" }
       });
-      const response = await worker.fetch(request, env as any, ctx);
+      const response = await worker.fetch(request, env as any, ctx as any);
       expect(response.status).toBe(400);
     });
 
@@ -977,7 +977,7 @@ describe("Autonomous Blocklist Endpoint", () => {
         method: "DELETE",
         headers: { "X-Asguard-Auth": "test-auth-key", "X-Asguard-Signature": "0xABC" }
       });
-      const response = await worker.fetch(request, env as any, ctx);
+      const response = await worker.fetch(request, env as any, ctx as any);
       expect(response.status).toBe(200);
 
       const calls = mockTelemetryKV.delete.mock.calls;
@@ -996,7 +996,7 @@ describe("Autonomous Blocklist Endpoint", () => {
       const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
       const ctx = { waitUntil: vi.fn() } as any;
       const request = new Request("https://asguard.local/dlq/bulk-purge", { method: "POST" });
-      const response = await worker.fetch(request, env as any, ctx);
+      const response = await worker.fetch(request, env as any, ctx as any);
       expect(response.status).toBe(401);
     });
 
@@ -1008,7 +1008,7 @@ describe("Autonomous Blocklist Endpoint", () => {
         headers: { "X-Asguard-Auth": "test-auth-key", "Content-Type": "application/json" },
         body: JSON.stringify({ not_ids: "dlq-1" }),
       });
-      const response = await worker.fetch(request, env as any, ctx);
+      const response = await worker.fetch(request, env as any, ctx as any);
       expect(response.status).toBe(400);
     });
 
@@ -1025,7 +1025,7 @@ describe("Autonomous Blocklist Endpoint", () => {
         },
         body: JSON.stringify(body),
       });
-      const response = await worker.fetch(request, env as any, ctx);
+      const response = await worker.fetch(request, env as any, ctx as any);
       expect(response.status).toBe(200);
       const respData = await (response as any).json();
       expect(respData.purged).toBe(2);
@@ -1048,7 +1048,7 @@ describe("Autonomous Blocklist Endpoint", () => {
       const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
       const ctx = { waitUntil: vi.fn() } as any;
       const request = new Request("https://asguard.local/dlq/bulk-replay", { method: "POST" });
-      const response = await worker.fetch(request, env as any, ctx);
+      const response = await worker.fetch(request, env as any, ctx as any);
       expect(response.status).toBe(401);
     });
 
@@ -1060,7 +1060,7 @@ describe("Autonomous Blocklist Endpoint", () => {
         headers: { "X-Asguard-Auth": "test-auth-key", "Content-Type": "application/json" },
         body: JSON.stringify({ id: "dlq-1" }),
       });
-      const response = await worker.fetch(request, env as any, ctx);
+      const response = await worker.fetch(request, env as any, ctx as any);
       expect(response.status).toBe(400);
     });
 
@@ -1076,7 +1076,7 @@ describe("Autonomous Blocklist Endpoint", () => {
         headers: { "X-Asguard-Auth": "test-auth-key", "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const response = await worker.fetch(request, env as any, ctx);
+      const response = await worker.fetch(request, env as any, ctx as any);
       expect(response.status).toBe(200);
       const respData = await (response as any).json();
       expect(respData.replayed).toBe(2);
@@ -1127,6 +1127,58 @@ describe("Autonomous Blocklist Endpoint", () => {
     });
   });
 
+  describe("Manual Cron Override Endpoint", () => {
+    it("returns 401 if unauthorized", async () => {
+      const request = new Request("https://asguard.local/admin/cron/trigger", {
+        method: "POST",
+      });
+      const env = { ASGUARD_API_KEY: "test-auth-key" };
+      const ctx = { waitUntil: vi.fn() } as any;
+
+      const response = await worker.fetch(request, env as any, ctx as any);
+      expect(response.status).toBe(401);
+    });
+
+    it("executes sweep and returns 200 with heartbeat data", async () => {
+      const env = {
+        ASGUARD_API_KEY: "test-auth-key",
+        ASGUARD_BLACKLIST: mockKV,
+        ASGUARD_TELEMETRY: mockTelemetryKV,
+      };
+      const ctx = { waitUntil: vi.fn(p => p) };
+      const request = new Request("https://asguard.local/admin/cron/trigger", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Asguard-Auth": "test-auth-key",
+        },
+        body: JSON.stringify({ type: "daily" }),
+      });
+
+      (mockKV as any).list = vi.fn().mockResolvedValue({ keys: [] });
+      (mockTelemetryKV as any).list = vi.fn().mockResolvedValue({ keys: [] });
+      (mockTelemetryKV as any).get = vi.fn().mockResolvedValue("[]");
+      (mockTelemetryKV as any).put = vi.fn().mockResolvedValue(undefined);
+
+      const response = await worker.fetch(request, env as any, ctx as any);
+      expect(response.status).toBe(200);
+
+      const body = await response.json() as any;
+      expect(body.success).toBe(true);
+      expect(body.sweepType).toBe("daily");
+      expect(body.heartbeat.status).toBe("ok");
+
+      const putCalls = mockTelemetryKV.put.mock.calls;
+      const heartbeatCall = putCalls.find(c => c[0] === "system_health_heartbeat");
+      expect(heartbeatCall).toBeDefined();
+
+      const summaryCall = putCalls.find(c => c[0] === "telemetry:summary:24h");
+      expect(summaryCall).toBeDefined();
+      const summaryPayload = JSON.parse(summaryCall[1]);
+      expect(summaryPayload.totalIntercepted24h).toBeDefined();
+    });
+  });
+
   describe("Scheduled Handler", () => {
     it("executes hourly scheduled event correctly", async () => {
       const env = {
@@ -1136,6 +1188,9 @@ describe("Autonomous Blocklist Endpoint", () => {
       };
       const ctx = { waitUntil: vi.fn(p => p) };
       const event = { cron: "0 * * * *" }; // hourly
+      (mockTelemetryKV as any).list = vi.fn().mockResolvedValue({ keys: [] });
+      (mockTelemetryKV as any).get = vi.fn().mockResolvedValue("[]");
+      (mockTelemetryKV as any).put = vi.fn().mockResolvedValue(undefined);
 
       (mockKV as any).list = vi.fn().mockResolvedValueOnce({ keys: [{ name: "expired-key", expiration: Date.now() / 1000 - 1000 }] });
 
