@@ -178,6 +178,170 @@ async function dispatchCriticalAlert(env: Env, eventPayload: any, request: Reque
   }
 }
 
+
+async function runMaintenanceSweep(env: Env, ctx: ExecutionContext, sweepType: "hourly" | "daily") {
+  let expiredKeysPurged = 0;
+  let bufferFlushedCount = 0;
+  let aiThreatCount24h = 0;
+  let totalIntercepted24h = 0;
+  let floodBans24h = 0;
+  let activeBlocklistCount = 0;
+
+  const now = Date.now();
+  const isDaily = sweepType === "daily";
+  const isHourly = sweepType === "hourly";
+
+  // --- COMMON HOURLY SWEEP TASKS ---
+  try {
+    const listResult = await env.ASGUARD_BLACKLIST.list({ limit: 1000 });
+    activeBlocklistCount = listResult.keys.length;
+
+    // Count flood bans
+    floodBans24h = listResult.keys.filter(k => k.name.startsWith("ip:") || k.name.startsWith("token:")).length;
+
+    const expiredKeys = listResult.keys.filter(k => k.expiration && k.expiration < now / 1000);
+
+    if (expiredKeys.length > 0) {
+      await Promise.all(expiredKeys.map(k => env.ASGUARD_BLACKLIST.delete(k.name)));
+      expiredKeysPurged = expiredKeys.length;
+    }
+  } catch (e) {
+    structuredLog("error", "Scheduled cleanup failed", null, e);
+  }
+
+  if (localEdgeLoggingBuffer.length > 0) {
+    if (localEdgeLoggingBuffer.length > 50) {
+       structuredLog("warn", "Local edge logging buffer exceeded 50 items during scheduled flush", null, { bufferSize: localEdgeLoggingBuffer.length });
+    }
+    try {
+      const bufferSnapshot = [...localEdgeLoggingBuffer];
+      const promises = bufferSnapshot.map(async (item) => {
+        if (item.type === 'blacklist_put' || item.type === 'blacklist_put_autonomous') {
+          return env.ASGUARD_BLACKLIST.put(item.key, "1", item.options || { expirationTtl: 86400 });
+        } else if (item.type === 'blacklist_delete') {
+          return env.ASGUARD_BLACKLIST.delete(item.key);
+        } else if (item.type === 'audit' || item.type === 'audit_error') {
+          const recentEventsStr = await env.ASGUARD_TELEMETRY.get("recent_events", { type: "json" }) || [];
+          const existing = Array.isArray(recentEventsStr) ? recentEventsStr : [];
+          const payload = item.payload || item;
+          const toSave = [payload, ...existing].slice(0, 50);
+          return env.ASGUARD_TELEMETRY.put("recent_events", JSON.stringify(toSave));
+        } else if (item.type === 'dlq_replay_error') {
+          return Promise.resolve();
+        } else {
+          const recentEventsStr = await env.ASGUARD_TELEMETRY.get("recent_events", { type: "json" }) || [];
+          const existing = Array.isArray(recentEventsStr) ? recentEventsStr : [];
+          const toSave = [item, ...existing].slice(0, 50);
+          return env.ASGUARD_TELEMETRY.put("recent_events", JSON.stringify(toSave));
+        }
+      });
+
+      const results = await Promise.allSettled(promises);
+      for (let i = results.length - 1; i >= 0; i--) {
+         if (results[i].status === 'fulfilled') {
+            const idx = localEdgeLoggingBuffer.indexOf(bufferSnapshot[i]);
+            if (idx !== -1) {
+               localEdgeLoggingBuffer.splice(idx, 1);
+               bufferFlushedCount++;
+            }
+         }
+      }
+    } catch (err) {
+      structuredLog("error", "Scheduled buffer flush failed", null, err);
+    }
+  }
+
+  // --- DAILY SWEEP TASKS ---
+  if (isDaily) {
+    try {
+      const thirtyDaysAgo = now - 30 * 86400 * 1000;
+      let dlqList = await env.ASGUARD_TELEMETRY.list({ prefix: "dlq:" });
+      const dlqExpired = [];
+      for (const key of dlqList.keys) {
+         const itemStr = await env.ASGUARD_TELEMETRY.get(key.name);
+         if (itemStr) {
+            try {
+               const itemObj = JSON.parse(itemStr);
+               if (itemObj.timestamp && itemObj.timestamp < thirtyDaysAgo) {
+                  dlqExpired.push(key.name);
+               }
+            } catch(e) {}
+         }
+      }
+      if (dlqExpired.length > 0) {
+         await Promise.all(dlqExpired.map(k => env.ASGUARD_TELEMETRY.delete(k)));
+      }
+    } catch (e) {
+      structuredLog("error", "Scheduled DLQ quarantine cleanup failed", null, e);
+    }
+
+    try {
+      const twentyFourHoursAgo = now - 86400 * 1000;
+      const recentEventsStr = await env.ASGUARD_TELEMETRY.get("recent_events", { type: "json" }) || [];
+      const recentEvents = Array.isArray(recentEventsStr) ? recentEventsStr : [];
+
+      totalIntercepted24h = recentEvents.filter((event: any) =>
+        event.timestamp && event.timestamp >= twentyFourHoursAgo
+      ).length;
+
+      aiThreatCount24h = recentEvents.filter((event: any) =>
+         event.aiThreatFlag === true &&
+         event.timestamp &&
+         event.timestamp >= twentyFourHoursAgo
+      ).length;
+
+      // Write the 24-hour summary metrics to ASGUARD_TELEMETRY
+      await env.ASGUARD_TELEMETRY.put("telemetry:summary:24h", JSON.stringify({
+         totalIntercepted24h,
+         aiUnsafeCount24h: aiThreatCount24h,
+         floodBans24h,
+         activeBlocklistCount,
+         timestamp: now
+      }), { expirationTtl: 86400 });
+
+      if (aiThreatCount24h >= 5) {
+         const alertPayload = {
+            eventType: "ai_unsafe_threshold_exceeded",
+            severity: "high",
+            timestamp: now,
+            details: {
+               message: "AI threat threshold exceeded in the last 24 hours.",
+               aiThreatCount24h: aiThreatCount24h
+            }
+         };
+         // We fake a request to pass to dispatchCriticalAlert
+         const fakeRequest = new Request("https://asguard.local/cron", {
+            method: "POST",
+            headers: { "cf-connecting-ip": "127.0.0.1" }
+         });
+         await dispatchCriticalAlert(env, alertPayload, fakeRequest, ctx);
+      }
+    } catch (e) {
+       structuredLog("error", "Scheduled AI threat check failed", null, e);
+    }
+  }
+
+  const heartbeat = {
+    eventType: isDaily ? "cron_daily_heartbeat" : "cron_hourly_heartbeat",
+    status: "ok",
+    timestamp: now,
+    expiredKeysPurged: expiredKeysPurged,
+    bufferFlushedCount: bufferFlushedCount,
+    aiThreatCount24h: isDaily ? aiThreatCount24h : undefined,
+    lastDailySweepTimestamp: isDaily ? now : undefined,
+    cronSchedule: isDaily ? "DAILY" : "HOURLY",
+    colo: "EDGE_CRON_SCHEDULER"
+  };
+
+  try {
+    await env.ASGUARD_TELEMETRY.put("system_health_heartbeat", JSON.stringify(heartbeat));
+  } catch(e) {}
+
+  structuredLog("info", "cron_daily_maintenance_completed", null, { timestamp: now, expiredKeysPurged: expiredKeysPurged });
+
+  return heartbeat;
+}
+
 export default {
   async scheduled(
     event: any,
@@ -186,140 +350,8 @@ export default {
   ) {
     ctx.waitUntil(
       (async () => {
-        let expiredKeysPurged = 0;
-        let bufferFlushedCount = 0;
-        let aiThreatCount24h = 0;
-        const now = Date.now();
         const isDaily = event && event.cron === "0 0 * * *";
-        const isHourly = !isDaily; // Default to hourly
-
-        // --- COMMON HOURLY SWEEP TASKS ---
-        try {
-          const listResult = await env.ASGUARD_BLACKLIST.list({ limit: 100 });
-          const expiredKeys = listResult.keys.filter(k => k.expiration && k.expiration < now / 1000);
-
-          if (expiredKeys.length > 0) {
-            await Promise.all(expiredKeys.map(k => env.ASGUARD_BLACKLIST.delete(k.name)));
-            expiredKeysPurged = expiredKeys.length;
-          }
-        } catch (e) {
-          structuredLog("error", "Scheduled cleanup failed", null, e);
-        }
-
-        if (localEdgeLoggingBuffer.length > 0) {
-          if (localEdgeLoggingBuffer.length > 50) {
-             structuredLog("warn", "Local edge logging buffer exceeded 50 items during scheduled flush", null, { bufferSize: localEdgeLoggingBuffer.length });
-          }
-          try {
-            const bufferSnapshot = [...localEdgeLoggingBuffer];
-            const promises = bufferSnapshot.map(async (item) => {
-              if (item.type === 'blacklist_put' || item.type === 'blacklist_put_autonomous') {
-                return env.ASGUARD_BLACKLIST.put(item.key, "1", item.options || { expirationTtl: 86400 });
-              } else if (item.type === 'blacklist_delete') {
-                return env.ASGUARD_BLACKLIST.delete(item.key);
-              } else if (item.type === 'audit' || item.type === 'audit_error') {
-                const recentEventsStr = await env.ASGUARD_TELEMETRY.get("recent_events", { type: "json" }) || [];
-                const existing = Array.isArray(recentEventsStr) ? recentEventsStr : [];
-                const payload = item.payload || item;
-                const toSave = [payload, ...existing].slice(0, 50);
-                return env.ASGUARD_TELEMETRY.put("recent_events", JSON.stringify(toSave));
-              } else if (item.type === 'dlq_replay_error') {
-                return Promise.resolve();
-              } else {
-                const recentEventsStr = await env.ASGUARD_TELEMETRY.get("recent_events", { type: "json" }) || [];
-                const existing = Array.isArray(recentEventsStr) ? recentEventsStr : [];
-                const toSave = [item, ...existing].slice(0, 50);
-                return env.ASGUARD_TELEMETRY.put("recent_events", JSON.stringify(toSave));
-              }
-            });
-
-            const results = await Promise.allSettled(promises);
-            for (let i = results.length - 1; i >= 0; i--) {
-               if (results[i].status === 'fulfilled') {
-                  const idx = localEdgeLoggingBuffer.indexOf(bufferSnapshot[i]);
-                  if (idx !== -1) {
-                     localEdgeLoggingBuffer.splice(idx, 1);
-                     bufferFlushedCount++;
-                  }
-               }
-            }
-          } catch (err) {
-            structuredLog("error", "Scheduled buffer flush failed", null, err);
-          }
-        }
-
-        // --- DAILY SWEEP TASKS ---
-        if (isDaily) {
-          try {
-            const thirtyDaysAgo = now - 30 * 86400 * 1000;
-            let dlqList = await env.ASGUARD_TELEMETRY.list({ prefix: "dlq:" });
-            const dlqExpired = [];
-            for (const key of dlqList.keys) {
-               const itemStr = await env.ASGUARD_TELEMETRY.get(key.name);
-               if (itemStr) {
-                  try {
-                     const itemObj = JSON.parse(itemStr);
-                     if (itemObj.timestamp && itemObj.timestamp < thirtyDaysAgo) {
-                        dlqExpired.push(key.name);
-                     }
-                  } catch(e) {}
-               }
-            }
-            if (dlqExpired.length > 0) {
-               await Promise.all(dlqExpired.map(k => env.ASGUARD_TELEMETRY.delete(k)));
-            }
-          } catch (e) {
-            structuredLog("error", "Scheduled DLQ quarantine cleanup failed", null, e);
-          }
-
-          try {
-            const twentyFourHoursAgo = now - 86400 * 1000;
-            const recentEventsStr = await env.ASGUARD_TELEMETRY.get("recent_events", { type: "json" }) || [];
-            const recentEvents = Array.isArray(recentEventsStr) ? recentEventsStr : [];
-
-            aiThreatCount24h = recentEvents.filter(event =>
-               event.aiThreatFlag === true &&
-               event.timestamp &&
-               event.timestamp >= twentyFourHoursAgo
-            ).length;
-
-            if (aiThreatCount24h >= 5) {
-               const alertPayload = {
-                  eventType: "ai_unsafe_threshold_exceeded",
-                  severity: "high",
-                  timestamp: now,
-                  details: {
-                     message: "AI threat threshold exceeded in the last 24 hours.",
-                     aiThreatCount24h: aiThreatCount24h
-                  }
-               };
-               // We fake a request to pass to dispatchCriticalAlert
-               const fakeRequest = new Request("https://asguard.local/cron", {
-                  method: "POST",
-                  headers: { "cf-connecting-ip": "127.0.0.1" }
-               });
-               await dispatchCriticalAlert(env, alertPayload, fakeRequest, ctx);
-            }
-          } catch (e) {
-             structuredLog("error", "Scheduled AI threat check failed", null, e);
-          }
-        }
-
-        try {
-          await env.ASGUARD_TELEMETRY.put("system_health_heartbeat", JSON.stringify({
-            eventType: isDaily ? "cron_daily_heartbeat" : "cron_hourly_heartbeat",
-            status: "ok",
-            timestamp: now,
-            expiredKeysPurged: expiredKeysPurged,
-            bufferFlushedCount: bufferFlushedCount,
-            aiThreatCount24h: isDaily ? aiThreatCount24h : undefined,
-            lastDailySweepTimestamp: isDaily ? now : undefined,
-            cronSchedule: isDaily ? "DAILY" : "HOURLY",
-            colo: "EDGE_CRON_SCHEDULER"
-          }));
-        } catch(e) {}
-
-        structuredLog("info", "cron_daily_maintenance_completed", null, { timestamp: now, expiredKeysPurged: expiredKeysPurged });
+        await runMaintenanceSweep(env, ctx, isDaily ? "daily" : "hourly");
       })()
     );
   },
@@ -573,10 +605,11 @@ export default {
       }
 
       try {
-        const [_, __, heartbeatRaw] = await Promise.all([
+        const [_, __, heartbeatRaw, summaryRaw] = await Promise.all([
           env.ASGUARD_BLACKLIST.get("health-check-key").catch(e => { throw new Error("ASGUARD_BLACKLIST failed") }),
           env.ASGUARD_TELEMETRY.get("health-check-key").catch(e => { throw new Error("ASGUARD_TELEMETRY failed") }),
-          env.ASGUARD_TELEMETRY.get("system_health_heartbeat")
+          env.ASGUARD_TELEMETRY.get("system_health_heartbeat"),
+          env.ASGUARD_TELEMETRY.get("telemetry:summary:24h")
         ]);
 
         let lastHeartbeat = null;
@@ -589,6 +622,13 @@ export default {
           } catch(e) {}
         }
 
+        let telemetrySummary = null;
+        if (summaryRaw) {
+          try {
+            telemetrySummary = JSON.parse(summaryRaw);
+          } catch(e) {}
+        }
+
         return new Response(JSON.stringify({
           status: "ok",
           blacklist: "ok",
@@ -597,6 +637,7 @@ export default {
           penaltyLedgerSize: penaltyLedger.size,
           lastHeartbeat,
           heartbeatDetails: fullHeartbeat,
+          telemetrySummary,
           timestamp: Date.now()
         }), {
           status: 200,
@@ -613,6 +654,47 @@ export default {
         });
       }
     }
+    if (request.method === "POST" && url.pathname === "/admin/cron/trigger") {
+      const customAuthHeader = request.headers.get("X-Asguard-Auth");
+      if (!env.ASGUARD_API_KEY || customAuthHeader !== env.ASGUARD_API_KEY) {
+        return new Response("Unauthorized", {
+          status: 401,
+          headers: getCorsHeaders(request, env, isMutation),
+        });
+      }
+
+      try {
+        const body = await request.json() as { type?: "hourly" | "daily" };
+        const sweepType = body.type === "daily" ? "daily" : "hourly";
+        const signatureMetadata = request.headers.get("X-Asguard-Signature") || request.headers.get("X-Asguard-Auth") || "UNKNOWN";
+
+        // Dispatch audit log
+        ctx.waitUntil(env.ASGUARD_TELEMETRY.put(`audit:${Date.now()}`, JSON.stringify({
+           action: "manual_cron_trigger",
+           timestamp: Date.now(),
+           authorizedByWallet: signatureMetadata,
+           details: { sweepType }
+        })));
+
+        // Run sweep
+        const heartbeat = await runMaintenanceSweep(env, ctx, sweepType);
+
+        return new Response(JSON.stringify({
+          success: true,
+          sweepType,
+          heartbeat
+        }), {
+          status: 200,
+          headers: { ...getCorsHeaders(request, env, isMutation), "Content-Type": "application/json" }
+        });
+      } catch (e: any) {
+        return new Response("Bad Request", {
+          status: 400,
+          headers: getCorsHeaders(request, env, isMutation),
+        });
+      }
+    }
+
     if (request.method === "POST" && url.pathname === "/dlq/unquarantine") {
       const customAuthHeader = request.headers.get("X-Asguard-Auth");
       if (!env.ASGUARD_API_KEY || customAuthHeader !== env.ASGUARD_API_KEY) {
