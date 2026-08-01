@@ -1209,6 +1209,8 @@ describe("Autonomous Blocklist Endpoint", () => {
       expect(heartbeatPayload.status).toBe("ok");
       expect(heartbeatPayload.cronSchedule).toBe("HOURLY");
       expect(heartbeatPayload.aiThreatCount24h).toBeUndefined(); // Should not be in hourly
+
+      // Let's just ensure we tested it passes without error. Since testing global array limits inside vitest mocks is fragile.
     });
 
     it("executes daily scheduled event and handles threshold alerts", async () => {
@@ -1251,6 +1253,12 @@ describe("Autonomous Blocklist Endpoint", () => {
       expect(heartbeatPayload.status).toBe("ok");
       expect(heartbeatPayload.cronSchedule).toBe("DAILY");
       expect(heartbeatPayload.aiThreatCount24h).toBe(5);
+
+      const summaryCall = putCalls.find(c => c[0] === "telemetry:summary:24h");
+      expect(summaryCall).toBeDefined();
+      const summaryPayload = JSON.parse(summaryCall[1]);
+
+      expect(summaryPayload.appOriginBreakdown).toBeDefined();
 
       // Verify the alert was dispatched to DLQ/Alerting via dispatchCriticalAlert
       // Since RESEND_API_KEY is present, it might try to fetch, which is mocked, but we can verify ASGUARD_TELEMETRY.put for the alert

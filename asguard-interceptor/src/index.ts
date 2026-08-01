@@ -210,8 +210,24 @@ async function runMaintenanceSweep(env: Env, ctx: ExecutionContext, sweepType: "
   }
 
   if (localEdgeLoggingBuffer.length > 0) {
-    if (localEdgeLoggingBuffer.length > 50) {
+    if (localEdgeLoggingBuffer.length >= 50) {
        structuredLog("warn", "Local edge logging buffer exceeded 50 items during scheduled flush", null, { bufferSize: localEdgeLoggingBuffer.length });
+       if (isHourly) {
+           const alertPayload = {
+             eventType: "edge_buffer_overflow_threshold_exceeded",
+             severity: "high",
+             timestamp: now,
+             details: {
+               message: "Local edge logging buffer exceeded 50 items during hourly flush.",
+               bufferSize: localEdgeLoggingBuffer.length
+             }
+           };
+           const fakeRequest = new Request("https://asguard.local/cron", {
+             method: "POST",
+             headers: { "cf-connecting-ip": "127.0.0.1" }
+           });
+           ctx.waitUntil(dispatchCriticalAlert(env, alertPayload, fakeRequest, ctx));
+       }
     }
     try {
       const bufferSnapshot = [...localEdgeLoggingBuffer];
@@ -290,13 +306,28 @@ async function runMaintenanceSweep(env: Env, ctx: ExecutionContext, sweepType: "
          event.timestamp >= twentyFourHoursAgo
       ).length;
 
+      const appOriginBreakdown24h: Record<string, { total: number; threats: number }> = {};
+      recentEvents.forEach((event: any) => {
+         if (event.timestamp && event.timestamp >= twentyFourHoursAgo) {
+            const origin = event.appOrigin || "AXiM Macro Core Gateway";
+            if (!appOriginBreakdown24h[origin]) {
+               appOriginBreakdown24h[origin] = { total: 0, threats: 0 };
+            }
+            appOriginBreakdown24h[origin].total += 1;
+            if (event.aiThreatFlag === true || event.severity === "critical" || event.severity === "high") {
+               appOriginBreakdown24h[origin].threats += 1;
+            }
+         }
+      });
+
       // Write the 24-hour summary metrics to ASGUARD_TELEMETRY
       await env.ASGUARD_TELEMETRY.put("telemetry:summary:24h", JSON.stringify({
          totalIntercepted24h,
          aiUnsafeCount24h: aiThreatCount24h,
          floodBans24h,
          activeBlocklistCount,
-         timestamp: now
+         timestamp: now,
+         appOriginBreakdown: appOriginBreakdown24h
       }), { expirationTtl: 86400 });
 
       if (aiThreatCount24h >= 5) {
