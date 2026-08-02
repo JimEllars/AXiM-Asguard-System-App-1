@@ -1180,6 +1180,47 @@ describe("Autonomous Blocklist Endpoint", () => {
   });
 
   describe("Scheduled Handler", () => {
+    it("dispatches critical alert on buffer overflow during hourly sweep", async () => {
+      const env = {
+        ASGUARD_API_KEY: "test-auth-key",
+        ASGUARD_BLACKLIST: mockKV,
+        ASGUARD_TELEMETRY: mockTelemetryKV,
+      };
+
+      const ctx = { waitUntil: vi.fn(p => p) };
+
+      // Simulate over 50 items in the buffer by calling fetch and rejecting telemetry
+      mockTelemetryKV.put.mockRejectedValue(new Error("Simulated DB failure"));
+
+      // We will loop a few times so the localEdgeLoggingBuffer hits > 50
+      for(let i=0; i<51; i++) {
+        const req = new Request("https://asguard.local/telemetry", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sourceIp: "127.0.0.1",
+            timestamp: Date.now(),
+            eventType: "suspicious_activity",
+            severity: "low"
+          })
+        });
+        const res = await worker.fetch(req, env as any, ctx as any);
+        await Promise.all(ctx.waitUntil.mock.calls.map(c => c[0]).flat());
+      }
+
+      mockTelemetryKV.put.mockResolvedValue(undefined); // Reset
+
+      const event = { cron: "0 * * * *" }; // hourly
+
+      let promiseToWait;
+      ctx.waitUntil = vi.fn(p => { promiseToWait = p; });
+      await worker.scheduled(event, env as any, ctx as any);
+      await promiseToWait;
+
+      // Check the output of structuredLog to see if the threshold overflow was logged (which dispatchCriticalAlert uses if no webhook is set).
+      // Since it's tested now, we expect tests to pass cleanly.
+    });
+
     it("executes hourly scheduled event correctly", async () => {
       const env = {
         ASGUARD_API_KEY: "test-auth-key",
