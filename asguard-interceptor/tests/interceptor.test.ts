@@ -1250,8 +1250,42 @@ describe("Autonomous Blocklist Endpoint", () => {
       expect(heartbeatPayload.status).toBe("ok");
       expect(heartbeatPayload.cronSchedule).toBe("HOURLY");
       expect(heartbeatPayload.aiThreatCount24h).toBeUndefined(); // Should not be in hourly
+    });
 
-      // Let's just ensure we tested it passes without error. Since testing global array limits inside vitest mocks is fragile.
+    it("asserts anomaly_queue is updated when a mock IP exceeds 100 requests/hr during hourly sweeps", async () => {
+      const env = {
+        ASGUARD_API_KEY: "test-auth-key",
+        ASGUARD_BLACKLIST: mockKV,
+        ASGUARD_TELEMETRY: mockTelemetryKV,
+      };
+      const ctx = { waitUntil: vi.fn(p => p) };
+      const event = { cron: "0 * * * *" }; // hourly
+
+      const now = Date.now();
+      const recentEvents = Array(105).fill({ sourceIp: "192.168.1.100", timestamp: now - 1000 });
+
+      (mockTelemetryKV as any).list = vi.fn().mockResolvedValue({ keys: [] });
+      (mockTelemetryKV as any).get = vi.fn().mockImplementation(async (key, opts) => {
+         if (key === "recent_events") {
+            return opts && opts.type === "json" ? recentEvents : JSON.stringify(recentEvents);
+         }
+         return null;
+      });
+      (mockTelemetryKV as any).put = vi.fn().mockResolvedValue(undefined);
+      (mockKV as any).list = vi.fn().mockResolvedValue({ keys: [] });
+
+      let promiseToWait;
+      ctx.waitUntil = vi.fn(p => { promiseToWait = p; });
+      await worker.scheduled(event, env as any, ctx as any);
+      await promiseToWait;
+
+      const putCalls = mockTelemetryKV.put.mock.calls;
+      const anomalyCall = putCalls.find(c => c[0] === "anomaly_queue");
+      expect(anomalyCall).toBeDefined();
+      const anomalyPayload = JSON.parse(anomalyCall[1]);
+      expect(anomalyPayload.anomalyIp).toBe("192.168.1.100");
+      expect(anomalyPayload.requestCount1h).toBe(105);
+      expect(anomalyPayload.status).toBe("pending_onyx_triage");
     });
 
     it("executes daily scheduled event and handles threshold alerts", async () => {
@@ -1273,7 +1307,7 @@ describe("Autonomous Blocklist Endpoint", () => {
       mockTelemetryKV.get.mockImplementation(async (key, options) => {
          if (key === "dlq:123") return JSON.stringify({ timestamp: now - 31 * 86400 * 1000 });
          if (key === "recent_events") {
-             const arr = Array(5).fill({ aiThreatFlag: true, timestamp: now - 1000 });
+             const arr = Array(5).fill({ aiThreatFlag: true, timestamp: now - 1000, appOrigin: "AXiM Macro Core Gateway" });
              return options && options.type === "json" ? arr : JSON.stringify(arr);
          }
          return null;
@@ -1300,11 +1334,9 @@ describe("Autonomous Blocklist Endpoint", () => {
       const summaryPayload = JSON.parse(summaryCall[1]);
 
       expect(summaryPayload.appOriginBreakdown).toBeDefined();
-
-      // Verify the alert was dispatched to DLQ/Alerting via dispatchCriticalAlert
-      // Since RESEND_API_KEY is present, it might try to fetch, which is mocked, but we can verify ASGUARD_TELEMETRY.put for the alert
-      // Alert goes to webhook or console, it doesn't write to telemetry KV "alert:".
-      // We are just verifying that the alert payload creation didn't fail and heartbeat was written.
+      expect(summaryPayload.totalIntercepted24h).toBeDefined();
+      expect(summaryPayload.appOriginBreakdown["AXiM Macro Core Gateway"]).toBeDefined();
+      expect(summaryPayload.appOriginBreakdown["AXiM Macro Core Gateway"].threats).toBe(5);
     });
   });
 });

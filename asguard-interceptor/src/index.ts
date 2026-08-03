@@ -267,6 +267,41 @@ async function runMaintenanceSweep(env: Env, ctx: ExecutionContext, sweepType: "
     }
   }
 
+
+
+  // Hourly Anomaly Detection Logic
+  if (isHourly) {
+    try {
+      const recentEventsStr = await env.ASGUARD_TELEMETRY.get("recent_events", { type: "json" }) || [];
+      const recentEvents = Array.isArray(recentEventsStr) ? recentEventsStr : [];
+
+      const sixtyMinsAgo = now - 3600000;
+      const recent60m = recentEvents.filter(e => e.timestamp && e.timestamp >= sixtyMinsAgo);
+
+      const ipCounts: Record<string, number> = {};
+      recent60m.forEach(e => {
+        if (e.sourceIp) {
+          ipCounts[e.sourceIp] = (ipCounts[e.sourceIp] || 0) + 1;
+        }
+      });
+
+      for (const [ip, count] of Object.entries(ipCounts)) {
+        if ((count as number) > 100) {
+          const anomalyQueueItem = {
+            anomalyIp: ip,
+            requestCount1h: count,
+            timestamp: now,
+            status: "pending_onyx_triage"
+          };
+          await env.ASGUARD_TELEMETRY.put("anomaly_queue", JSON.stringify(anomalyQueueItem), { expirationTtl: 86400 });
+          break; // Since we store one object under "anomaly_queue" for now (or could be list, prompt says "Write an anomaly staging object... under key 'anomaly_queue'")
+        }
+      }
+    } catch(e) {
+      structuredLog("error", "Hourly anomaly detection failed", null, e);
+    }
+  }
+
   // --- DAILY SWEEP TASKS ---
   if (isDaily) {
     try {
@@ -636,11 +671,12 @@ export default {
       }
 
       try {
-        const [_, __, heartbeatRaw, summaryRaw] = await Promise.all([
+        const [_, __, heartbeatRaw, summaryRaw, anomalyQueueRaw] = await Promise.all([
           env.ASGUARD_BLACKLIST.get("health-check-key").catch(e => { throw new Error("ASGUARD_BLACKLIST failed") }),
           env.ASGUARD_TELEMETRY.get("health-check-key").catch(e => { throw new Error("ASGUARD_TELEMETRY failed") }),
           env.ASGUARD_TELEMETRY.get("system_health_heartbeat"),
-          env.ASGUARD_TELEMETRY.get("telemetry:summary:24h")
+          env.ASGUARD_TELEMETRY.get("telemetry:summary:24h"),
+          env.ASGUARD_TELEMETRY.get("anomaly_queue")
         ]);
 
         let lastHeartbeat = null;
@@ -660,6 +696,14 @@ export default {
           } catch(e) {}
         }
 
+
+        let anomaly_queue = null;
+        if (anomalyQueueRaw) {
+          try {
+            anomaly_queue = JSON.parse(anomalyQueueRaw);
+          } catch(e) {}
+        }
+
         return new Response(JSON.stringify({
           status: "ok",
           blacklist: "ok",
@@ -669,6 +713,7 @@ export default {
           lastHeartbeat,
           heartbeatDetails: fullHeartbeat,
           telemetrySummary,
+          anomaly_queue,
           timestamp: Date.now()
         }), {
           status: 200,

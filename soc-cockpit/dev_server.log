@@ -7,7 +7,7 @@
    - Network:      http://192.168.0.2:3000
 
  ✓ Starting...
- ✓ Ready in 1901ms
+ ✓ Ready in 1995ms
  ○ Compiling / ...
  ⚠ ./node_modules/@coinbase/cdp-sdk/node_modules/ox/_esm/tempo/internal/virtualMasterPool.js
 Critical dependency: the request of a dependency is an expression
@@ -31,5 +31,4 @@ Import trace for requested module:
 ./node_modules/thirdweb/dist/esm/react/web/hooks/wallets/useAutoConnect.js
 ./node_modules/thirdweb/dist/esm/exports/react.js
 ./src/app/layout.tsx
- GET / 200 in 816ms
- ✓ Compiled / in 2.6s (4529 modules)
+ GET / 200 in 328ms
