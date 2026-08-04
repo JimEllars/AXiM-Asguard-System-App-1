@@ -1,32 +1,33 @@
 import asyncio
-from playwright.async_api import async_playwright
 import jwt
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
+from playwright.async_api import async_playwright
 
-mock_secret = b'01234567890123456789012345678901'
-payload = {
-    'axim_internal_admin': True,
-    'exp': datetime.now(timezone.utc) + timedelta(hours=1)
-}
-token = jwt.encode(payload, mock_secret, algorithm='HS256')
-
-async def run():
+async def main():
     async with async_playwright() as p:
         browser = await p.chromium.launch()
-        context = await browser.new_context()
-        await context.add_cookies([{
-            'name': 'asguard_auth_token',
-            'value': token,
-            'domain': 'localhost',
-            'path': '/'
+        page = await browser.new_page()
+
+        # Generate a valid JWT token
+        secret = "a" * 32
+        payload = {
+            "axim_internal_admin": True,
+            "exp": datetime.now(timezone.utc) + timedelta(hours=1)
+        }
+        token = jwt.encode(payload, secret, algorithm="HS256")
+
+        # Set the cookie
+        await page.context.add_cookies([{
+            "name": "asguard_auth_token",
+            "value": token,
+            "url": "http://localhost:3000"
         }])
-        page = await context.new_page()
-        try:
-            await page.goto("http://localhost:3000", wait_until='domcontentloaded')
-            print("Loaded page successfully.")
-        except Exception as e:
-            print("Failed to load page:", e)
+
+        # Navigate to the page
+        await page.goto("http://localhost:3000", wait_until="domcontentloaded")
+
+        # Take a screenshot
+        await page.screenshot(path="screenshot.png")
         await browser.close()
 
-if __name__ == "__main__":
-    asyncio.run(run())
+asyncio.run(main())

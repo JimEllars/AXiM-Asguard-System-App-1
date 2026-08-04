@@ -1637,14 +1637,18 @@ const handlePurgeDlqItem = async (id: string) => {
           <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mr-2">App Origin:</div>
           {['all', 'AXiM Academy', 'The Green Machine', 'Nexus CRM', 'Web3 Frontend', 'AXiM Macro Core Gateway'].map(origin => {
             const originMetrics = (telemetrySummary?.appOriginBreakdown as Record<string, { total: number; threats: number }> | undefined)?.[origin];
-            const originText = origin === 'all' ? 'ALL ORIGINS' : `${origin} (${originMetrics?.total || 0})`;
+
+            let originText = origin === 'all' ? 'ALL ORIGINS' : `${origin} [0/0]`;
+            if (origin !== 'all' && originMetrics) {
+              originText = `${origin} [${originMetrics.total}/${originMetrics.threats}]`;
+            }
             const hasThreats = originMetrics?.threats ? originMetrics.threats > 0 : false;
 
             return (
               <button
                 key={origin}
                 onClick={() => setAppOriginFilter(origin)}
-                className={`flex items-center px-3 py-1 rounded-full text-xs font-mono transition-colors border ${appOriginFilter === origin ? 'bg-indigo-900/50 text-indigo-300 border-indigo-700' : 'bg-slate-950/50 text-slate-400 border-slate-800 hover:bg-slate-800/80 hover:text-slate-300'}`}
+                className={`flex items-center px-3 py-1 rounded-full text-xs font-mono transition-colors border ${appOriginFilter === origin ? 'bg-indigo-900/50 text-indigo-300 border-indigo-700' : 'bg-slate-950/50 text-slate-400 border-slate-800 hover:bg-slate-800/80 hover:text-slate-300'} ${hasThreats ? 'text-red-400 font-bold border-red-500/50' : ''}`}
               >
                 {originText}
                 {hasThreats && <span className="ml-2 w-2 h-2 rounded-full bg-red-500"></span>}
