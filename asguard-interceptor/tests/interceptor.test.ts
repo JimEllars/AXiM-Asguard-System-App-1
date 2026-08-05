@@ -1099,7 +1099,7 @@ describe("Autonomous Blocklist Endpoint", () => {
     });
 
     it("should update dlq status to active and retryCount to 0", async () => {
-      const mockEnv = {
+      const env = {
         ASGUARD_API_KEY: "test-key",
         ASGUARD_TELEMETRY: {
           get: vi.fn().mockResolvedValue(JSON.stringify({ id: "dlq-123", status: "quarantined", retryCount: 5 })),
@@ -1115,10 +1115,10 @@ describe("Autonomous Blocklist Endpoint", () => {
         headers: { "X-Asguard-Auth": "test-key" },
         body: JSON.stringify({ id: "dlq-123" }),
       });
-      const response = await worker.fetch(request, mockEnv, mockCtx);
+      const response = await worker.fetch(request, env, mockCtx);
       expect(response.status).toBe(200);
 
-      const putCalls = mockEnv.ASGUARD_TELEMETRY.put.mock.calls;
+      const putCalls = env.ASGUARD_TELEMETRY.put.mock.calls;
       const unqCall = putCalls.find((c: any) => c[0] === "dlq:123");
       expect(unqCall).toBeDefined();
       const payload = JSON.parse(unqCall[1]);
@@ -1126,6 +1126,90 @@ describe("Autonomous Blocklist Endpoint", () => {
       expect(payload.retryCount).toBe(0);
     });
   });
+
+
+
+
+
+
+  describe("POST /admin/anomaly/triage", () => {
+    it("returns 401 Unauthorized without auth headers", async () => {
+      const env = { ASGUARD_API_KEY: "test_api_key_123", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+      const ctx = { waitUntil: vi.fn() } as any;
+      const req = new Request("https://asguard.local/admin/anomaly/triage", {
+        method: "POST",
+        body: JSON.stringify({ ip: "1.2.3.4", action: "block" }),
+      });
+      const res = await worker.fetch(req, env as unknown as any, ctx as ExecutionContext);
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 200 OK and blocks IP when action is block", async () => {
+      let memoryStore = new Map<string, string>();
+      const customMockKV = {
+        get: vi.fn(async (key: string) => memoryStore.get(key) || null),
+        put: vi.fn(async (key: string, val: string) => { memoryStore.set(key, val); }),
+        delete: vi.fn(async (key: string) => { memoryStore.delete(key); }),
+      };
+      const customMockTelemetry = {
+        get: vi.fn(async (key: string) => memoryStore.get(key) || null),
+        put: vi.fn(async (key: string, val: string) => { memoryStore.set(key, val); }),
+        delete: vi.fn(async (key: string) => { memoryStore.delete(key); }),
+      };
+
+      const env = { ASGUARD_API_KEY: "test_api_key_123", ASGUARD_BLACKLIST: customMockKV as any, ASGUARD_TELEMETRY: customMockTelemetry as any };
+      const ctx = { waitUntil: vi.fn() } as any;
+      const req = new Request("https://asguard.local/admin/anomaly/triage", {
+        method: "POST",
+        headers: { "X-Asguard-Auth": "test_api_key_123" },
+        body: JSON.stringify({ ip: "1.2.3.4", action: "block" }),
+      });
+      const res = await worker.fetch(req, env as unknown as any, ctx as ExecutionContext);
+      expect(res.status).toBe(200);
+
+      const blacklistRecord = await env.ASGUARD_BLACKLIST.get("ip:1.2.3.4");
+      expect(blacklistRecord).toBe("1");
+
+      const anomalyQueue = await env.ASGUARD_TELEMETRY.get("anomaly_queue");
+      expect(anomalyQueue).toBeNull();
+    });
+
+    it("returns 200 OK and dismisses IP when action is dismiss", async () => {
+      let memoryStore = new Map<string, string>();
+      const customMockKV = {
+        get: vi.fn(async (key: string) => memoryStore.get(key) || null),
+        put: vi.fn(async (key: string, val: string) => { memoryStore.set(key, val); }),
+        delete: vi.fn(async (key: string) => { memoryStore.delete(key); }),
+      };
+      const customMockTelemetry = {
+        get: vi.fn(async (key: string) => memoryStore.get(key) || null),
+        put: vi.fn(async (key: string, val: string) => { memoryStore.set(key, val); }),
+        delete: vi.fn(async (key: string) => { memoryStore.delete(key); }),
+      };
+
+      const env = { ASGUARD_API_KEY: "test_api_key_123", ASGUARD_BLACKLIST: customMockKV as any, ASGUARD_TELEMETRY: customMockTelemetry as any };
+      const ctx = { waitUntil: vi.fn() } as any;
+      // First let's put something in anomaly_queue
+      await env.ASGUARD_TELEMETRY.put("anomaly_queue", JSON.stringify({ anomalyIp: "5.5.5.5", requestCount1h: 150, status: "pending_onyx_triage" }));
+
+      const req = new Request("https://asguard.local/admin/anomaly/triage", {
+        method: "POST",
+        headers: { "X-Asguard-Auth": "test_api_key_123", "X-Asguard-Signature": "sig123" },
+        body: JSON.stringify({ ip: "5.5.5.5", action: "dismiss" }),
+      });
+      const res = await worker.fetch(req, env as unknown as any, ctx as ExecutionContext);
+      expect(res.status).toBe(200);
+
+      const anomalyQueue = await env.ASGUARD_TELEMETRY.get("anomaly_queue");
+      expect(anomalyQueue).toBeNull();
+
+      const blacklistRecord = await env.ASGUARD_BLACKLIST.get("ip:5.5.5.5");
+      expect(blacklistRecord).toBeNull(); // Ensure it didn't block
+    });
+  });
+
+
+
 
   describe("Manual Cron Override Endpoint", () => {
     it("returns 401 if unauthorized", async () => {

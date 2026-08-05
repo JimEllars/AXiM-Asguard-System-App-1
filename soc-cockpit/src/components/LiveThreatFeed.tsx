@@ -47,6 +47,14 @@ const DlqRecordSchema = z.object({
 });
 type DlqRecord = z.infer<typeof DlqRecordSchema>;
 
+interface AnomalyQueue {
+  anomalyIp: string;
+  requestCount1h: number;
+  timestamp: number;
+  status: string;
+}
+
+
 const client = createThirdwebClient({
   clientId: process.env.NEXT_PUBLIC_THIRDWEB_CLIENT_ID || 'default-client-id',
 });
@@ -271,6 +279,9 @@ export default function LiveThreatFeed() {
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
 
   const [dlqRecords, setDlqRecords] = useState<DlqRecord[]>([]);
+  const [anomalyQueue, setAnomalyQueue] = useState<AnomalyQueue | null>(null);
+  const [showTriageModal, setShowTriageModal] = useState(false);
+
   const [selectedDlqIds, setSelectedDlqIds] = useState<string[]>([]);
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
   const [dlqSearchQuery, setDlqSearchQuery] = useState('');
@@ -388,7 +399,10 @@ export default function LiveThreatFeed() {
           setHealthStatus(healthData.status === 'ok' && healthData.blacklist === 'ok' && healthData.telemetry === 'ok' ? 'ok' : 'degraded');
           if (healthData.lastHeartbeat) setLastHeartbeat(healthData.lastHeartbeat);
           if (healthData.heartbeatDetails) setHeartbeatDetails(healthData.heartbeatDetails);
+
           if (healthData.telemetrySummary) setTelemetrySummary(healthData.telemetrySummary);
+          if (healthData.anomaly_queue) setAnomalyQueue(healthData.anomaly_queue);
+
         } else {
           setHealthStatus('degraded');
         }
@@ -480,7 +494,10 @@ export default function LiveThreatFeed() {
           setHealthStatus(healthData.status === 'ok' && healthData.blacklist === 'ok' && healthData.telemetry === 'ok' ? 'ok' : 'degraded');
           if (healthData.lastHeartbeat) setLastHeartbeat(healthData.lastHeartbeat);
           if (healthData.heartbeatDetails) setHeartbeatDetails(healthData.heartbeatDetails);
+
           if (healthData.telemetrySummary) setTelemetrySummary(healthData.telemetrySummary);
+          if (healthData.anomaly_queue) setAnomalyQueue(healthData.anomaly_queue);
+
         } else {
           setHealthStatus('degraded');
         }
@@ -701,7 +718,10 @@ export default function LiveThreatFeed() {
           setHealthStatus(healthData.status === 'ok' && healthData.blacklist === 'ok' && healthData.telemetry === 'ok' ? 'ok' : 'degraded');
           if (healthData.lastHeartbeat) setLastHeartbeat(healthData.lastHeartbeat);
           if (healthData.heartbeatDetails) setHeartbeatDetails(healthData.heartbeatDetails);
+
           if (healthData.telemetrySummary) setTelemetrySummary(healthData.telemetrySummary);
+          if (healthData.anomaly_queue) setAnomalyQueue(healthData.anomaly_queue);
+
            }
            if (dlqRes.ok) setDlqRecords(await dlqRes.json().then(d => d.slice(0, 50)));
            if (blocklistRes.ok) {
