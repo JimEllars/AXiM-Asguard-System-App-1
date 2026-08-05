@@ -730,6 +730,48 @@ export default {
         });
       }
     }
+
+    if (request.method === "POST" && url.pathname === "/admin/anomaly/triage") {
+      const customAuthHeader = request.headers.get("X-Asguard-Auth");
+      if (!env.ASGUARD_API_KEY || customAuthHeader !== env.ASGUARD_API_KEY) {
+        return new Response("Unauthorized", {
+          status: 401,
+          headers: getCorsHeaders(request, env, isMutation),
+        });
+      }
+      try {
+        const payload = await request.json() as { ip: string, action: "block" | "dismiss", ttl?: number };
+        const { ip, action, ttl = 86400 } = payload;
+        const now = Date.now();
+
+        if (action === "block") {
+          await env.ASGUARD_BLACKLIST.put(`ip:${ip}`, "1", { expirationTtl: ttl });
+        }
+
+        await env.ASGUARD_TELEMETRY.delete("anomaly_queue");
+
+        const authorizedByWallet = request.headers.get("X-Asguard-Signature") || customAuthHeader || "UNKNOWN";
+        const auditLog = {
+          action: "onyx_anomaly_triaged",
+          target: ip,
+          decision: action,
+          authorizedByWallet,
+          timestamp: now
+        };
+        await env.ASGUARD_TELEMETRY.put(`audit:${now}`, JSON.stringify(auditLog));
+
+        return new Response(JSON.stringify({ success: true, ip, decision: action }), {
+          status: 200,
+          headers: { ...getCorsHeaders(request, env, isMutation), "Content-Type": "application/json" }
+        });
+      } catch (err: any) {
+        return new Response(JSON.stringify({ error: err.message }), {
+          status: 400,
+          headers: { ...getCorsHeaders(request, env, isMutation), "Content-Type": "application/json" }
+        });
+      }
+    }
+
     if (request.method === "POST" && url.pathname === "/admin/cron/trigger") {
       const customAuthHeader = request.headers.get("X-Asguard-Auth");
       if (!env.ASGUARD_API_KEY || customAuthHeader !== env.ASGUARD_API_KEY) {
