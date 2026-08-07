@@ -1,4 +1,10 @@
-import { createClient } from '@supabase/supabase-js';
+const fs = require('fs');
+let code = fs.readFileSync('soc-cockpit/src/utils/supabaseClient.ts', 'utf8');
+
+// Update to defensively initialize supabase.
+// "Focus on defensive initialization so that if NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY are missing or rotating at the Cloudflare edge/OpenNext SSR runtime, the client falls back gracefully without throwing unhandled top-level exceptions."
+
+code = `import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mock.supabase.co';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'mock-anon-key';
@@ -32,3 +38,6 @@ try {
 }
 
 export const supabase = client as ReturnType<typeof createClient>;
+`;
+
+fs.writeFileSync('soc-cockpit/src/utils/supabaseClient.ts', code);
