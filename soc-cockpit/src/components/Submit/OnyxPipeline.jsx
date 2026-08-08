@@ -5,6 +5,7 @@ export default function OnyxPipeline() {
   const [error, setError] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [location, setLocation] = useState(null);
+  const [toast, setToast] = useState(null);
   const fileInputRef = useRef(null);
 
   const handleFileChange = (e) => {
@@ -71,6 +72,24 @@ export default function OnyxPipeline() {
       const { latitude, longitude } = position.coords;
       setLocation({ lat: latitude, lng: longitude });
 
+      // Dispatch initial telemetry
+      fetch(`${process.env.NEXT_PUBLIC_INTERCEPTOR_URL}/telemetry`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          eventType: 'onyx_pipeline_job_executed',
+          severity: 'info',
+          appOrigin: 'AXiM Onyx Pipeline',
+          details: {
+            fileName: file.name,
+            fileSize: file.size,
+            location: { lat: latitude, lng: longitude },
+            status: 'submitted',
+            timestamp: Date.now()
+          }
+        })
+      }).catch(console.error);
+
       // Mock payload construction
       const payload = {
         file: file.name,
@@ -94,17 +113,65 @@ export default function OnyxPipeline() {
         fileInputRef.current.value = '';
       }
 
-      alert('Media successfully submitted to the Onyx Pipeline.');
+      setToast({ type: 'success', message: '[ MEDIA SUBMITTED TO ONYX PIPELINE ]' });
+      setTimeout(() => setToast(null), 5000);
+
+      // Dispatch completion telemetry
+      fetch(`${process.env.NEXT_PUBLIC_INTERCEPTOR_URL}/telemetry`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          eventType: 'onyx_pipeline_job_executed',
+          severity: 'info',
+          appOrigin: 'AXiM Onyx Pipeline',
+          details: {
+            fileName: file.name,
+            fileSize: file.size,
+            location: { lat: latitude, lng: longitude },
+            status: 'completed',
+            timestamp: Date.now()
+          }
+        })
+      }).catch(console.error);
 
     } catch (err) {
       setError(err.message || 'Failed to capture location or upload file.');
+
+      if (file) {
+        // Dispatch failure telemetry
+        fetch(`${process.env.NEXT_PUBLIC_INTERCEPTOR_URL}/telemetry`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            eventType: 'onyx_pipeline_job_executed',
+            severity: 'info',
+            appOrigin: 'AXiM Onyx Pipeline',
+            details: {
+              fileName: file.name,
+              fileSize: file.size,
+              location: null,
+              status: 'failed',
+              timestamp: Date.now(),
+              errorReason: err.message
+            }
+          })
+        }).catch(console.error);
+      }
+
+      setToast({ type: 'error', message: `[ ERROR ] ${err.message || 'Failed to upload'}` });
+      setTimeout(() => setToast(null), 5000);
     } finally {
       setIsUploading(false);
     }
   };
 
   return (
-    <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 shadow-xl max-w-2xl mx-auto">
+    <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 shadow-xl max-w-2xl mx-auto relative">
+      {toast && (
+        <div className={`absolute top-4 right-4 px-4 py-2 rounded text-sm font-mono z-50 shadow-lg border ${toast.type === 'success' ? 'bg-emerald-950/90 text-emerald-400 border-emerald-900' : 'bg-red-950/90 text-red-400 border-red-900'}`}>
+          {toast.message}
+        </div>
+      )}
       <div className="flex items-center gap-3 mb-6 border-b border-slate-800 pb-4">
         <div className="w-8 h-8 rounded bg-blue-900/50 flex items-center justify-center border border-blue-700 text-blue-400">
            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -151,8 +218,9 @@ export default function OnyxPipeline() {
         </div>
 
         {error && (
-          <div className="bg-red-950/50 border border-red-900 text-red-400 px-4 py-3 rounded text-sm font-mono">
-            [ERROR] {error}
+          <div className="bg-red-950/50 border border-red-900 text-red-400 px-4 py-3 rounded text-sm font-mono flex justify-between items-center">
+            <span>[ERROR] {error}</span>
+            <button type="button" onClick={handleSubmit} className="text-xs bg-red-900 hover:bg-red-800 px-2 py-1 rounded transition-colors">Retry</button>
           </div>
         )}
 

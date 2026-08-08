@@ -233,6 +233,7 @@ export default function LiveThreatFeed() {
 
   const velocityShift = velocityHistory.length > 0 ? velocityHistory[velocityHistory.length - 1] : 'none';
   const [realtimeStatus, setRealtimeStatus] = useState<'CONNECTED' | 'DISCONNECTED' | 'ERROR'>('DISCONNECTED');
+  const [retryCount, setRetryCount] = useState<number>(0);
   const activeAccount = useActiveAccount();
 
   const { disconnect } = useDisconnect();
@@ -650,6 +651,7 @@ export default function LiveThreatFeed() {
                 setRealtimeStatus('CONNECTED');
 
                 currentRetry = 0;
+                setRetryCount(0);
             } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
                 setRealtimeStatus(status === 'CLOSED' ? 'DISCONNECTED' : 'ERROR');
                 // Auto-Heal backoff
@@ -659,6 +661,7 @@ export default function LiveThreatFeed() {
                 timeoutId = setTimeout(() => {
 
                     currentRetry++;
+                    setRetryCount(currentRetry);
                     setupRealtime();
                 }, delay);
             }
@@ -1456,6 +1459,8 @@ const handlePurgeDlqItem = async (id: string) => {
         <div className={`text-xs font-mono border px-2 py-1.5 md:px-3 md:py-2 rounded transition-colors duration-300 flex items-center gap-2 ${
           realtimeStatus === 'CONNECTED'
             ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300'
+            : realtimeStatus === 'ERROR'
+            ? 'bg-red-950/80 border-red-500 text-red-300'
             : 'bg-amber-950/80 border-amber-500 text-amber-300'
         }`}>
           {realtimeStatus === 'CONNECTED' ? (
@@ -1464,10 +1469,23 @@ const handlePurgeDlqItem = async (id: string) => {
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
               </span>
-              <span>LIVE SYNC</span>
+              <span>CONNECTED</span>
+            </>
+          ) : realtimeStatus === 'ERROR' ? (
+            <>
+              <span className="relative flex h-2 w-2">
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+              </span>
+              <span>OFFLINE</span>
             </>
           ) : (
-            <span>Realtime Sync Interrupted — Re-establishing Edge Uplink...</span>
+            <>
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+              </span>
+              <span>RECONNECTING (ATTEMPT {retryCount})</span>
+            </>
           )}
         </div>
         <div className={`text-xs font-mono border px-2 py-1.5 md:px-3 md:py-2 rounded transition-colors duration-300 ${flash ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300' : 'bg-slate-900 border-slate-700 text-slate-400'}`}>
