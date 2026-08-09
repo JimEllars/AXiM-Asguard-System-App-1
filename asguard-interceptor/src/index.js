@@ -599,12 +599,13 @@ export default {
                 });
             }
             try {
-                const [_, __, heartbeatRaw, summaryRaw, anomalyQueueRaw] = await Promise.all([
+                const [_, __, heartbeatRaw, summaryRaw, anomalyQueueRaw, blacklistList] = await Promise.all([
                     env.ASGUARD_BLACKLIST.get("health-check-key").catch(e => { throw new Error("ASGUARD_BLACKLIST failed"); }),
                     env.ASGUARD_TELEMETRY.get("health-check-key").catch(e => { throw new Error("ASGUARD_TELEMETRY failed"); }),
                     env.ASGUARD_TELEMETRY.get("system_health_heartbeat"),
                     env.ASGUARD_TELEMETRY.get("telemetry:summary:24h"),
-                    env.ASGUARD_TELEMETRY.get("anomaly_queue")
+                    env.ASGUARD_TELEMETRY.get("anomaly_queue"),
+                    env.ASGUARD_BLACKLIST.list({ limit: 1000 }).catch(e => ({ keys: [] }))
                 ]);
                 let lastHeartbeat = null;
                 let fullHeartbeat = null;
@@ -631,6 +632,19 @@ export default {
                     }
                     catch (e) { }
                 }
+                const aiUnsafeCount24h = telemetrySummary?.aiUnsafeCount24h || 0;
+                const activeBlocklistCount = blacklistList.keys.length;
+                const anomalyQueueLength = anomaly_queue ? anomaly_queue.length : 0;
+                let globalThreatLevel = "LOW";
+                if (aiUnsafeCount24h >= 10 || anomalyQueueLength >= 5) {
+                    globalThreatLevel = "CRITICAL";
+                }
+                else if (aiUnsafeCount24h >= 5 || anomalyQueueLength >= 1) {
+                    globalThreatLevel = "HIGH";
+                }
+                else if (activeBlocklistCount >= 10 || aiUnsafeCount24h >= 1) {
+                    globalThreatLevel = "ELEVATED";
+                }
                 return new Response(JSON.stringify({
                     status: "ok",
                     blacklist: "ok",
@@ -641,6 +655,7 @@ export default {
                     heartbeatDetails: fullHeartbeat,
                     telemetrySummary,
                     anomaly_queue,
+                    globalThreatLevel,
                     timestamp: Date.now()
                 }), {
                     status: 200,

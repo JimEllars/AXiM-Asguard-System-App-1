@@ -504,7 +504,8 @@ describe("Asguard Interceptor", () => {
     it("handles GET /health and returns ok for healthy bindings", async () => {
         const mockSuccessKV = {
             ...mockKV,
-            get: vi.fn().mockResolvedValue(null)
+            get: vi.fn().mockResolvedValue(null),
+            list: vi.fn().mockResolvedValue({ keys: [] })
         };
         const request = new Request("https://example.com/health", {
             method: "GET",
@@ -523,7 +524,60 @@ describe("Asguard Interceptor", () => {
         expect(body.status).toBe("ok");
         expect(body.blacklist).toBe("ok");
         expect(body.telemetry).toBe("ok");
+        expect(body.globalThreatLevel).toBe("LOW");
         expect(response.headers.get("Access-Control-Allow-Origin")).toBeDefined();
+    });
+    it("handles GET /health and returns CRITICAL global threat level when AI threats are high", async () => {
+        const mockCriticalKV = {
+            ...mockKV,
+            get: vi.fn().mockImplementation(async (key) => {
+                if (key === "telemetry:summary:24h") {
+                    return JSON.stringify({ aiUnsafeCount24h: 15 });
+                }
+                return null;
+            }),
+            list: vi.fn().mockResolvedValue({ keys: [] })
+        };
+        const request = new Request("https://example.com/health", {
+            method: "GET",
+            headers: { "X-Asguard-Auth": "test-auth-key" },
+        });
+        const env = {
+            ALLOWED_ORIGIN: 'https://production-domain.com',
+            ASGUARD_API_KEY: "test-auth-key",
+            ASGUARD_BLACKLIST: mockCriticalKV,
+            ASGUARD_TELEMETRY: mockCriticalKV,
+        };
+        const ctx = { waitUntil: vi.fn() };
+        const response = await worker.fetch(request, env, ctx);
+        const body = await response.json();
+        expect(body.globalThreatLevel).toBe("CRITICAL");
+    });
+    it("handles GET /health and returns HIGH global threat level when anomaly queue is populated", async () => {
+        const mockHighKV = {
+            ...mockKV,
+            get: vi.fn().mockImplementation(async (key) => {
+                if (key === "anomaly_queue") {
+                    return JSON.stringify([{ anomalyIp: "1.1.1.1", requestCount1h: 200, timestamp: Date.now() }]);
+                }
+                return null;
+            }),
+            list: vi.fn().mockResolvedValue({ keys: [] })
+        };
+        const request = new Request("https://example.com/health", {
+            method: "GET",
+            headers: { "X-Asguard-Auth": "test-auth-key" },
+        });
+        const env = {
+            ALLOWED_ORIGIN: 'https://production-domain.com',
+            ASGUARD_API_KEY: "test-auth-key",
+            ASGUARD_BLACKLIST: mockHighKV,
+            ASGUARD_TELEMETRY: mockHighKV,
+        };
+        const ctx = { waitUntil: vi.fn() };
+        const response = await worker.fetch(request, env, ctx);
+        const body = await response.json();
+        expect(body.globalThreatLevel).toBe("HIGH");
     });
     it("handles GET /health and returns degraded for failed bindings", async () => {
         const mockFailedKV = {
