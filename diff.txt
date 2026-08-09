@@ -1,0 +1,660 @@
+diff --git a/asguard-interceptor/tests/interceptor.test.ts b/asguard-interceptor/tests/interceptor.test.ts
+index 13754da..61e7831 100644
+--- a/asguard-interceptor/tests/interceptor.test.ts
++++ b/asguard-interceptor/tests/interceptor.test.ts
+@@ -1210,6 +1210,13 @@ describe("Autonomous Blocklist Endpoint", () => {
+
+       const anomalyQueue = await env.ASGUARD_TELEMETRY.get("anomaly_queue");
+       expect(anomalyQueue).toBeNull();
++
++      const auditCalls = customMockTelemetry.put.mock.calls.filter((c: any) => c[0].startsWith("audit:") && c[1].includes("onyx_anomaly_triaged"));
++      expect(auditCalls.length).toBe(1);
++      const auditPayload = JSON.parse(auditCalls[0][1]);
++      expect(auditPayload.decision).toBe("block");
++      expect(auditPayload.target).toBe("1.2.3.4");
++      expect(auditPayload.authorizedByWallet).toBe("test_api_key_123");
+     });
+
+     it("returns 200 OK and dismisses IP when action is dismiss", async () => {
+@@ -1243,6 +1250,13 @@ describe("Autonomous Blocklist Endpoint", () => {
+
+       const blacklistRecord = await env.ASGUARD_BLACKLIST.get("ip:5.5.5.5");
+       expect(blacklistRecord).toBeNull(); // Ensure it didn't block
++
++      const auditCalls = customMockTelemetry.put.mock.calls.filter((c: any) => c[0].startsWith("audit:") && c[1].includes("onyx_anomaly_triaged"));
++      expect(auditCalls.length).toBe(1);
++      const auditPayload = JSON.parse(auditCalls[0][1]);
++      expect(auditPayload.decision).toBe("dismiss");
++      expect(auditPayload.target).toBe("5.5.5.5");
++      expect(auditPayload.authorizedByWallet).toBe("sig123");
+     });
+   });
+
+diff --git a/fix_health.js b/fix_health.js
+new file mode 100644
+index 0000000..8b64deb
+--- /dev/null
++++ b/fix_health.js
+@@ -0,0 +1,13 @@
++const fs = require('fs');
++const file = 'soc-cockpit/src/components/LiveThreatFeed.tsx';
++let content = fs.readFileSync(file, 'utf8');
++
++// There is a use-effect that polls healthstate, let's see where the fetch is defined.
++// If not found, we can remove the explicit call as it auto-polls, or define it locally.
++if (!content.includes('const fetchHealthState =')) {
++   // Remove the fetchHealthState(); call.
++   content = content.replace('fetchHealthState();', '');
++}
++
++fs.writeFileSync(file, content, 'utf8');
++console.log('Fixed fetchHealthState');
+diff --git a/fix_worker_url.js b/fix_worker_url.js
+new file mode 100644
+index 0000000..316f014
+--- /dev/null
++++ b/fix_worker_url.js
+@@ -0,0 +1,9 @@
++const fs = require('fs');
++const file = 'soc-cockpit/src/components/LiveThreatFeed.tsx';
++let content = fs.readFileSync(file, 'utf8');
++
++// Replace workerUrl with the correct value
++content = content.replace('${workerUrl}/admin/anomaly/triage', '${process.env.NEXT_PUBLIC_ASGUARD_WORKER_URL}/admin/anomaly/triage');
++
++fs.writeFileSync(file, content, 'utf8');
++console.log('Fixed workerUrl');
+diff --git a/patch_anomaly.js b/patch_anomaly.js
+new file mode 100644
+index 0000000..a9d391e
+--- /dev/null
++++ b/patch_anomaly.js
+@@ -0,0 +1,28 @@
++const fs = require('fs');
++const file = 'soc-cockpit/src/components/LiveThreatFeed.tsx';
++let content = fs.readFileSync(file, 'utf8');
++
++// There's a parse issue, the code was inserted at the very end or wrong place.
++// Let's remove it and insert it carefully.
++const bannerBlock = `
++          {anomalyQueue?.status === 'pending_onyx_triage' && (
++            <div
++              onClick={() => setShowTriageModal(true)}
++              className="mb-6 border border-amber-500/50 bg-amber-500/10 rounded font-mono p-4 text-center text-sm text-amber-500 cursor-pointer hover:bg-amber-500/20 transition-colors animate-pulse"
++            >
++              [ ONYX ANOMALY QUEUE: IP {anomalyQueue.anomalyIp} ({anomalyQueue.requestCount1h} req/hr) STAGED FOR TRIAGE ]
++            </div>
++          )}
++`;
++
++content = content.replace(bannerBlock, '');
++
++const targetGrid = '<div className="grid grid-cols-1 md:grid-cols-3 gap-6">';
++if (content.includes(targetGrid)) {
++  content = content.replace(targetGrid, bannerBlock + targetGrid);
++} else {
++  console.log('could not find target grid');
++}
++
++fs.writeFileSync(file, content, 'utf8');
++console.log('patched');
+diff --git a/patch_anomaly2.js b/patch_anomaly2.js
+new file mode 100644
+index 0000000..b8236e7
+--- /dev/null
++++ b/patch_anomaly2.js
+@@ -0,0 +1,24 @@
++const fs = require('fs');
++const file = 'soc-cockpit/src/components/LiveThreatFeed.tsx';
++let content = fs.readFileSync(file, 'utf8');
++
++const bannerBlock2 = `          {anomalyQueue?.status === 'pending_onyx_triage' && (
++            <div
++              onClick={() => setShowTriageModal(true)}
++              className="mb-6 border border-amber-500/50 bg-amber-500/10 rounded font-mono p-4 text-center text-sm text-amber-500 cursor-pointer hover:bg-amber-500/20 transition-colors animate-pulse"
++            >
++              [ ONYX ANOMALY QUEUE: IP {anomalyQueue.anomalyIp} ({anomalyQueue.requestCount1h} req/hr) STAGED FOR TRIAGE ]
++            </div>
++          )}`;
++// Try to remove stray code block completely:
++content = content.replace(bannerBlock2, "");
++content = content.replace(bannerBlock2, ""); // In case of multiples
++
++const properTarget = `<main className="max-w-7xl mx-auto px-4 py-8 relative">`;
++if (content.includes(properTarget)) {
++   content = content.replace(properTarget, properTarget + '\n' + bannerBlock2);
++   console.log('injected at proper target');
++} else {
++   console.log('Proper target missing');
++}
++fs.writeFileSync(file, content, 'utf8');
+diff --git a/patch_anomaly3.js b/patch_anomaly3.js
+new file mode 100644
+index 0000000..7e6613f
+--- /dev/null
++++ b/patch_anomaly3.js
+@@ -0,0 +1,40 @@
++const fs = require('fs');
++const file = 'soc-cockpit/src/components/LiveThreatFeed.tsx';
++let content = fs.readFileSync(file, 'utf8');
++
++const stray = `
++          {anomalyQueue?.status === 'pending_onyx_triage' && (
++            <div
++              onClick={() => setShowTriageModal(true)}
++              className="mb-6 border border-amber-500/50 bg-amber-500/10 rounded font-mono p-4 text-center text-sm text-amber-500 cursor-pointer hover:bg-amber-500/20 transition-colors animate-pulse"
++            >
++              [ ONYX ANOMALY QUEUE: IP {anomalyQueue.anomalyIp} ({anomalyQueue.requestCount1h} req/hr) STAGED FOR TRIAGE ]
++            </div>
++          )}
++`;
++// Let's strip the end of file stray elements
++const endOfFileIndex = content.lastIndexOf('export default function LiveThreatFeed');
++if (endOfFileIndex !== -1) {
++    // Actually the component is a default export at the top, let's find `); \n }` at the end
++}
++// Clean up all stray banners:
++content = content.split(stray).join('');
++
++const targetStr = '<div className="grid grid-cols-1 md:grid-cols-2 gap-6">';
++if (content.includes(targetStr)) {
++  content = content.replace(targetStr, stray + targetStr);
++} else {
++  // Let's look for another landmark
++  const targetStr2 = '<div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">';
++  if (content.includes(targetStr2)) {
++     content = content.replace(targetStr2, stray + targetStr2);
++  } else {
++      const targetStr3 = '<main className="p-8 max-w-7xl mx-auto space-y-6">';
++      if (content.includes(targetStr3)) {
++          content = content.replace(targetStr3, targetStr3 + stray);
++      }
++  }
++}
++
++fs.writeFileSync(file, content, 'utf8');
++console.log('patched 3');
+diff --git a/patch_anomaly4.js b/patch_anomaly4.js
+new file mode 100644
+index 0000000..6c527d3
+--- /dev/null
++++ b/patch_anomaly4.js
+@@ -0,0 +1,59 @@
++const fs = require('fs');
++const file = 'soc-cockpit/src/components/LiveThreatFeed.tsx';
++let content = fs.readFileSync(file, 'utf8');
++
++const strayModal = `        {showTriageModal && anomalyQueue && (
++          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
++            <div className="border border-slate-800 bg-slate-950 p-6 rounded-lg max-w-lg w-full font-mono shadow-xl relative">
++              <button onClick={() => setShowTriageModal(false)} className="absolute top-4 right-4 text-slate-500 hover:text-white transition-colors">
++                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
++              </button>
++              <h2 className="text-xl text-amber-500 mb-6 flex items-center gap-2">
++                <svg className="w-5 h-5 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
++                ONYX AI TRIAGE REQUIRED
++              </h2>
++
++              <div className="space-y-4 text-sm mb-8">
++                <div className="flex justify-between border-b border-slate-800 pb-2">
++                  <span className="text-slate-500">Target IP Address</span>
++                  <span className="text-slate-300">{anomalyQueue.anomalyIp}</span>
++                </div>
++                <div className="flex justify-between border-b border-slate-800 pb-2">
++                  <span className="text-slate-500">1-Hour Request Velocity</span>
++                  <span className="text-red-400 font-bold">{anomalyQueue.requestCount1h} req/hr</span>
++                </div>
++                <div className="flex justify-between border-b border-slate-800 pb-2">
++                  <span className="text-slate-500">Staged Timestamp & Origin Details</span>
++                  <span className="text-slate-300">{new Date(anomalyQueue.timestamp).toLocaleString()} (ONYX_ANOMALY_ENGINE)</span>
++                </div>
++              </div>
++
++              <div className="flex gap-4">
++                <button
++                  onClick={() => handleTriageAnomaly('block')}
++                  className="flex-1 bg-red-950 hover:bg-red-900 border border-red-500/50 text-red-500 py-3 rounded text-sm transition-colors"
++                >
++                  [ AUTO-BLOCK 24H ]
++                </button>
++                <button
++                  onClick={() => handleTriageAnomaly('dismiss')}
++                  className="flex-1 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 py-3 rounded text-sm transition-colors"
++                >
++                  [ DISMISS ]
++                </button>
++              </div>
++            </div>
++          </div>
++        )}
++`;
++
++content = content.replace(strayModal, '');
++
++const endOfMain = `      </main>`;
++if (content.includes(endOfMain)) {
++    content = content.replace(endOfMain, strayModal + '\n' + endOfMain);
++} else {
++    console.log('could not find end of main');
++}
++
++fs.writeFileSync(file, content, 'utf8');
+diff --git a/patch_anomaly5.js b/patch_anomaly5.js
+new file mode 100644
+index 0000000..097afe5
+--- /dev/null
++++ b/patch_anomaly5.js
+@@ -0,0 +1,63 @@
++const fs = require('fs');
++const file = 'soc-cockpit/src/components/LiveThreatFeed.tsx';
++let content = fs.readFileSync(file, 'utf8');
++
++const strayModal = `        {showTriageModal && anomalyQueue && (
++          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
++            <div className="border border-slate-800 bg-slate-950 p-6 rounded-lg max-w-lg w-full font-mono shadow-xl relative">
++              <button onClick={() => setShowTriageModal(false)} className="absolute top-4 right-4 text-slate-500 hover:text-white transition-colors">
++                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
++              </button>
++              <h2 className="text-xl text-amber-500 mb-6 flex items-center gap-2">
++                <svg className="w-5 h-5 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
++                ONYX AI TRIAGE REQUIRED
++              </h2>
++
++              <div className="space-y-4 text-sm mb-8">
++                <div className="flex justify-between border-b border-slate-800 pb-2">
++                  <span className="text-slate-500">Target IP Address</span>
++                  <span className="text-slate-300">{anomalyQueue.anomalyIp}</span>
++                </div>
++                <div className="flex justify-between border-b border-slate-800 pb-2">
++                  <span className="text-slate-500">1-Hour Request Velocity</span>
++                  <span className="text-red-400 font-bold">{anomalyQueue.requestCount1h} req/hr</span>
++                </div>
++                <div className="flex justify-between border-b border-slate-800 pb-2">
++                  <span className="text-slate-500">Staged Timestamp & Origin Details</span>
++                  <span className="text-slate-300">{new Date(anomalyQueue.timestamp).toLocaleString()} (ONYX_ANOMALY_ENGINE)</span>
++                </div>
++              </div>
++
++              <div className="flex gap-4">
++                <button
++                  onClick={() => handleTriageAnomaly('block')}
++                  className="flex-1 bg-red-950 hover:bg-red-900 border border-red-500/50 text-red-500 py-3 rounded text-sm transition-colors"
++                >
++                  [ AUTO-BLOCK 24H ]
++                </button>
++                <button
++                  onClick={() => handleTriageAnomaly('dismiss')}
++                  className="flex-1 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 py-3 rounded text-sm transition-colors"
++                >
++                  [ DISMISS ]
++                </button>
++              </div>
++            </div>
++          </div>
++        )}`;
++
++// We know from grep that strayModal is at line 2364
++// We can just find `export default function LiveThreatFeed` and find the end of it.
++// Instead of that, let's just use replace with the end tag of the main component return statement.
++const endReturn = `    </div>
++  );
++}`;
++
++if (content.includes(endReturn)) {
++    content = content.replace(endReturn, strayModal + '\n' + endReturn);
++} else {
++    console.log('could not find endReturn');
++}
++
++fs.writeFileSync(file, content, 'utf8');
++console.log('patched');
+diff --git a/patch_tests.js b/patch_tests.js
+index 16a563b..bea8dfc 100644
+--- a/patch_tests.js
++++ b/patch_tests.js
+@@ -1,47 +1,62 @@
+ const fs = require('fs');
+ const file = 'asguard-interceptor/tests/interceptor.test.ts';
+-let code = fs.readFileSync(file, 'utf8');
+-
+-const targetStr = `  describe("DELETE /dlq", () => {`;
+-const insertStr = `  describe("GET /dlq", () => {
+-    it("returns active items when view is omitted or active", async () => {
+-      const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+-      const ctx = { waitUntil: vi.fn() } as any;
+-
+-      mockTelemetryKV.list.mockResolvedValueOnce({ keys: [{ name: "dlq:1" }, { name: "dlq:2" }] });
+-      mockTelemetryKV.get.mockResolvedValueOnce(JSON.stringify({ status: "active", id: "1" }));
+-      mockTelemetryKV.get.mockResolvedValueOnce(JSON.stringify({ status: "quarantined", id: "2" }));
+-
+-      const request = new Request("https://asguard.local/dlq", {
+-        headers: { "X-Asguard-Auth": "test-auth-key" }
+-      });
+-      const response = await worker.fetch(request, env as any, ctx as any);
+-      expect(response.status).toBe(200);
+-      const data = await (response as any).json();
+-      expect(data.length).toBe(1);
+-      expect(data[0].id).toBe("1");
+-    });
+-
+-    it("returns quarantined items when view is quarantined", async () => {
+-      const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+-      const ctx = { waitUntil: vi.fn() } as any;
+-
+-      mockTelemetryKV.list.mockResolvedValueOnce({ keys: [{ name: "dlq:1" }, { name: "dlq:2" }] });
+-      mockTelemetryKV.get.mockResolvedValueOnce(JSON.stringify({ status: "active", id: "1" }));
+-      mockTelemetryKV.get.mockResolvedValueOnce(JSON.stringify({ status: "quarantined", id: "2" }));
+-
+-      const request = new Request("https://asguard.local/dlq?view=quarantined", {
+-        headers: { "X-Asguard-Auth": "test-auth-key" }
+-      });
+-      const response = await worker.fetch(request, env as any, ctx as any);
+-      expect(response.status).toBe(200);
+-      const data = await (response as any).json();
+-      expect(data.length).toBe(1);
+-      expect(data[0].id).toBe("2");
+-    });
+-  });
+-
+-  describe("DELETE /dlq", () => {`;
+-
+-code = code.replace(targetStr, insertStr);
+-fs.writeFileSync(file, code);
++let content = fs.readFileSync(file, 'utf8');
++
++// The tests for "POST /admin/anomaly/triage" need to assert the audit log writes correctly.
++
++// Update block test
++const blockTestSearch = `
++      const blacklistRecord = await env.ASGUARD_BLACKLIST.get("ip:1.2.3.4");
++      expect(blacklistRecord).toBe("1");
++
++      const anomalyQueue = await env.ASGUARD_TELEMETRY.get("anomaly_queue");
++      expect(anomalyQueue).toBeNull();
++    });`;
++
++const blockTestReplace = `
++      const blacklistRecord = await env.ASGUARD_BLACKLIST.get("ip:1.2.3.4");
++      expect(blacklistRecord).toBe("1");
++
++      const anomalyQueue = await env.ASGUARD_TELEMETRY.get("anomaly_queue");
++      expect(anomalyQueue).toBeNull();
++
++      const auditCalls = customMockTelemetry.put.mock.calls.filter((c: any) => c[0].startsWith("audit:") && c[1].includes("onyx_anomaly_triaged"));
++      expect(auditCalls.length).toBe(1);
++      const auditPayload = JSON.parse(auditCalls[0][1]);
++      expect(auditPayload.decision).toBe("block");
++      expect(auditPayload.target).toBe("1.2.3.4");
++      expect(auditPayload.authorizedByWallet).toBe("test_api_key_123");
++    });`;
++
++if (content.includes(blockTestSearch)) {
++  content = content.replace(blockTestSearch, blockTestReplace);
++} else {
++  console.log("Could not find block test search string.");
++}
++
++// Update dismiss test
++const dismissTestSearch = `
++      const blacklistRecord = await env.ASGUARD_BLACKLIST.get("ip:5.5.5.5");
++      expect(blacklistRecord).toBeNull(); // Ensure it didn't block
++    });`;
++
++const dismissTestReplace = `
++      const blacklistRecord = await env.ASGUARD_BLACKLIST.get("ip:5.5.5.5");
++      expect(blacklistRecord).toBeNull(); // Ensure it didn't block
++
++      const auditCalls = customMockTelemetry.put.mock.calls.filter((c: any) => c[0].startsWith("audit:") && c[1].includes("onyx_anomaly_triaged"));
++      expect(auditCalls.length).toBe(1);
++      const auditPayload = JSON.parse(auditCalls[0][1]);
++      expect(auditPayload.decision).toBe("dismiss");
++      expect(auditPayload.target).toBe("5.5.5.5");
++      expect(auditPayload.authorizedByWallet).toBe("sig123");
++    });`;
++
++if (content.includes(dismissTestSearch)) {
++  content = content.replace(dismissTestSearch, dismissTestReplace);
++} else {
++  console.log("Could not find dismiss test search string.");
++}
++
++fs.writeFileSync(file, content, 'utf8');
++console.log('Done patching tests');
+diff --git a/patch_triage.js b/patch_triage.js
+new file mode 100644
+index 0000000..a28b8e4
+--- /dev/null
++++ b/patch_triage.js
+@@ -0,0 +1,112 @@
++const fs = require('fs');
++const file = 'soc-cockpit/src/components/LiveThreatFeed.tsx';
++let content = fs.readFileSync(file, 'utf8');
++
++// 1. Add handleTriageAnomaly
++if (!content.includes('const handleTriageAnomaly = ')) {
++  const insertIndex = content.indexOf('const handleCopyAuditRow');
++  const handleTriageStr = `
++  const handleTriageAnomaly = async (action: 'block' | 'dismiss') => {
++    if (!anomalyQueue) return;
++
++    try {
++      const authKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY || '';
++      const walletAddr = activeAccount?.address || 'UNKNOWN';
++      const res = await fetch(\`\${workerUrl}/admin/anomaly/triage\`, {
++        method: 'POST',
++        headers: {
++          'Content-Type': 'application/json',
++          'X-Asguard-Auth': authKey,
++          'X-Asguard-Signature': walletAddr,
++        },
++        body: JSON.stringify({ ip: anomalyQueue.anomalyIp, action })
++      });
++
++      if (res.ok) {
++        setAnomalyQueue(null);
++        setShowTriageModal(false);
++        fetchHealthState();
++        setToasts(prev => [...prev, { id: Math.random().toString(), message: \`[ ANOMALY TRIAGED: \${action.toUpperCase()} ]\`, type: 'emerald' }]);
++      } else {
++        throw new Error('Failed to triage anomaly');
++      }
++    } catch (e) {
++      console.error(e);
++      setToasts(prev => [...prev, { id: Math.random().toString(), message: '[ TRIAGE FAILED ]', type: 'error' }]);
++    }
++  };
++
++`;
++  content = content.slice(0, insertIndex) + handleTriageStr + content.slice(insertIndex);
++}
++
++// 2. Add Anomaly Banner
++if (!content.includes('ONYX ANOMALY QUEUE: IP')) {
++  // Find where to place the banner, "above the telemetry grid"
++  const gridIndex = content.indexOf('<div className="grid grid-cols-1 md:grid-cols-3 gap-6">');
++  const bannerStr = `
++          {anomalyQueue?.status === 'pending_onyx_triage' && (
++            <div
++              onClick={() => setShowTriageModal(true)}
++              className="mb-6 border border-amber-500/50 bg-amber-500/10 rounded font-mono p-4 text-center text-sm text-amber-500 cursor-pointer hover:bg-amber-500/20 transition-colors animate-pulse"
++            >
++              [ ONYX ANOMALY QUEUE: IP {anomalyQueue.anomalyIp} ({anomalyQueue.requestCount1h} req/hr) STAGED FOR TRIAGE ]
++            </div>
++          )}
++`;
++  content = content.slice(0, gridIndex) + bannerStr + content.slice(gridIndex);
++}
++
++// 3. Add Triage Modal
++if (!content.includes('Staged Timestamp & Origin Details')) {
++  const modalIndex = content.lastIndexOf('</main>');
++  const modalStr = `
++        {showTriageModal && anomalyQueue && (
++          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
++            <div className="border border-slate-800 bg-slate-950 p-6 rounded-lg max-w-lg w-full font-mono shadow-xl relative">
++              <button onClick={() => setShowTriageModal(false)} className="absolute top-4 right-4 text-slate-500 hover:text-white transition-colors">
++                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
++              </button>
++              <h2 className="text-xl text-amber-500 mb-6 flex items-center gap-2">
++                <svg className="w-5 h-5 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
++                ONYX AI TRIAGE REQUIRED
++              </h2>
++
++              <div className="space-y-4 text-sm mb-8">
++                <div className="flex justify-between border-b border-slate-800 pb-2">
++                  <span className="text-slate-500">Target IP Address</span>
++                  <span className="text-slate-300">{anomalyQueue.anomalyIp}</span>
++                </div>
++                <div className="flex justify-between border-b border-slate-800 pb-2">
++                  <span className="text-slate-500">1-Hour Request Velocity</span>
++                  <span className="text-red-400 font-bold">{anomalyQueue.requestCount1h} req/hr</span>
++                </div>
++                <div className="flex justify-between border-b border-slate-800 pb-2">
++                  <span className="text-slate-500">Staged Timestamp & Origin Details</span>
++                  <span className="text-slate-300">{new Date(anomalyQueue.timestamp).toLocaleString()} (ONYX_ANOMALY_ENGINE)</span>
++                </div>
++              </div>
++
++              <div className="flex gap-4">
++                <button
++                  onClick={() => handleTriageAnomaly('block')}
++                  className="flex-1 bg-red-950 hover:bg-red-900 border border-red-500/50 text-red-500 py-3 rounded text-sm transition-colors"
++                >
++                  [ AUTO-BLOCK 24H ]
++                </button>
++                <button
++                  onClick={() => handleTriageAnomaly('dismiss')}
++                  className="flex-1 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 py-3 rounded text-sm transition-colors"
++                >
++                  [ DISMISS ]
++                </button>
++              </div>
++            </div>
++          </div>
++        )}
++`;
++  content = content.slice(0, modalIndex) + modalStr + content.slice(modalIndex);
++}
++
++fs.writeFileSync(file, content, 'utf8');
++console.log('Done');
+diff --git a/soc-cockpit/src/components/LiveThreatFeed.tsx b/soc-cockpit/src/components/LiveThreatFeed.tsx
+index efcd025..62082ed 100644
+--- a/soc-cockpit/src/components/LiveThreatFeed.tsx
++++ b/soc-cockpit/src/components/LiveThreatFeed.tsx
+@@ -291,7 +291,38 @@ export default function LiveThreatFeed() {
+   const [replayingState, setReplayingState] = useState<Record<string, boolean>>({});
+   const [copiedAuditRow, setCopiedAuditRow] = useState<string | null>(null);
+
+-  const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
++
++  const handleTriageAnomaly = async (action: 'block' | 'dismiss') => {
++    if (!anomalyQueue) return;
++
++    try {
++      const authKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY || '';
++      const walletAddr = activeAccount?.address || 'UNKNOWN';
++      const res = await fetch(`${process.env.NEXT_PUBLIC_ASGUARD_WORKER_URL}/admin/anomaly/triage`, {
++        method: 'POST',
++        headers: {
++          'Content-Type': 'application/json',
++          'X-Asguard-Auth': authKey,
++          'X-Asguard-Signature': walletAddr,
++        },
++        body: JSON.stringify({ ip: anomalyQueue.anomalyIp, action })
++      });
++
++      if (res.ok) {
++        setAnomalyQueue(null);
++        setShowTriageModal(false);
++
++        setToasts(prev => [...prev, { id: Math.random().toString(), message: `[ ANOMALY TRIAGED: ${action.toUpperCase()} ]`, type: 'emerald' }]);
++      } else {
++        throw new Error('Failed to triage anomaly');
++      }
++    } catch (e) {
++      console.error(e);
++      setToasts(prev => [...prev, { id: Math.random().toString(), message: '[ TRIAGE FAILED ]', type: 'error' }]);
++    }
++  };
++
++const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
+     navigator.clipboard.writeText(JSON.stringify(event, null, 2));
+     setCopiedAuditRow(rowId);
+     setTimeout(() => {
+@@ -1594,7 +1625,16 @@ const handlePurgeDlqItem = async (id: string) => {
+       {/* Edge Trend Analytics */}
+       <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-4 flex flex-col min-h-0">
+         <div className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-4 border-b border-slate-800 pb-2">Edge Trend Analytics</div>
+-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
++
++          {anomalyQueue?.status === 'pending_onyx_triage' && (
++            <div
++              onClick={() => setShowTriageModal(true)}
++              className="mb-6 border border-amber-500/50 bg-amber-500/10 rounded font-mono p-4 text-center text-sm text-amber-500 cursor-pointer hover:bg-amber-500/20 transition-colors animate-pulse"
++            >
++              [ ONYX ANOMALY QUEUE: IP {anomalyQueue.anomalyIp} ({anomalyQueue.requestCount1h} req/hr) STAGED FOR TRIAGE ]
++            </div>
++          )}
++<div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+           {/* Top Datacenters */}
+           <div>
+             <div className="text-[10px] text-slate-500 font-mono mb-2">TOP DATACENTERS</div>
+@@ -2318,6 +2358,50 @@ const handlePurgeDlqItem = async (id: string) => {
+
+         </div>
+       )}
++        {showTriageModal && anomalyQueue && (
++          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
++            <div className="border border-slate-800 bg-slate-950 p-6 rounded-lg max-w-lg w-full font-mono shadow-xl relative">
++              <button onClick={() => setShowTriageModal(false)} className="absolute top-4 right-4 text-slate-500 hover:text-white transition-colors">
++                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
++              </button>
++              <h2 className="text-xl text-amber-500 mb-6 flex items-center gap-2">
++                <svg className="w-5 h-5 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
++                ONYX AI TRIAGE REQUIRED
++              </h2>
++
++              <div className="space-y-4 text-sm mb-8">
++                <div className="flex justify-between border-b border-slate-800 pb-2">
++                  <span className="text-slate-500">Target IP Address</span>
++                  <span className="text-slate-300">{anomalyQueue.anomalyIp}</span>
++                </div>
++                <div className="flex justify-between border-b border-slate-800 pb-2">
++                  <span className="text-slate-500">1-Hour Request Velocity</span>
++                  <span className="text-red-400 font-bold">{anomalyQueue.requestCount1h} req/hr</span>
++                </div>
++                <div className="flex justify-between border-b border-slate-800 pb-2">
++                  <span className="text-slate-500">Staged Timestamp & Origin Details</span>
++                  <span className="text-slate-300">{new Date(anomalyQueue.timestamp).toLocaleString()} (ONYX_ANOMALY_ENGINE)</span>
++                </div>
++              </div>
++
++              <div className="flex gap-4">
++                <button
++                  onClick={() => handleTriageAnomaly('block')}
++                  className="flex-1 bg-red-950 hover:bg-red-900 border border-red-500/50 text-red-500 py-3 rounded text-sm transition-colors"
++                >
++                  [ AUTO-BLOCK 24H ]
++                </button>
++                <button
++                  onClick={() => handleTriageAnomaly('dismiss')}
++                  className="flex-1 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 py-3 rounded text-sm transition-colors"
++                >
++                  [ DISMISS ]
++                </button>
++              </div>
++            </div>
++          </div>
++        )}
+     </div>
+   );
+ }
++
+diff --git a/test_triage.js b/test_triage.js
+new file mode 100644
+index 0000000..29e441b
+--- /dev/null
++++ b/test_triage.js
+@@ -0,0 +1 @@
++// Empty - index.ts is already correct!

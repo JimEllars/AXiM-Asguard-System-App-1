@@ -1,47 +1,62 @@
 const fs = require('fs');
 const file = 'asguard-interceptor/tests/interceptor.test.ts';
-let code = fs.readFileSync(file, 'utf8');
+let content = fs.readFileSync(file, 'utf8');
 
-const targetStr = `  describe("DELETE /dlq", () => {`;
-const insertStr = `  describe("GET /dlq", () => {
-    it("returns active items when view is omitted or active", async () => {
-      const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
-      const ctx = { waitUntil: vi.fn() } as any;
+// The tests for "POST /admin/anomaly/triage" need to assert the audit log writes correctly.
 
-      mockTelemetryKV.list.mockResolvedValueOnce({ keys: [{ name: "dlq:1" }, { name: "dlq:2" }] });
-      mockTelemetryKV.get.mockResolvedValueOnce(JSON.stringify({ status: "active", id: "1" }));
-      mockTelemetryKV.get.mockResolvedValueOnce(JSON.stringify({ status: "quarantined", id: "2" }));
+// Update block test
+const blockTestSearch = `
+      const blacklistRecord = await env.ASGUARD_BLACKLIST.get("ip:1.2.3.4");
+      expect(blacklistRecord).toBe("1");
 
-      const request = new Request("https://asguard.local/dlq", {
-        headers: { "X-Asguard-Auth": "test-auth-key" }
-      });
-      const response = await worker.fetch(request, env as any, ctx as any);
-      expect(response.status).toBe(200);
-      const data = await (response as any).json();
-      expect(data.length).toBe(1);
-      expect(data[0].id).toBe("1");
-    });
+      const anomalyQueue = await env.ASGUARD_TELEMETRY.get("anomaly_queue");
+      expect(anomalyQueue).toBeNull();
+    });`;
 
-    it("returns quarantined items when view is quarantined", async () => {
-      const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
-      const ctx = { waitUntil: vi.fn() } as any;
+const blockTestReplace = `
+      const blacklistRecord = await env.ASGUARD_BLACKLIST.get("ip:1.2.3.4");
+      expect(blacklistRecord).toBe("1");
 
-      mockTelemetryKV.list.mockResolvedValueOnce({ keys: [{ name: "dlq:1" }, { name: "dlq:2" }] });
-      mockTelemetryKV.get.mockResolvedValueOnce(JSON.stringify({ status: "active", id: "1" }));
-      mockTelemetryKV.get.mockResolvedValueOnce(JSON.stringify({ status: "quarantined", id: "2" }));
+      const anomalyQueue = await env.ASGUARD_TELEMETRY.get("anomaly_queue");
+      expect(anomalyQueue).toBeNull();
 
-      const request = new Request("https://asguard.local/dlq?view=quarantined", {
-        headers: { "X-Asguard-Auth": "test-auth-key" }
-      });
-      const response = await worker.fetch(request, env as any, ctx as any);
-      expect(response.status).toBe(200);
-      const data = await (response as any).json();
-      expect(data.length).toBe(1);
-      expect(data[0].id).toBe("2");
-    });
-  });
+      const auditCalls = customMockTelemetry.put.mock.calls.filter((c: any) => c[0].startsWith("audit:") && c[1].includes("onyx_anomaly_triaged"));
+      expect(auditCalls.length).toBe(1);
+      const auditPayload = JSON.parse(auditCalls[0][1]);
+      expect(auditPayload.decision).toBe("block");
+      expect(auditPayload.target).toBe("1.2.3.4");
+      expect(auditPayload.authorizedByWallet).toBe("test_api_key_123");
+    });`;
 
-  describe("DELETE /dlq", () => {`;
+if (content.includes(blockTestSearch)) {
+  content = content.replace(blockTestSearch, blockTestReplace);
+} else {
+  console.log("Could not find block test search string.");
+}
 
-code = code.replace(targetStr, insertStr);
-fs.writeFileSync(file, code);
+// Update dismiss test
+const dismissTestSearch = `
+      const blacklistRecord = await env.ASGUARD_BLACKLIST.get("ip:5.5.5.5");
+      expect(blacklistRecord).toBeNull(); // Ensure it didn't block
+    });`;
+
+const dismissTestReplace = `
+      const blacklistRecord = await env.ASGUARD_BLACKLIST.get("ip:5.5.5.5");
+      expect(blacklistRecord).toBeNull(); // Ensure it didn't block
+
+      const auditCalls = customMockTelemetry.put.mock.calls.filter((c: any) => c[0].startsWith("audit:") && c[1].includes("onyx_anomaly_triaged"));
+      expect(auditCalls.length).toBe(1);
+      const auditPayload = JSON.parse(auditCalls[0][1]);
+      expect(auditPayload.decision).toBe("dismiss");
+      expect(auditPayload.target).toBe("5.5.5.5");
+      expect(auditPayload.authorizedByWallet).toBe("sig123");
+    });`;
+
+if (content.includes(dismissTestSearch)) {
+  content = content.replace(dismissTestSearch, dismissTestReplace);
+} else {
+  console.log("Could not find dismiss test search string.");
+}
+
+fs.writeFileSync(file, content, 'utf8');
+console.log('Done patching tests');
