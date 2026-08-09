@@ -182,6 +182,7 @@ export default function LiveThreatFeed() {
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [healthStatus, setHealthStatus] = useState<'ok' | 'degraded' | 'unknown'>('unknown');
+  const [globalThreatLevel, setGlobalThreatLevel] = useState<string>('LOW');
   const [isSyncing, setIsSyncing] = useState(false);
   const [isCooldown, setIsCooldown] = useState(false);
   const [edgeMetrics, setEdgeMetrics] = useState({ rateLimitSize: 0, penaltyLedgerSize: 0 });
@@ -431,6 +432,7 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
           const healthData = await healthRes.json();
           setEdgeMetrics({ rateLimitSize: healthData.rateLimitSize || 0, penaltyLedgerSize: healthData.penaltyLedgerSize || 0 });
           setHealthStatus(healthData.status === 'ok' && healthData.blacklist === 'ok' && healthData.telemetry === 'ok' ? 'ok' : 'degraded');
+          if (healthData.globalThreatLevel) setGlobalThreatLevel(healthData.globalThreatLevel);
           if (healthData.lastHeartbeat) setLastHeartbeat(healthData.lastHeartbeat);
           if (healthData.heartbeatDetails) setHeartbeatDetails(healthData.heartbeatDetails);
 
@@ -526,6 +528,7 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
           const healthData = await healthRes.json();
           setEdgeMetrics({ rateLimitSize: healthData.rateLimitSize || 0, penaltyLedgerSize: healthData.penaltyLedgerSize || 0 });
           setHealthStatus(healthData.status === 'ok' && healthData.blacklist === 'ok' && healthData.telemetry === 'ok' ? 'ok' : 'degraded');
+          if (healthData.globalThreatLevel) setGlobalThreatLevel(healthData.globalThreatLevel);
           if (healthData.lastHeartbeat) setLastHeartbeat(healthData.lastHeartbeat);
           if (healthData.heartbeatDetails) setHeartbeatDetails(healthData.heartbeatDetails);
 
@@ -752,6 +755,7 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
               const healthData = await healthRes.json();
           setEdgeMetrics({ rateLimitSize: healthData.rateLimitSize || 0, penaltyLedgerSize: healthData.penaltyLedgerSize || 0 });
           setHealthStatus(healthData.status === 'ok' && healthData.blacklist === 'ok' && healthData.telemetry === 'ok' ? 'ok' : 'degraded');
+          if (healthData.globalThreatLevel) setGlobalThreatLevel(healthData.globalThreatLevel);
           if (healthData.lastHeartbeat) setLastHeartbeat(healthData.lastHeartbeat);
           if (healthData.heartbeatDetails) setHeartbeatDetails(healthData.heartbeatDetails);
 
@@ -1472,6 +1476,22 @@ const handlePurgeDlqItem = async (id: string) => {
           <span className={`h-2 w-2 rounded-full ${healthStatus === 'ok' ? 'bg-emerald-500 animate-pulse' : healthStatus === 'degraded' ? 'bg-amber-500 animate-pulse' : 'bg-red-500'}`}></span>
         </div>
 
+        {/* Global Threat Level Badge */}
+        <div className={`text-xs font-mono border px-2 py-1.5 md:px-3 md:py-2 rounded flex items-center gap-2 ${
+            globalThreatLevel === 'CRITICAL' ? 'bg-red-950/80 border-red-500 text-red-300' :
+            globalThreatLevel === 'HIGH' ? 'bg-amber-950/80 border-amber-500 text-amber-300' :
+            globalThreatLevel === 'ELEVATED' ? 'bg-yellow-950/80 border-yellow-500 text-yellow-300' :
+            'bg-emerald-950/80 border-emerald-500 text-emerald-300'
+        }`}>
+           <span>THREAT LEVEL: {globalThreatLevel}</span>
+           <span className={`h-2 w-2 rounded-full ${
+               globalThreatLevel === 'CRITICAL' ? 'bg-red-500 animate-pulse' :
+               globalThreatLevel === 'HIGH' ? 'bg-amber-500' :
+               globalThreatLevel === 'ELEVATED' ? 'bg-yellow-500' :
+               'bg-emerald-500'
+           }`}></span>
+        </div>
+
         {/* Memory Allocation Tooltip */}
         <div className="relative group text-xs font-mono border px-2 py-1.5 md:px-3 md:py-2 rounded flex items-center gap-2 bg-slate-900 border-slate-700 text-slate-400 cursor-help transition-colors hover:bg-slate-800">
            EDGE METRICS [?]
@@ -2150,15 +2170,28 @@ const handlePurgeDlqItem = async (id: string) => {
                      <div className="text-slate-500">
                         {event.ttl ? `${event.ttl}s` : 'N/A'}
                      </div>
-                     <div className="text-slate-400 truncate">
-                        {event.authorizedByWallet || 'N/A'}
+                     <div className="text-slate-400 truncate flex items-center gap-2">
+                        {event.authorizedByWallet && event.authorizedByWallet.length > 20
+                            ? `${event.authorizedByWallet.slice(0, 6)}...${event.authorizedByWallet.slice(-4)}`
+                            : (event.authorizedByWallet || 'N/A')}
+                        {event.authorizedByWallet && (
+                            <button
+                               onClick={() => {
+                                   navigator.clipboard.writeText(event.authorizedByWallet || '');
+                                   addToast("[ WALLET ADDRESS COPIED ]", "success");
+                               }}
+                               className="font-mono text-[9px] text-cyan-400 hover:text-cyan-300 border border-cyan-800 hover:border-cyan-600 bg-cyan-950/30 px-1.5 py-0.5 rounded transition-colors cursor-pointer"
+                            >
+                               [ COPY ]
+                            </button>
+                        )}
                      </div>
                      <div className="text-right">
                         <button
                            onClick={() => handleCopyAuditRow(event, rowId)}
                            className="font-mono text-[10px] text-slate-400 hover:text-white transition-colors uppercase cursor-pointer"
                         >
-                           {copiedAuditRow === rowId ? <span className="text-emerald-400 bg-emerald-950/50 border border-emerald-900 px-1 py-0.5 rounded">[ COPIED! ]</span> : "[ COPY ]"}
+                           {copiedAuditRow === rowId ? <span className="text-emerald-400 bg-emerald-950/50 border border-emerald-900 px-1 py-0.5 rounded">[ COPIED! ]</span> : "[ COPY ROW ]"}
                         </button>
                      </div>
                    </div>
