@@ -1,7 +1,2 @@
 const { execSync } = require('child_process');
-try {
-  execSync('git push -f origin HEAD');
-  console.log('pushed');
-} catch (e) {
-  console.log(e.message);
-}
+execSync('git add . && git commit -m "Update Multi-IP Anomaly Staging, Batch Triage Controls, & Stale Queue Auto-Cleanup"');
