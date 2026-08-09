@@ -285,17 +285,41 @@ async function runMaintenanceSweep(env: Env, ctx: ExecutionContext, sweepType: "
         }
       });
 
+      let anomalyQueueRaw = await env.ASGUARD_TELEMETRY.get("anomaly_queue");
+      let anomalyQueue: any[] = [];
+      if (anomalyQueueRaw) {
+        try {
+          const parsed = JSON.parse(anomalyQueueRaw);
+          anomalyQueue = Array.isArray(parsed) ? parsed : [parsed];
+        } catch (e) {}
+      }
+
+      // Filter out stale entries (older than 24 hours)
+      const twentyFourHoursAgo = now - 86400000;
+      anomalyQueue = anomalyQueue.filter(item => item.timestamp >= twentyFourHoursAgo);
+
       for (const [ip, count] of Object.entries(ipCounts)) {
         if ((count as number) > 100) {
-          const anomalyQueueItem = {
-            anomalyIp: ip,
-            requestCount1h: count,
-            timestamp: now,
-            status: "pending_onyx_triage"
-          };
-          await env.ASGUARD_TELEMETRY.put("anomaly_queue", JSON.stringify(anomalyQueueItem), { expirationTtl: 86400 });
-          break; // Since we store one object under "anomaly_queue" for now (or could be list, prompt says "Write an anomaly staging object... under key 'anomaly_queue'")
+          if (!anomalyQueue.find(item => item.anomalyIp === ip)) {
+            anomalyQueue.push({
+              anomalyIp: ip,
+              requestCount1h: count,
+              timestamp: now,
+              status: "pending_onyx_triage"
+            });
+          }
         }
+      }
+
+      // Cap at 10 entries
+      if (anomalyQueue.length > 10) {
+        anomalyQueue = anomalyQueue.slice(-10);
+      }
+
+      if (anomalyQueue.length > 0) {
+        await env.ASGUARD_TELEMETRY.put("anomaly_queue", JSON.stringify(anomalyQueue), { expirationTtl: 86400 });
+      } else {
+        await env.ASGUARD_TELEMETRY.delete("anomaly_queue");
       }
     } catch(e) {
       structuredLog("error", "Hourly anomaly detection failed", null, e);
@@ -700,7 +724,8 @@ export default {
         let anomaly_queue = null;
         if (anomalyQueueRaw) {
           try {
-            anomaly_queue = JSON.parse(anomalyQueueRaw);
+            const parsed = JSON.parse(anomalyQueueRaw);
+            anomaly_queue = Array.isArray(parsed) ? parsed : [parsed];
           } catch(e) {}
         }
 
@@ -740,27 +765,58 @@ export default {
         });
       }
       try {
-        const payload = await request.json() as { ip: string, action: "block" | "dismiss", ttl?: number };
+        const payload = await request.json() as { ip: string | string[], action: "block" | "dismiss", ttl?: number };
         const { ip, action, ttl = 86400 } = payload;
         const now = Date.now();
+        const authorizedByWallet = request.headers.get("X-Asguard-Signature") || customAuthHeader || "UNKNOWN";
 
-        if (action === "block") {
-          await env.ASGUARD_BLACKLIST.put(`ip:${ip}`, "1", { expirationTtl: ttl });
+        let anomalyQueueRaw = await env.ASGUARD_TELEMETRY.get("anomaly_queue");
+        let anomalyQueue: any[] = [];
+        if (anomalyQueueRaw) {
+          try {
+            const parsed = JSON.parse(anomalyQueueRaw);
+            anomalyQueue = Array.isArray(parsed) ? parsed : [parsed];
+          } catch (e) {}
         }
 
-        await env.ASGUARD_TELEMETRY.delete("anomaly_queue");
+        let targets: string[] = [];
+        if (ip === "ALL") {
+          targets = anomalyQueue.map(item => item.anomalyIp);
+        } else if (Array.isArray(ip)) {
+          targets = ip;
+        } else {
+          targets = [ip];
+        }
 
-        const authorizedByWallet = request.headers.get("X-Asguard-Signature") || customAuthHeader || "UNKNOWN";
-        const auditLog = {
-          action: "onyx_anomaly_triaged",
-          target: ip,
-          decision: action,
-          authorizedByWallet,
-          timestamp: now
-        };
-        await env.ASGUARD_TELEMETRY.put(`audit:${now}`, JSON.stringify(auditLog));
+        let triagedCount = 0;
+        let auditPromises: Promise<any>[] = [];
+        for (const target of targets) {
+          if (action === "block") {
+            await env.ASGUARD_BLACKLIST.put(`ip:${target}`, "1", { expirationTtl: ttl });
+          }
 
-        return new Response(JSON.stringify({ success: true, ip, decision: action }), {
+          anomalyQueue = anomalyQueue.filter(item => item.anomalyIp !== target);
+          triagedCount++;
+
+          const auditLog = {
+            action: "onyx_anomaly_triaged",
+            target: target,
+            decision: action,
+            authorizedByWallet,
+            timestamp: now + triagedCount // slight offset for unique keys
+          };
+          auditPromises.push(env.ASGUARD_TELEMETRY.put(`audit:${auditLog.timestamp}`, JSON.stringify(auditLog)));
+        }
+
+        await Promise.all(auditPromises);
+
+        if (anomalyQueue.length > 0) {
+          await env.ASGUARD_TELEMETRY.put("anomaly_queue", JSON.stringify(anomalyQueue), { expirationTtl: 86400 });
+        } else {
+          await env.ASGUARD_TELEMETRY.delete("anomaly_queue");
+        }
+
+        return new Response(JSON.stringify({ success: true, count: triagedCount, decision: action }), {
           status: 200,
           headers: { ...getCorsHeaders(request, env, isMutation), "Content-Type": "application/json" }
         });

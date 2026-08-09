@@ -2,30 +2,29 @@ const fs = require('fs');
 const file = 'soc-cockpit/src/components/LiveThreatFeed.tsx';
 let code = fs.readFileSync(file, 'utf8');
 
-const target = `    fetchTelemetry();
+const oldInterface = `interface AnomalyQueue {
+  anomalyIp: string;
+  requestCount1h: number;
+  timestamp: number;
+  status: "pending_onyx_triage";
+}`;
 
+const newInterface = `interface AnomalyQueueItem {
+  anomalyIp: string;
+  requestCount1h: number;
+  timestamp: number;
+  status: "pending_onyx_triage";
+}`;
 
-    return () => {
-      if (channel) supabase.removeChannel(channel);
-      if (timeoutId) clearTimeout(timeoutId);
-    };
-  }, []);`;
+code = code.replace(oldInterface, newInterface);
 
-const replace = `    fetchTelemetry();
+const oldState = `const [anomalyQueue, setAnomalyQueue] = useState<AnomalyQueue | null>(null);`;
+const newState = `const [anomalyQueue, setAnomalyQueue] = useState<AnomalyQueueItem[]>([]);`;
 
+code = code.replace(oldState, newState);
 
-    return () => {
-      if (channel) supabase.removeChannel(channel);
-      if (timeoutId) clearTimeout(timeoutId);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dlqView]);`;
+// fix health parser (there are 3 occurrences)
+code = code.replace(/if \(healthData\.anomaly_queue\) setAnomalyQueue\(healthData\.anomaly_queue\);/g, "if (healthData.anomaly_queue) setAnomalyQueue(Array.isArray(healthData.anomaly_queue) ? healthData.anomaly_queue : [healthData.anomaly_queue]);");
 
-if (code.includes(target)) {
-  code = code.replace(target, replace);
-  console.log('patched handleManualSync deps');
-} else {
-  console.log('could not find handleManualSync target');
-}
 
 fs.writeFileSync(file, code);

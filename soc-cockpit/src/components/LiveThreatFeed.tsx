@@ -47,7 +47,7 @@ const DlqRecordSchema = z.object({
 });
 type DlqRecord = z.infer<typeof DlqRecordSchema>;
 
-interface AnomalyQueue {
+interface AnomalyQueueItem {
   anomalyIp: string;
   requestCount1h: number;
   timestamp: number;
@@ -280,7 +280,7 @@ export default function LiveThreatFeed() {
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
 
   const [dlqRecords, setDlqRecords] = useState<DlqRecord[]>([]);
-  const [anomalyQueue, setAnomalyQueue] = useState<AnomalyQueue | null>(null);
+  const [anomalyQueue, setAnomalyQueue] = useState<AnomalyQueueItem[]>([]);
   const [showTriageModal, setShowTriageModal] = useState(false);
 
   const [selectedDlqIds, setSelectedDlqIds] = useState<string[]>([]);
@@ -293,7 +293,7 @@ export default function LiveThreatFeed() {
 
 
   const handleTriageAnomaly = async (action: 'block' | 'dismiss') => {
-    if (!anomalyQueue) return;
+    if (anomalyQueue.length === 0) return;
 
     try {
       const authKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY || '';
@@ -305,14 +305,16 @@ export default function LiveThreatFeed() {
           'X-Asguard-Auth': authKey,
           'X-Asguard-Signature': walletAddr,
         },
-        body: JSON.stringify({ ip: anomalyQueue.anomalyIp, action })
+        body: JSON.stringify({ ip: "ALL", action })
       });
 
       if (res.ok) {
-        setAnomalyQueue(null);
+        const data = await res.json();
+        const count = data.count || anomalyQueue.length;
+        setAnomalyQueue([]);
         setShowTriageModal(false);
 
-        setToasts(prev => [...prev, { id: Math.random().toString(), message: `[ ANOMALY TRIAGED: ${action.toUpperCase()} ]`, type: 'emerald' }]);
+        setToasts(prev => [...prev, { id: Math.random().toString(), message: `[ ${count} ANOMALIES TRIAGED: ${action.toUpperCase()} ]`, type: 'emerald' }]);
       } else {
         throw new Error('Failed to triage anomaly');
       }
@@ -433,7 +435,7 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
           if (healthData.heartbeatDetails) setHeartbeatDetails(healthData.heartbeatDetails);
 
           if (healthData.telemetrySummary) setTelemetrySummary(healthData.telemetrySummary);
-          if (healthData.anomaly_queue) setAnomalyQueue(healthData.anomaly_queue);
+          if (healthData.anomaly_queue) setAnomalyQueue(Array.isArray(healthData.anomaly_queue) ? healthData.anomaly_queue : [healthData.anomaly_queue]);
 
         } else {
           setHealthStatus('degraded');
@@ -528,7 +530,7 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
           if (healthData.heartbeatDetails) setHeartbeatDetails(healthData.heartbeatDetails);
 
           if (healthData.telemetrySummary) setTelemetrySummary(healthData.telemetrySummary);
-          if (healthData.anomaly_queue) setAnomalyQueue(healthData.anomaly_queue);
+          if (healthData.anomaly_queue) setAnomalyQueue(Array.isArray(healthData.anomaly_queue) ? healthData.anomaly_queue : [healthData.anomaly_queue]);
 
         } else {
           setHealthStatus('degraded');
@@ -754,7 +756,7 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
           if (healthData.heartbeatDetails) setHeartbeatDetails(healthData.heartbeatDetails);
 
           if (healthData.telemetrySummary) setTelemetrySummary(healthData.telemetrySummary);
-          if (healthData.anomaly_queue) setAnomalyQueue(healthData.anomaly_queue);
+          if (healthData.anomaly_queue) setAnomalyQueue(Array.isArray(healthData.anomaly_queue) ? healthData.anomaly_queue : [healthData.anomaly_queue]);
 
            }
            if (dlqRes.ok) setDlqRecords(await dlqRes.json().then(d => d.slice(0, 50)));
@@ -789,7 +791,7 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
            }
        }
     }
-  }, [addToast]);
+  }, [addToast, dlqView]);
 
   const getSeverityColor = (severity: TelemetryPayload['severity']) => {
     switch (severity) {
@@ -1626,12 +1628,12 @@ const handlePurgeDlqItem = async (id: string) => {
       <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-4 flex flex-col min-h-0">
         <div className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-4 border-b border-slate-800 pb-2">Edge Trend Analytics</div>
 
-          {anomalyQueue?.status === 'pending_onyx_triage' && (
+          {anomalyQueue.length > 0 && (
             <div
               onClick={() => setShowTriageModal(true)}
               className="mb-6 border border-amber-500/50 bg-amber-500/10 rounded font-mono p-4 text-center text-sm text-amber-500 cursor-pointer hover:bg-amber-500/20 transition-colors animate-pulse"
             >
-              [ ONYX ANOMALY QUEUE: IP {anomalyQueue.anomalyIp} ({anomalyQueue.requestCount1h} req/hr) STAGED FOR TRIAGE ]
+              [ ONYX ANOMALY QUEUE: {anomalyQueue.length} IP(s) STAGED FOR TRIAGE ]
             </div>
           )}
 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -2358,44 +2360,48 @@ const handlePurgeDlqItem = async (id: string) => {
 
         </div>
       )}
-        {showTriageModal && anomalyQueue && (
+        {showTriageModal && anomalyQueue.length > 0 && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-            <div className="border border-slate-800 bg-slate-950 p-6 rounded-lg max-w-lg w-full font-mono shadow-xl relative">
+            <div className="border border-slate-800 bg-slate-950 p-6 rounded-lg max-w-lg w-full font-mono shadow-xl relative max-h-[90vh] flex flex-col">
               <button onClick={() => setShowTriageModal(false)} className="absolute top-4 right-4 text-slate-500 hover:text-white transition-colors">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
-              <h2 className="text-xl text-amber-500 mb-6 flex items-center gap-2">
+              <h2 className="text-xl text-amber-500 mb-6 flex items-center gap-2 shrink-0">
                 <svg className="w-5 h-5 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
                 ONYX AI TRIAGE REQUIRED
               </h2>
 
-              <div className="space-y-4 text-sm mb-8">
-                <div className="flex justify-between border-b border-slate-800 pb-2">
-                  <span className="text-slate-500">Target IP Address</span>
-                  <span className="text-slate-300">{anomalyQueue.anomalyIp}</span>
-                </div>
-                <div className="flex justify-between border-b border-slate-800 pb-2">
-                  <span className="text-slate-500">1-Hour Request Velocity</span>
-                  <span className="text-red-400 font-bold">{anomalyQueue.requestCount1h} req/hr</span>
-                </div>
-                <div className="flex justify-between border-b border-slate-800 pb-2">
-                  <span className="text-slate-500">Staged Timestamp & Origin Details</span>
-                  <span className="text-slate-300">{new Date(anomalyQueue.timestamp).toLocaleString()} (ONYX_ANOMALY_ENGINE)</span>
-                </div>
+              <div className="overflow-y-auto pr-2 mb-8 space-y-4">
+                {anomalyQueue.map((item, idx) => (
+                  <div key={idx} className="bg-slate-900/50 border border-slate-800 p-4 rounded space-y-2">
+                    <div className="flex justify-between border-b border-slate-800 pb-1">
+                      <span className="text-slate-500 text-xs">Target IP Address</span>
+                      <span className="text-slate-300 text-sm">{item.anomalyIp}</span>
+                    </div>
+                    <div className="flex justify-between border-b border-slate-800 pb-1">
+                      <span className="text-slate-500 text-xs">1-Hour Request Velocity</span>
+                      <span className="text-red-400 font-bold text-sm">{item.requestCount1h} req/hr</span>
+                    </div>
+                    <div className="flex justify-between pb-1">
+                      <span className="text-slate-500 text-xs">Staged Timestamp</span>
+                      <span className="text-slate-300 text-xs">{new Date(item.timestamp).toLocaleString()}</span>
+                    </div>
+                  </div>
+                ))}
               </div>
 
-              <div className="flex gap-4">
+              <div className="flex gap-4 shrink-0">
                 <button
                   onClick={() => handleTriageAnomaly('block')}
-                  className="flex-1 bg-red-950 hover:bg-red-900 border border-red-500/50 text-red-500 py-3 rounded text-sm transition-colors"
+                  className="flex-1 bg-red-950 hover:bg-red-900 border border-red-500/50 text-red-500 py-3 rounded text-sm transition-colors font-bold"
                 >
-                  [ AUTO-BLOCK 24H ]
+                  [ AUTO-BLOCK ALL ({anomalyQueue.length}) ]
                 </button>
                 <button
                   onClick={() => handleTriageAnomaly('dismiss')}
-                  className="flex-1 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 py-3 rounded text-sm transition-colors"
+                  className="flex-1 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 py-3 rounded text-sm transition-colors font-bold"
                 >
-                  [ DISMISS ]
+                  [ DISMISS ALL ]
                 </button>
               </div>
             </div>

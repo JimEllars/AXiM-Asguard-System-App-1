@@ -2,43 +2,56 @@ const fs = require('fs');
 const file = 'asguard-interceptor/src/index.ts';
 let code = fs.readFileSync(file, 'utf8');
 
-const targetStr = `        const listResult = await env.ASGUARD_TELEMETRY.list({ prefix: "dlq:", limit: 100 });
-        const records = await Promise.all(
-          listResult.keys.map(async (key) => {
-             const data = await env.ASGUARD_TELEMETRY.get(key.name);
-             try {
-                return data ? JSON.parse(data) : null;
-             } catch(e) {
-                return null;
-             }
-          })
-        );
-        const validRecords = records.filter(r => r !== null && r.status !== "quarantined");`;
+// Step 1: Update Hourly Sweep Logic
+const oldHourlySweep = `      for (const [ip, count] of Object.entries(ipCounts)) {
+        if ((count as number) > 100) {
+          const anomalyQueueItem = {
+            anomalyIp: ip,
+            requestCount1h: count,
+            timestamp: now,
+            status: "pending_onyx_triage"
+          };
+          await env.ASGUARD_TELEMETRY.put("anomaly_queue", JSON.stringify(anomalyQueueItem), { expirationTtl: 86400 });
+          break; // Since we store one object under "anomaly_queue" for now (or could be list, prompt says "Write an anomaly staging object... under key 'anomaly_queue'")
+        }
+      }`;
 
-const replacementStr = `        const listResult = await env.ASGUARD_TELEMETRY.list({ prefix: "dlq:", limit: 100 });
-        const records = await Promise.all(
-          listResult.keys.map(async (key) => {
-             const data = await env.ASGUARD_TELEMETRY.get(key.name);
-             try {
-                return data ? JSON.parse(data) : null;
-             } catch(e) {
-                return null;
-             }
-          })
-        );
-        const view = url.searchParams.get("view") || "active";
-        const validRecords = records.filter(r => {
-          if (r === null) return false;
-          if (view === "quarantined") {
-            return r.status === "quarantined";
+const newHourlySweep = `      let anomalyQueueRaw = await env.ASGUARD_TELEMETRY.get("anomaly_queue");
+      let anomalyQueue: any[] = [];
+      if (anomalyQueueRaw) {
+        try {
+          const parsed = JSON.parse(anomalyQueueRaw);
+          anomalyQueue = Array.isArray(parsed) ? parsed : [parsed];
+        } catch (e) {}
+      }
+
+      // Filter out stale entries (older than 24 hours)
+      const twentyFourHoursAgo = now - 86400000;
+      anomalyQueue = anomalyQueue.filter(item => item.timestamp >= twentyFourHoursAgo);
+
+      for (const [ip, count] of Object.entries(ipCounts)) {
+        if ((count as number) > 100) {
+          if (!anomalyQueue.find(item => item.anomalyIp === ip)) {
+            anomalyQueue.push({
+              anomalyIp: ip,
+              requestCount1h: count,
+              timestamp: now,
+              status: "pending_onyx_triage"
+            });
           }
-          return r.status !== "quarantined";
-        });`;
+        }
+      }
 
-if (code.includes(targetStr)) {
-  code = code.replace(targetStr, replacementStr);
-  fs.writeFileSync(file, code);
-  console.log('Successfully patched index.ts');
-} else {
-  console.log('Could not find target string in index.ts');
-}
+      // Cap at 10 entries
+      if (anomalyQueue.length > 10) {
+        anomalyQueue = anomalyQueue.slice(-10);
+      }
+
+      if (anomalyQueue.length > 0) {
+        await env.ASGUARD_TELEMETRY.put("anomaly_queue", JSON.stringify(anomalyQueue), { expirationTtl: 86400 });
+      } else {
+        await env.ASGUARD_TELEMETRY.delete("anomaly_queue");
+      }`;
+
+code = code.replace(oldHourlySweep, newHourlySweep);
+fs.writeFileSync(file, code);
