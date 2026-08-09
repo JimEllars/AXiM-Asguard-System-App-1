@@ -1210,6 +1210,13 @@ describe("Autonomous Blocklist Endpoint", () => {
 
       const anomalyQueue = await env.ASGUARD_TELEMETRY.get("anomaly_queue");
       expect(anomalyQueue).toBeNull();
+
+      const auditCalls = customMockTelemetry.put.mock.calls.filter((c: any) => c[0].startsWith("audit:") && c[1].includes("onyx_anomaly_triaged"));
+      expect(auditCalls.length).toBe(1);
+      const auditPayload = JSON.parse(auditCalls[0][1]);
+      expect(auditPayload.decision).toBe("block");
+      expect(auditPayload.target).toBe("1.2.3.4");
+      expect(auditPayload.authorizedByWallet).toBe("test_api_key_123");
     });
 
     it("returns 200 OK and dismisses IP when action is dismiss", async () => {
@@ -1243,6 +1250,13 @@ describe("Autonomous Blocklist Endpoint", () => {
 
       const blacklistRecord = await env.ASGUARD_BLACKLIST.get("ip:5.5.5.5");
       expect(blacklistRecord).toBeNull(); // Ensure it didn't block
+
+      const auditCalls = customMockTelemetry.put.mock.calls.filter((c: any) => c[0].startsWith("audit:") && c[1].includes("onyx_anomaly_triaged"));
+      expect(auditCalls.length).toBe(1);
+      const auditPayload = JSON.parse(auditCalls[0][1]);
+      expect(auditPayload.decision).toBe("dismiss");
+      expect(auditPayload.target).toBe("5.5.5.5");
+      expect(auditPayload.authorizedByWallet).toBe("sig123");
     });
   });
 
