@@ -1053,7 +1053,14 @@ export default {
              }
           })
         );
-        const validRecords = records.filter(r => r !== null && r.status !== "quarantined");
+        const view = url.searchParams.get("view") || "active";
+        const validRecords = records.filter(r => {
+          if (r === null) return false;
+          if (view === "quarantined") {
+            return r.status === "quarantined";
+          }
+          return r.status !== "quarantined";
+        });
         return new Response(JSON.stringify(validRecords), {
           status: 200,
           headers: { ...getCorsHeaders(request, env, isMutation), "Content-Type": "application/json", "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" },

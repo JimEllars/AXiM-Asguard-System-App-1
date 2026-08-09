@@ -62,7 +62,7 @@ const client = createThirdwebClient({
 const adminSbtContract = getContract({
   client,
   chain: arbitrum,
-  address: '0x0000000000000000000000000000000000000000',
+  address: (process.env.NEXT_PUBLIC_ADMIN_SBT_ADDRESS as `0x${string}`) || '0x0000000000000000000000000000000000000000',
 });
 
 
@@ -379,7 +379,7 @@ export default function LiveThreatFeed() {
             headers: { 'X-Asguard-Auth': apiKey },
             signal: abortController.signal
           }),
-          fetch(`${workerUrl}/dlq`, {
+          fetch(`${workerUrl}/dlq?view=${dlqView}`, {
             headers: { 'X-Asguard-Auth': apiKey },
             signal: abortController.signal
           }),
@@ -433,7 +433,7 @@ export default function LiveThreatFeed() {
 
     const interval = setInterval(fetchBackgroundStatus, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [dlqView]);
 
   useEffect(() => {
     const fetchTelemetry = async () => {
@@ -472,7 +472,7 @@ export default function LiveThreatFeed() {
             headers: { 'X-Asguard-Auth': apiKey },
             signal: abortController.signal
           }),
-          fetch(`${workerUrl}/dlq`, {
+          fetch(`${workerUrl}/dlq?view=${dlqView}`, {
             headers: { 'X-Asguard-Auth': apiKey },
             signal: abortController.signal
           })
@@ -677,7 +677,7 @@ export default function LiveThreatFeed() {
       if (channel) supabase.removeChannel(channel);
       if (timeoutId) clearTimeout(timeoutId);
     };
-  }, []);
+  }, [dlqView]);
 
 
   // Instead of an effect, we could reset pages when handling filter changes or just allow the effect, but the linter complains.
@@ -710,7 +710,7 @@ export default function LiveThreatFeed() {
            const signal = abortController.signal;
            const [healthRes, dlqRes, blocklistRes, auditRes] = await Promise.all([
               fetch(`${workerUrl}/health`, { headers: authHeaders, signal }),
-              fetch(`${workerUrl}/api/dlq`, { headers: authHeaders, signal }),
+              fetch(`${workerUrl}/api/dlq?view=${dlqView}`, { headers: authHeaders, signal }),
               fetch(`${workerUrl}/blocklist`, { headers: authHeaders, signal }),
               fetch(`${workerUrl}/audit`, { headers: authHeaders, signal })
            ]);
