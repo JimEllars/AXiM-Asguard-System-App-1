@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const TelemetryPayloadSchema = z.object({
   sourceIp: z.string().ip(), // z.string().ip() works with zod 3.22.0
   timestamp: z.number(),
-  eventType: z.enum(['authentication_failure', 'signature_tampering', 'suspicious_activity', 'client_error', 'threat.blocked', 'rate_limit.exceeded', 'bot_challenge.failed', 'ip.quarantined', 'onyx_pipeline_job_executed']),
+  eventType: z.enum(['authentication_failure', 'signature_tampering', 'suspicious_activity', 'client_error', 'threat.blocked', 'rate_limit.exceeded', 'bot_challenge.failed', 'ip.quarantined', 'onyx_pipeline_job_executed', 'telephony.threat_evaluated']),
   severity: z.enum(['low', 'medium', 'high', 'critical']),
   requestMethod: z.string().optional(),
   targetResource: z.string().optional(),

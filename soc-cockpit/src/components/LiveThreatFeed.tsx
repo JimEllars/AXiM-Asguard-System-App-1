@@ -298,6 +298,8 @@ export default function LiveThreatFeed() {
   const [flash, setFlash] = useState(false);
   const [severityFilter, setSeverityFilter] = useState<'all' | 'high' | 'medium' | 'low'>((searchParams?.get('severity') as 'all' | 'high' | 'medium' | 'low') || 'all');
   const [aiUnsafeOnly, setAiUnsafeOnly] = useState<boolean>(false);
+  const [selectedThreat, setSelectedThreat] = useState<any>(null);
+  const [isInspectionDrawerOpen, setIsInspectionDrawerOpen] = useState(false);
   const [appOriginFilter, setAppOriginFilter] = useState<string>(searchParams?.get('origin') || 'all');
     const [searchQuery, setSearchQuery] = useState(searchParams?.get('search') || '');
   const [localSearchQuery, setLocalSearchQuery] = useState(searchParams?.get('search') || '');
@@ -1144,13 +1146,17 @@ const handlePurgeDlqItem = async (id: string) => {
     const abortController = new AbortController();
     const timeoutIdFetch = setTimeout(() => abortController.abort(), 4000);
     try {
+      let actionStr = 'block';
+      if (reason === 'quarantine_subnet') actionStr = 'quarantine_subnet';
+      if (reason === 'whitelist') actionStr = 'whitelist';
+
       const res = await fetch(`${workerUrl}/blocklist`, {
         method: 'POST',
         headers: {
           'X-Asguard-Auth': apiKey || '',
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ key, action: 'block', ttl, details: { reason } }),
+        body: JSON.stringify({ key, action: actionStr, ttl, details: { reason } }),
         signal: abortController.signal
       });
       clearTimeout(timeoutIdFetch);
@@ -2432,6 +2438,107 @@ const handlePurgeDlqItem = async (id: string) => {
 
         </div>
       )}
+
+        {/* Threat Inspection Drawer */}
+        {isInspectionDrawerOpen && selectedThreat && (
+          <div className="fixed inset-0 z-50 flex justify-end">
+            <div className="absolute inset-0 bg-black/60" onClick={() => setIsInspectionDrawerOpen(false)}></div>
+            <div className="relative w-full max-w-md bg-slate-950 border-l border-slate-800 h-full overflow-y-auto shadow-2xl flex flex-col font-mono text-sm text-slate-300">
+              <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-900/50">
+                <h3 className="text-amber-500 font-bold tracking-widest">[ DEEP PACKET INSPECTION ]</h3>
+                <button onClick={() => setIsInspectionDrawerOpen(false)} className="text-slate-500 hover:text-white">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+
+              <div className="p-6 space-y-6 flex-1">
+                {/* Metadata */}
+                <div className="space-y-3">
+                  <div className="flex justify-between border-b border-slate-800 pb-1">
+                    <span className="text-slate-500">Client IP</span>
+                    <span className="text-red-400 font-bold">{selectedThreat.sourceIp}</span>
+                  </div>
+                  <div className="flex justify-between border-b border-slate-800 pb-1">
+                    <span className="text-slate-500">Reverse DNS</span>
+                    <span className="text-slate-400 truncate ml-4 max-w-[200px]">{selectedThreat.details?.reverseDns || 'NXDOMAIN'}</span>
+                  </div>
+                  <div className="flex justify-between border-b border-slate-800 pb-1">
+                    <span className="text-slate-500">Geo-IP Country</span>
+                    <span>{selectedThreat.country || 'UNKNOWN'} {selectedThreat.country && <span className="ml-1 text-lg leading-none">{String.fromCodePoint(selectedThreat.country.toUpperCase().charCodeAt(0) + 127397) + String.fromCodePoint(selectedThreat.country.toUpperCase().charCodeAt(1) + 127397)}</span>}</span>
+                  </div>
+                  <div className="flex justify-between border-b border-slate-800 pb-1">
+                    <span className="text-slate-500">Cloudflare Bot Score</span>
+                    <span className={selectedThreat.botScore < 0.3 ? 'text-red-400' : 'text-emerald-400'}>{selectedThreat.botScore !== undefined ? selectedThreat.botScore.toFixed(2) : 'N/A'}</span>
+                  </div>
+                  <div className="flex justify-between border-b border-slate-800 pb-1">
+                    <span className="text-slate-500">Attack Vector</span>
+                    <span className="text-amber-500 font-bold">{selectedThreat.details?.attackVector || selectedThreat.eventType.toUpperCase()}</span>
+                  </div>
+                </div>
+
+                {/* HTTP Details */}
+                <div className="space-y-2">
+                  <h4 className="text-slate-500 uppercase text-xs tracking-widest border-b border-slate-800 pb-1 mb-2">HTTP Context</h4>
+                  <div className="break-all bg-slate-900/50 p-2 rounded border border-slate-800/50">
+                    <span className="text-blue-400 mr-2">{selectedThreat.requestMethod || 'GET'}</span>
+                    <span className="text-slate-300">{selectedThreat.targetResource || '/'}</span>
+                  </div>
+                  <div className="text-xs text-slate-400 mt-2">
+                    <span className="block text-slate-500 mb-1">User-Agent:</span>
+                    <div className="break-all bg-slate-900/50 p-2 rounded border border-slate-800/50">{selectedThreat.details?.userAgent || 'Unknown'}</div>
+                  </div>
+                  <div className="text-xs text-slate-400 mt-2">
+                    <span className="block text-slate-500 mb-1">Referer:</span>
+                    <div className="break-all bg-slate-900/50 p-2 rounded border border-slate-800/50">{selectedThreat.details?.referer || 'None'}</div>
+                  </div>
+                </div>
+
+                {/* Header Payload Snippet */}
+                {selectedThreat.details?.headers && (
+                  <div className="space-y-2 mt-4">
+                    <h4 className="text-slate-500 uppercase text-xs tracking-widest border-b border-slate-800 pb-1 mb-2">Header Snippet</h4>
+                    <pre className="text-[10px] text-slate-400 bg-slate-900 p-3 rounded border border-slate-800 overflow-x-auto">
+                      {JSON.stringify(selectedThreat.details.headers, null, 2)}
+                    </pre>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="p-4 border-t border-slate-800 bg-slate-900/50 flex flex-col gap-2 shrink-0">
+                <button
+                  onClick={() => {
+                    handleBlock(selectedThreat.sourceIp, 3600, 'quarantine_subnet');
+                    setIsInspectionDrawerOpen(false);
+                  }}
+                  className="w-full bg-amber-950/40 hover:bg-amber-900/60 border border-amber-900/50 text-amber-500 py-2 rounded transition-colors text-xs font-bold tracking-widest"
+                >
+                  [ QUARANTINE /24 SUBNET ]
+                </button>
+                <button
+                  onClick={() => {
+                    handleBlock(selectedThreat.sourceIp, -1, 'permanent_ban');
+                    setIsInspectionDrawerOpen(false);
+                  }}
+                  className="w-full bg-red-950/40 hover:bg-red-900/60 border border-red-900/50 text-red-500 py-2 rounded transition-colors text-xs font-bold tracking-widest"
+                >
+                  [ PERMANENT BAN ]
+                </button>
+                <button
+                  onClick={() => {
+                    // Requires whitelist API endpoint or passing a specific type, for now using blocklist mock
+                    handleBlock(selectedThreat.sourceIp, 0, 'whitelist');
+                    setIsInspectionDrawerOpen(false);
+                  }}
+                  className="w-full bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-900/50 text-emerald-500 py-2 rounded transition-colors text-xs font-bold tracking-widest"
+                >
+                  [ WHITELIST IP ]
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {showTriageModal && anomalyQueue.length > 0 && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
             <div className="border border-slate-800 bg-slate-950 p-6 rounded-lg max-w-lg w-full font-mono shadow-xl relative max-h-[90vh] flex flex-col">
