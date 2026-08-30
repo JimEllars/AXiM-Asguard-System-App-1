@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const TelemetryPayloadSchema = z.object({
   sourceIp: z.string().ip(), // z.string().ip() works with zod 3.22.0
   timestamp: z.number(),
-  eventType: z.enum(['authentication_failure', 'signature_tampering', 'suspicious_activity', 'client_error']),
+  eventType: z.enum(['authentication_failure', 'signature_tampering', 'suspicious_activity', 'client_error', 'threat.blocked', 'rate_limit.exceeded', 'bot_challenge.failed', 'ip.quarantined', 'onyx_pipeline_job_executed']),
   severity: z.enum(['low', 'medium', 'high', 'critical']),
   requestMethod: z.string().optional(),
   targetResource: z.string().optional(),
@@ -20,7 +20,9 @@ export const TelemetryPayloadSchema = z.object({
     'The Green Machine',
     'Nexus CRM',
     'Web3 Frontend',
-    'AXiM Macro Core Gateway'
+    'AXiM Macro Core Gateway',
+    'AXiM Onyx Pipeline',
+    'axim-asguard'
   ]).catch('AXiM Macro Core Gateway'),
 });
 

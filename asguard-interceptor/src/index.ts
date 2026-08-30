@@ -73,6 +73,44 @@ export interface Env {
   ASGUARD_AI_MUTATION_KEY?: string;
   ASGUARD_ALERT_WEBHOOK_URL?: string;
   ASGUARD_ALERT_EMAIL?: string;
+  AXIM_CORE_API_URL?: string;
+  AXIM_INTERNAL_KEY?: string;
+}
+
+
+async function pushThreatTelemetry(env: Env, eventType: string, ip: string, details: any) {
+  if (!env.AXIM_CORE_API_URL || !env.AXIM_INTERNAL_KEY) return;
+
+  // Mask IP last octet
+  let maskedIp = ip;
+  if (ip && ip.includes('.')) {
+    const parts = ip.split('.');
+    if (parts.length === 4) {
+      parts[3] = '0/24';
+      maskedIp = parts.join('.');
+    }
+  }
+
+  const payload = {
+    app_id: "axim-asguard",
+    event_type: eventType,
+    timestamp: Date.now(),
+    sourceIp: maskedIp,
+    details
+  };
+
+  try {
+    await fetch(`${env.AXIM_CORE_API_URL}/api/v1/telemetry/micro-app`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Axim-Signature": env.AXIM_INTERNAL_KEY
+      },
+      body: JSON.stringify(payload)
+    });
+  } catch (err) {
+    structuredLog("error", "telemetry_push_failed", null, err);
+  }
 }
 
 function getCorsHeaders(request: Request, env: Env, isMutation: boolean) {
@@ -621,6 +659,7 @@ export default {
         `ip:${clientIp}`,
       );
       if (isBlocked) {
+        ctx.waitUntil(pushThreatTelemetry(env, "ip.quarantined", clientIp, { reason: "blacklisted" }).catch(err => { localEdgeLoggingBuffer.push({ ts: Date.now(), level: 'error', msg: 'KV Error', error: err ? String(err) : 'Unknown Error' }); }));
         return new Response("Forbidden", { status: 403, headers: getCorsHeaders(request, env, isMutation) });
       }
     }
@@ -1580,6 +1619,42 @@ export default {
       }
     }
 
+
+    if (request.method === "POST" && url.pathname === "/api/v1/blocklist/add") {
+      const endpointCorsHeaders = getCorsHeaders(request, env, true);
+      if (request.headers.get("X-Asguard-Auth") !== env.ASGUARD_API_KEY) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: endpointCorsHeaders });
+      }
+
+      try {
+        const payload = await request.json() as { ip?: string, reason?: string, duration_hours?: number };
+        if (!payload.ip) {
+          return new Response(JSON.stringify({ error: "Missing ip" }), { status: 400, headers: endpointCorsHeaders });
+        }
+
+        const duration_hours = payload.duration_hours || 24;
+        const ttl = duration_hours * 3600;
+
+        await env.ASGUARD_BLACKLIST.put(`ip:${payload.ip}`, "1", { expirationTtl: ttl });
+
+        ctx.waitUntil(env.ASGUARD_TELEMETRY.put(`audit:${Date.now()}`, JSON.stringify({
+          action: "IP_QUARANTINE_MANUAL",
+          operator: "OnyxPipeline",
+          targetIp: payload.ip,
+          reason: payload.reason || "Manual quarantine",
+          duration_hours,
+          timestamp: Date.now()
+        })));
+
+        return new Response(JSON.stringify({ success: true, quarantined_ip: payload.ip }), {
+          status: 200,
+          headers: endpointCorsHeaders
+        });
+
+      } catch (err) {
+        return new Response(JSON.stringify({ error: "Invalid payload" }), { status: 400, headers: endpointCorsHeaders });
+      }
+    }
     if ((request.method === "POST" || request.method === "DELETE") && url.pathname === "/blocklist") {
       const customAuthHeader = request.headers.get("X-Asguard-Auth");
       if (!env.ASGUARD_API_KEY || customAuthHeader !== env.ASGUARD_API_KEY) {
