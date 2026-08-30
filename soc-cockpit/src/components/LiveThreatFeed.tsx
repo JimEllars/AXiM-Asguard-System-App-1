@@ -12,7 +12,7 @@ import { arbitrum } from 'thirdweb/chains';
 const TelemetryPayloadSchema = z.object({
   sourceIp: z.string().ip(),
   timestamp: z.number(),
-  eventType: z.enum(['authentication_failure', 'signature_tampering', 'suspicious_activity']),
+  eventType: z.enum(['authentication_failure', 'signature_tampering', 'suspicious_activity', 'threat.blocked', 'rate_limit.exceeded', 'bot_challenge.failed', 'ip.quarantined']),
   severity: z.enum(['low', 'medium', 'high', 'critical']),
   requestMethod: z.string().optional(),
   targetResource: z.string().optional(),
@@ -101,6 +101,45 @@ function LeaseTimer({ expiration }: { expiration: number }) {
 }
 
 export default function LiveThreatFeed() {
+  useEffect(() => {
+    let source = null;
+    const sseUrl = `${process.env.NEXT_PUBLIC_AXIM_CORE_API_URL || 'https://api.axim.us.com'}/api/v1/onyx/stream`;
+    try {
+      source = new EventSource(sseUrl);
+      source.onmessage = (event) => {
+        try {
+          const parsed = JSON.parse(event.data);
+          // Assuming the event matches our telemetry types or something similar
+          if (['threat.blocked', 'rate_limit.exceeded', 'suspicious_activity', 'bot_challenge.failed', 'ip.quarantined'].includes(parsed.event_type || parsed.eventType)) {
+            setAuditLog((prev: any) => {
+              const newFeed = [{
+                ...parsed,
+                id: `sse-${Date.now()}-${Math.random()}`,
+                timestamp: parsed.timestamp || Date.now(),
+                isNewStreamEvent: true // mark to trigger flashing animation
+              }, ...prev].slice(0, 100);
+              return newFeed;
+            });
+            setLastSynced(new Date());
+          }
+        } catch (e) {
+          // ignore parse errors
+        }
+      };
+      source.onerror = (e) => {
+        console.error("SSE connection error", e);
+      };
+    } catch (e) {
+      console.error("Failed to establish SSE", e);
+    }
+
+    return () => {
+      if (source) {
+        source.close();
+      }
+    };
+  }, []);
+
   const handleExportAuditCSV = () => {
     const dataToExport = filteredAuditLog || auditLog;
     if (!dataToExport || dataToExport.length === 0) return;

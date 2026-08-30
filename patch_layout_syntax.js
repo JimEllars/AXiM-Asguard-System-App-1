@@ -1,4 +1,30 @@
-import type { Metadata } from "next";
+const fs = require('fs');
+const file = 'soc-cockpit/src/app/layout.tsx';
+let content = fs.readFileSync(file, 'utf8');
+
+// I likely duplicated a return block when replacing or added it outside a function. Let's fix the syntax error.
+// The file is currently:
+/*
+  if (!hasAccess) {
+    return (
+...
+      </html>
+    );
+  }
+
+  return (
+    <html lang="en">
+...
+  );
+}
+
+  return (
+...
+  );
+}
+*/
+// Let's just recreate layout.tsx exactly since it's simple enough.
+const newContent = `import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import jwt from "jsonwebtoken";
 import "./globals.css";
@@ -78,3 +104,6 @@ export default async function RootLayout({
     </html>
   );
 }
+`;
+fs.writeFileSync(file, newContent);
+console.log('patched layout.tsx syntax');
