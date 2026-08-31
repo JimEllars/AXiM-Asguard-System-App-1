@@ -518,6 +518,53 @@ export default {
                 return new Response("Unauthorized", { status: 401, headers: getCorsHeaders(request, env, isMutation) });
             }
         }
+        // Telephony Risk Verification Route
+        if (request.method === "POST" && url.pathname === "/api/v1/telephony/threat-check") {
+            try {
+                const body = await request.json();
+                const { caller_number, sip_source_ip, call_sid } = body;
+                if (!caller_number || !sip_source_ip) {
+                    return new Response(JSON.stringify({ error: "Missing required fields" }), {
+                        status: 400,
+                        headers: { "Content-Type": "application/json", ...getCorsHeaders(request, env, isMutation) }
+                    });
+                }
+                const isBlocked = await env.ASGUARD_BLACKLIST.get(sip_source_ip) !== null;
+                const risk_score = isBlocked ? 0.95 : 0.15;
+                const risk_level = isBlocked ? "HIGH" : "LOW";
+                const recommendation = isBlocked ? "BLOCK" : "ALLOW";
+                const payload = {
+                    risk_score,
+                    risk_level,
+                    is_blocked: isBlocked,
+                    recommendation
+                };
+                const telemetryPayload = {
+                    sourceIp: sip_source_ip,
+                    timestamp: Date.now(),
+                    eventType: "telephony.threat_evaluated",
+                    severity: risk_level.toLowerCase(),
+                    requestMethod: request.method,
+                    targetResource: url.pathname,
+                    appOrigin: "axim-asguard",
+                    details: { caller_number, call_sid, recommendation, risk_score }
+                };
+                ctx.waitUntil(logTelemetry(telemetryPayload, env).catch(e => {
+                    const buffer = localEdgeLoggingBuffer || [];
+                    buffer.push({ timestamp: Date.now(), level: 'error', message: 'Failed telemetry log' });
+                }));
+                return new Response(JSON.stringify(payload), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json", ...getCorsHeaders(request, env, isMutation) }
+                });
+            }
+            catch (err) {
+                return new Response(JSON.stringify({ error: "Invalid payload" }), {
+                    status: 400,
+                    headers: { "Content-Type": "application/json", ...getCorsHeaders(request, env, isMutation) }
+                });
+            }
+        }
         if (request.method === "OPTIONS") {
             const headers = getCorsHeaders(request, env, true);
             if (!headers["Access-Control-Allow-Origin"]) {
