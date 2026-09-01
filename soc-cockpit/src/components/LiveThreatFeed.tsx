@@ -101,6 +101,16 @@ function LeaseTimer({ expiration }: { expiration: number }) {
 }
 
 export default function LiveThreatFeed() {
+  const [aximUser, setAximUser] = useState<string | null>(null);
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      const match = document.cookie.match(new RegExp('(^| )axim_user=([^;]+)'));
+      if (match) {
+        setAximUser(decodeURIComponent(match[2]));
+      }
+    }
+  }, []);
+
   useEffect(() => {
     let source = null;
     const sseUrl = `${process.env.NEXT_PUBLIC_AXIM_CORE_API_URL || 'https://api.axim.us.com'}/api/v1/onyx/stream`;

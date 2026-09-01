@@ -33,6 +33,16 @@ const MOCK_VODS = [
 ];
 
 export default function StreamPage() {
+  const [aximUser, setAximUser] = useState(null);
+  React.useEffect(() => {
+    if (typeof document !== 'undefined') {
+      const match = document.cookie.match(new RegExp('(^| )axim_user=([^;]+)'));
+      if (match) {
+        setAximUser(decodeURIComponent(match[2]));
+      }
+    }
+  }, []);
+
   // Toggle this to test online/offline state
   const [isLive] = useState(false);
   const streamUrl = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8";

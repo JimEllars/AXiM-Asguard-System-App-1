@@ -1,1 +1,2 @@
-print("Pre-commit done")
+import subprocess
+print("Running pre-commit check")
