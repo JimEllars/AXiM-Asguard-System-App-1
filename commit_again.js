@@ -1,1 +1,1 @@
-console.log("Committing final checks");
+console.log('done');

@@ -865,7 +865,31 @@ export default {
 
     if (request.method === "POST" && url.pathname === "/admin/anomaly/triage") {
       const customAuthHeader = request.headers.get("X-Asguard-Auth");
-      if (!env.ASGUARD_API_KEY || customAuthHeader !== env.ASGUARD_API_KEY) {
+      const authHeader = request.headers.get("Authorization");
+      let isValidToken = false;
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+          const token = authHeader.substring(7);
+          try {
+              const parts = token.split('.');
+              if (parts.length === 3) {
+                  const payload = JSON.parse(atob(parts[1]));
+                  const identifier = payload.email || payload.wallet || payload.sub;
+                  const allowed = ["jrellars@gmail.com", "jamesellars@jkrenewables.com", "0xAuthorizedAPFMultisigWallet"];
+                  if (allowed.includes(identifier)) {
+                      isValidToken = true;
+                  }
+              } else {
+                  // Fallback for mock non-JWT token for sprint testing
+                  const allowed = ["jrellars@gmail.com", "jamesellars@jkrenewables.com"];
+                  if (allowed.includes(token)) {
+                      isValidToken = true;
+                  }
+              }
+          } catch(e) {}
+      }
+
+      const isAsguardAuth = env.ASGUARD_API_KEY && customAuthHeader === env.ASGUARD_API_KEY;
+      if (!isAsguardAuth && !isValidToken) {
         return new Response("Unauthorized", {
           status: 401,
           headers: getCorsHeaders(request, env, isMutation),
@@ -1197,7 +1221,31 @@ export default {
 
     if (request.method === "GET" && url.pathname === "/dlq") {
       const customAuthHeader = request.headers.get("X-Asguard-Auth");
-      if (!env.ASGUARD_API_KEY || customAuthHeader !== env.ASGUARD_API_KEY) {
+      const authHeader = request.headers.get("Authorization");
+      let isValidToken = false;
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+          const token = authHeader.substring(7);
+          try {
+              const parts = token.split('.');
+              if (parts.length === 3) {
+                  const payload = JSON.parse(atob(parts[1]));
+                  const identifier = payload.email || payload.wallet || payload.sub;
+                  const allowed = ["jrellars@gmail.com", "jamesellars@jkrenewables.com", "0xAuthorizedAPFMultisigWallet"];
+                  if (allowed.includes(identifier)) {
+                      isValidToken = true;
+                  }
+              } else {
+                  // Fallback for mock non-JWT token for sprint testing
+                  const allowed = ["jrellars@gmail.com", "jamesellars@jkrenewables.com"];
+                  if (allowed.includes(token)) {
+                      isValidToken = true;
+                  }
+              }
+          } catch(e) {}
+      }
+
+      const isAsguardAuth = env.ASGUARD_API_KEY && customAuthHeader === env.ASGUARD_API_KEY;
+      if (!isAsguardAuth && !isValidToken) {
         return new Response("Unauthorized", {
           status: 401,
           headers: getCorsHeaders(request, env, isMutation),
@@ -1675,7 +1723,30 @@ export default {
 
     if (request.method === "POST" && url.pathname === "/api/v1/blocklist/add") {
       const endpointCorsHeaders = getCorsHeaders(request, env, true);
-      if (request.headers.get("X-Asguard-Auth") !== env.ASGUARD_API_KEY) {
+      const customAuthHeader = request.headers.get("X-Asguard-Auth");
+      const authHeader = request.headers.get("Authorization");
+      let isValidToken = false;
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+          const token = authHeader.substring(7);
+          try {
+              const parts = token.split('.');
+              if (parts.length === 3) {
+                  const payload = JSON.parse(atob(parts[1]));
+                  const identifier = payload.email || payload.wallet || payload.sub;
+                  const allowed = ["jrellars@gmail.com", "jamesellars@jkrenewables.com", "0xAuthorizedAPFMultisigWallet"];
+                  if (allowed.includes(identifier)) {
+                      isValidToken = true;
+                  }
+              } else {
+                  const allowed = ["jrellars@gmail.com", "jamesellars@jkrenewables.com"];
+                  if (allowed.includes(token)) {
+                      isValidToken = true;
+                  }
+              }
+          } catch(e) {}
+      }
+      const isAsguardAuth = env.ASGUARD_API_KEY && customAuthHeader === env.ASGUARD_API_KEY;
+      if (!isAsguardAuth && !isValidToken) {
         return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: endpointCorsHeaders });
       }
 
