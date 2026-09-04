@@ -307,6 +307,7 @@ export default function LiveThreatFeed() {
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState(false);
   const [severityFilter, setSeverityFilter] = useState<'all' | 'high' | 'medium' | 'low'>((searchParams?.get('severity') as 'all' | 'high' | 'medium' | 'low') || 'all');
+  const [vectorFilter, setVectorFilter] = useState<'all' | 'critical' | 'sqli_xss' | 'ddos'>('all');
   const [aiUnsafeOnly, setAiUnsafeOnly] = useState<boolean>(false);
   const [selectedThreat, setSelectedThreat] = useState<any>(null);
   const [isInspectionDrawerOpen, setIsInspectionDrawerOpen] = useState(false);
@@ -496,7 +497,7 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
 
         if (dlqRes.ok) {
           const dlqData = await dlqRes.json();
-          setDlqRecords(dlqData.slice(0, 50));
+          setDlqRecords(dlqData.slice(0, 150));
         }
 
         if (blocklistRes.ok) {
@@ -508,7 +509,7 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
         if (auditRes.ok) {
            const auditData = await auditRes.json();
            const parsedAudit = z.array(AuditEventSchema).parse(auditData);
-           setAuditLog(parsedAudit.slice(0, 50));
+           setAuditLog(parsedAudit.slice(0, 150));
         }
       } catch (err) {
         console.error("Background polling failed", err);
@@ -607,7 +608,7 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
         const jsonAuditData = await auditRes.json();
         const jsonDlqData = await dlqRes.json();
 
-        const parsedData = z.array(TelemetryPayloadSchema).parse(jsonTelemetryData).slice(0, 50);
+        const parsedData = z.array(TelemetryPayloadSchema).parse(jsonTelemetryData).slice(0, 150);
         const parsedBlocklist = z.array(z.object({ name: z.string(), expiration: z.number().optional(), note: z.string().optional() })).parse(jsonBlocklistData);
         setAnnotations(prev => {
           let updated = false;
@@ -632,13 +633,13 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
           if (prev.length > 0) {
             const newEvents = parsedData.filter(d => !prev.some(p => p.timestamp === d.timestamp && p.sourceIp === d.sourceIp));
             if (newEvents.length > 0) {
-              newData = [...newEvents, ...prev].slice(0, 50);
+              newData = [...newEvents, ...prev].slice(0, 150);
             } else {
               newData = prev; // Nothing new, keep prev to avoid unnecessary re-renders
             }
           } else {
              // Cap initial payload too
-             newData = newData.slice(0, 50);
+             newData = newData.slice(0, 150);
           }
 
           if (JSON.stringify(prev) !== JSON.stringify(newData)) {
@@ -662,8 +663,8 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
         });
         const parsedDlq = z.array(DlqRecordSchema).parse(jsonDlqData);
         setBlocklist(prev => JSON.stringify(prev) !== JSON.stringify(parsedBlocklist) ? parsedBlocklist : prev);
-        setAuditLog(prev => JSON.stringify(prev) !== JSON.stringify(parsedAudit.slice(0, 50)) ? parsedAudit.slice(0, 50) : prev);
-        setDlqRecords(prev => JSON.stringify(prev) !== JSON.stringify(parsedDlq.slice(0, 50)) ? parsedDlq.slice(0, 50) : prev);
+        setAuditLog(prev => JSON.stringify(prev) !== JSON.stringify(parsedAudit.slice(0, 150)) ? parsedAudit.slice(0, 150) : prev);
+        setDlqRecords(prev => JSON.stringify(prev) !== JSON.stringify(parsedDlq.slice(0, 150)) ? parsedDlq.slice(0, 150) : prev);
         setLastSynced(new Date());
         setError(null);
 
@@ -717,7 +718,7 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
                        setData(prev => {
                            const newData = [...prev];
                            newData.unshift(parsed.data);
-                           return newData.slice(0, 50);
+                           return newData.slice(0, 150);
                        });
                    }
                } else {
@@ -726,7 +727,7 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
                        setAuditLog(prev => {
                            const newData = [...prev];
                            newData.unshift(parsed.data);
-                           return newData.slice(0, 50);
+                           return newData.slice(0, 150);
                        });
                    }
                }
@@ -814,7 +815,7 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
           if (healthData.anomaly_queue) setAnomalyQueue(Array.isArray(healthData.anomaly_queue) ? healthData.anomaly_queue : [healthData.anomaly_queue]);
 
            }
-           if (dlqRes.ok) setDlqRecords(await dlqRes.json().then(d => d.slice(0, 50)));
+           if (dlqRes.ok) setDlqRecords(await dlqRes.json().then(d => d.slice(0, 150)));
            if (blocklistRes.ok) {
                const blocklistData = await blocklistRes.json();
                const parsedBlocklist = z.array(z.object({ name: z.string(), expiration: z.number().optional(), note: z.string().optional() })).parse(blocklistData);
@@ -823,13 +824,13 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
            if (auditRes.ok) {
                const auditData = await auditRes.json();
                const parsedAudit = z.array(AuditEventSchema).parse(auditData);
-               setAuditLog(parsedAudit.slice(0, 50));
+               setAuditLog(parsedAudit.slice(0, 150));
            }
 
            const telemetryRes = await fetch(`${workerUrl}/telemetry`, { headers: authHeaders, signal: abortController.signal });
            if (telemetryRes.ok) {
               const telemetryData = await telemetryRes.json();
-              const parsedData = z.array(TelemetryPayloadSchema).parse(telemetryData).slice(0, 50);
+              const parsedData = z.array(TelemetryPayloadSchema).parse(telemetryData).slice(0, 150);
               setData(parsedData);
               setLastSynced(new Date());
               setIsSyncing(false);
@@ -1142,6 +1143,35 @@ const handlePurgeDlqItem = async (id: string) => {
   };
 
 
+
+  const handleQuarantine = async (ip: string, reason: string) => {
+    setActionLoading(prev => ({ ...prev, [ip]: true }));
+    try {
+      const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
+      const apiKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY;
+      if (!workerUrl || !apiKey) throw new Error("Missing credentials");
+
+      const res = await fetch(`${workerUrl}/api/v1/firewall/quarantine`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Asguard-Auth': apiKey
+        },
+        body: JSON.stringify({ ip, reason, ttl_seconds: 86400 })
+      });
+      if (!res.ok) throw new Error("Failed to quarantine");
+
+      // The badge update logic can be handled via local state update or relying on the real-time feed updates.
+      // We will assume setting it in blocklist locally for immediate UI feedback.
+      setBlocklist(prev => [{ name: `ip:${ip}`, expiration: Math.floor(Date.now() / 1000) + 86400, note: "QUARANTINED" }, ...prev]);
+      addToast("[ IP QUARANTINED ]", "success");
+    } catch (e) {
+      addToast("Failed to quarantine IP", "error");
+    } finally {
+      setActionLoading(prev => ({ ...prev, [ip]: false }));
+    }
+  };
+
   const handleBlock = async (key: string, ttl: number, reason: string) => {
     setActionLoading(prev => ({ ...prev, [key]: true }));
     const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
@@ -1307,9 +1337,17 @@ const handlePurgeDlqItem = async (id: string) => {
           matchesAiUnsafe = event.aiThreatFlag === true;
       }
 
-      return matchesSeverity && matchesAppOrigin && matchesSearch && matchesAiUnsafe;
+      let matchesVector = true;
+      if (vectorFilter === 'critical') {
+        matchesVector = event.severity === 'critical' || event.severity === 'high';
+      } else if (vectorFilter === 'sqli_xss') {
+        matchesVector = getEventName(event.eventType).toLowerCase().includes('sql') || getEventName(event.eventType).toLowerCase().includes('xss') || JSON.stringify(event.details || {}).toLowerCase().includes('sql') || JSON.stringify(event.details || {}).toLowerCase().includes('xss');
+      } else if (vectorFilter === 'ddos') {
+        matchesVector = event.eventType === 'rate_limit.exceeded' || getEventName(event.eventType).toLowerCase().includes('ddos');
+      }
+      return matchesSeverity && matchesAppOrigin && matchesSearch && matchesAiUnsafe && matchesVector;
     });
-  }, [data, severityFilter, searchQuery, appOriginFilter, aiUnsafeOnly]);
+  }, [data, severityFilter, searchQuery, appOriginFilter, aiUnsafeOnly, vectorFilter]);
 
   const paginatedTelemetry = React.useMemo(() => {
     const start = telemetryPage * itemsPerPage;
@@ -1350,7 +1388,7 @@ const handlePurgeDlqItem = async (id: string) => {
 
   const hasHighDensityAnomaly = React.useMemo(() => {
     if (data.length === 0) return { isAnomaly: false, ip: '', percentage: 0 };
-    const currentViewport = data.slice(0, 50);
+    const currentViewport = data.slice(0, 150);
     const counts: Record<string, number> = {};
     for (const event of currentViewport) {
       counts[event.sourceIp] = (counts[event.sourceIp] || 0) + 1;
@@ -1787,6 +1825,14 @@ const handlePurgeDlqItem = async (id: string) => {
           </button>
         </div>
 
+        <div className="flex gap-2 items-center flex-wrap mb-2">
+          <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mr-2">Threat Vector:</div>
+          <button onClick={() => setVectorFilter('all')} className={`px-3 py-1 rounded-full text-xs font-mono transition-colors border ${vectorFilter === 'all' ? 'bg-indigo-900/50 text-indigo-300 border-indigo-700' : 'bg-slate-950/50 text-slate-400 border-slate-800 hover:bg-slate-800/80 hover:text-slate-300'}`}>All Threats</button>
+          <button onClick={() => setVectorFilter('critical')} className={`px-3 py-1 rounded-full text-xs font-mono transition-colors border ${vectorFilter === 'critical' ? 'bg-red-900/50 text-red-300 border-red-700' : 'bg-slate-950/50 text-slate-400 border-slate-800 hover:bg-slate-800/80 hover:text-slate-300'}`}>Critical (P0)</button>
+          <button onClick={() => setVectorFilter('sqli_xss')} className={`px-3 py-1 rounded-full text-xs font-mono transition-colors border ${vectorFilter === 'sqli_xss' ? 'bg-amber-900/50 text-amber-300 border-amber-700' : 'bg-slate-950/50 text-slate-400 border-slate-800 hover:bg-slate-800/80 hover:text-slate-300'}`}>SQLi/XSS</button>
+          <button onClick={() => setVectorFilter('ddos')} className={`px-3 py-1 rounded-full text-xs font-mono transition-colors border ${vectorFilter === 'ddos' ? 'bg-orange-900/50 text-orange-300 border-orange-700' : 'bg-slate-950/50 text-slate-400 border-slate-800 hover:bg-slate-800/80 hover:text-slate-300'}`}>Rate Limited / DDoS</button>
+        </div>
+
         {/* App Origin Pill Selectors */}
         <div className="flex gap-2 items-center flex-wrap">
           <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mr-2">App Origin:</div>
@@ -1938,14 +1984,26 @@ const handlePurgeDlqItem = async (id: string) => {
                             <button
                               onClick={(e) => { e.stopPropagation(); handleDropIp(event.sourceIp); }}
                               disabled={actionLoading[event.sourceIp]}
-                              className="text-red-500 hover:text-red-400 underline decoration-red-500/50 hover:decoration-red-400 text-xs transition-colors disabled:opacity-50 bg-transparent border-none p-0 cursor-pointer"
+                              className="text-red-500 hover:text-red-400 underline decoration-red-500/50 hover:decoration-red-400 text-xs transition-colors disabled:opacity-50 bg-transparent border-none p-0 cursor-pointer block"
                             >
                               {actionLoading[event.sourceIp] ? '[ COMMITTING... ]' : 'Drop IP'}
                             </button>
                           )}
-                          {isBlocked && (
-                            <span className="text-xs text-slate-500 italic">Dropped</span>
+                          {!isBlocked && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleQuarantine(event.sourceIp, event.eventType); }}
+                              disabled={actionLoading[event.sourceIp]}
+                              className="text-red-400 hover:text-red-300 transition-colors text-[10px] font-semibold uppercase border border-red-900/50 hover:bg-red-950/30 px-2 py-1 rounded block mt-1"
+                            >
+                              {actionLoading[event.sourceIp] ? '[ QUARANTINING... ]' : '[ QUARANTINE IP ]'}
+                            </button>
                           )}
+                          {isBlocked && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded text-red-500 border border-red-900/50 bg-red-950/20 whitespace-nowrap">
+                              QUARANTINED
+                            </span>
+                          )}
+
                        </div>
                      </div>
                      {isExpanded && (
