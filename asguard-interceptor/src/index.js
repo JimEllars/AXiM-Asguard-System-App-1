@@ -451,6 +451,45 @@ export default {
         const url = new URL(request.url);
         if (request.method === "POST" && (url.pathname === "/webhooks/stripe" || url.pathname === "/api/v1/credentials/mint")) {
             // Rate limiting for cryptographic routes (60-second window, max 3 requests)
+            // Dynamic WAF Rule Evaluation
+            try {
+                if (env.ASGUARD_DYNAMIC_RULES) {
+                    const dynamicRulesResult = await env.ASGUARD_DYNAMIC_RULES.list({ limit: 100 });
+                    for (const key of dynamicRulesResult.keys) {
+                        const ruleStr = await env.ASGUARD_DYNAMIC_RULES.get(key.name);
+                        if (ruleStr) {
+                            const rule = JSON.parse(ruleStr);
+                            if (rule.match_pattern_regex) {
+                                const regex = new RegExp(rule.match_pattern_regex, 'i');
+                                let matched = false;
+                                if (rule.target_header === 'uri' || rule.target_header === 'path') {
+                                    matched = regex.test(url.pathname);
+                                }
+                                else if (rule.target_header === 'body') {
+                                    // Not supported for regex performance, just ignore
+                                }
+                                else {
+                                    const headerVal = request.headers.get(rule.target_header);
+                                    if (headerVal && regex.test(headerVal)) {
+                                        matched = true;
+                                    }
+                                }
+                                if (matched) {
+                                    if (rule.action === 'BLOCK') {
+                                        return new Response("WAF Blocked by Dynamic Rule", { status: 403, headers: getCorsHeaders(request, env, isMutation) });
+                                    }
+                                    else if (rule.action === 'CHALLENGE') {
+                                        return new Response("WAF Challenge required", { status: 401, headers: getCorsHeaders(request, env, isMutation) });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch (e) {
+                structuredLog("error", "dynamic_waf_evaluation_failed", request, e);
+            }
             const clientIp = request.headers.get("cf-connecting-ip") || "unknown";
             if (clientIp !== "unknown") {
                 const now = Date.now();
@@ -1518,6 +1557,32 @@ export default {
                     status: 400,
                     headers: getCorsHeaders(request, env, isMutation),
                 });
+            }
+        }
+        if (request.method === "POST" && url.pathname === "/api/v1/dynamic-rules") {
+            const endpointCorsHeaders = getCorsHeaders(request, env, true);
+            const customAuthHeader = request.headers.get("X-Asguard-Auth");
+            if (!customAuthHeader || customAuthHeader !== env.ASGUARD_API_KEY) {
+                return new Response(JSON.stringify({ error: "Unauthorized" }), {
+                    status: 401,
+                    headers: { "Content-Type": "application/json", ...endpointCorsHeaders }
+                });
+            }
+            try {
+                const payload = await request.json();
+                if (!payload.rule || !payload.rule.rule_name) {
+                    return new Response(JSON.stringify({ error: "Invalid rule format" }), { status: 400, headers: endpointCorsHeaders });
+                }
+                if (env.ASGUARD_DYNAMIC_RULES) {
+                    await env.ASGUARD_DYNAMIC_RULES.put(payload.rule.rule_name, JSON.stringify(payload.rule));
+                }
+                return new Response(JSON.stringify({ success: true, message: "Rule deployed" }), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json", ...endpointCorsHeaders }
+                });
+            }
+            catch (e) {
+                return new Response("Bad Request", { status: 400, headers: endpointCorsHeaders });
             }
         }
         if (request.method === "POST" && url.pathname === "/api/v1/blocklist/add") {

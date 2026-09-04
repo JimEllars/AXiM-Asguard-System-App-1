@@ -1,5 +1,6 @@
 import LiveChat from "../components/Stream/LiveChat";
 import React, { useState } from 'react';
+import GlobalThreatMap from '../components/Stream/GlobalThreatMap';
 
 const MOCK_VODS = [
   {
@@ -144,6 +145,12 @@ export default function StreamPage() {
         </div>
       </div>
 
+
+
+      {/* Global Threat Map */}
+      <div className="w-full max-w-7xl mx-auto h-[400px] mt-6">
+        <GlobalThreatMap />
+      </div>
 
       {/* VOD Grid */}
       <div className="w-full max-w-7xl mx-auto mt-8">
