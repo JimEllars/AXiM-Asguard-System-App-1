@@ -58,7 +58,6 @@ function structuredLog(level, event, request, details) {
 async function pushThreatTelemetry(env, eventType, ip, details) {
     if (!env.AXIM_CORE_API_URL || !env.AXIM_INTERNAL_KEY)
         return;
-    // Mask IP last octet
     let maskedIp = ip;
     if (ip && ip.includes('.')) {
         const parts = ip.split('.');
@@ -75,7 +74,7 @@ async function pushThreatTelemetry(env, eventType, ip, details) {
         details
     };
     try {
-        await fetch(`${env.AXIM_CORE_API_URL}/api/v1/telemetry/micro-app`, {
+        const response = await fetch(`${env.AXIM_CORE_API_URL}/api/v1/telemetry/micro-app`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -83,9 +82,26 @@ async function pushThreatTelemetry(env, eventType, ip, details) {
             },
             body: JSON.stringify(payload)
         });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
     }
     catch (err) {
         structuredLog("error", "telemetry_push_failed", null, err);
+        if (env.TELEMETRY_DLQ_KV) {
+            try {
+                await env.TELEMETRY_DLQ_KV.put(`dlq:${Date.now()}-${Math.random()}`, JSON.stringify({
+                    id: `dlq-${Date.now()}`,
+                    timestamp: Date.now(),
+                    originNode: "UNKNOWN",
+                    errorReason: String(err),
+                    payload: payload
+                }));
+            }
+            catch (dlqErr) {
+                // failed to put to dlq
+            }
+        }
     }
 }
 function getCorsHeaders(request, env, isMutation) {
@@ -654,6 +670,17 @@ export default {
         // Fast check against KV for blocked IP
         if (clientIp !== "unknown") {
             const isBlocked = await env.ASGUARD_BLACKLIST.get(`ip:${clientIp}`);
+            if (env.IP_REPUTATION_KV) {
+                const quarantineRecord = await env.IP_REPUTATION_KV.get(clientIp);
+                if (quarantineRecord) {
+                    let reason = "quarantined";
+                    try {
+                        reason = JSON.parse(quarantineRecord).reason || reason;
+                    }
+                    catch (e) { }
+                    return new Response(JSON.stringify({ error: "IP_QUARANTINED", reason: reason }), { status: 403, headers: getCorsHeaders(request, env, isMutation) });
+                }
+            }
             if (isBlocked) {
                 ctx.waitUntil(pushThreatTelemetry(env, "ip.quarantined", clientIp, { reason: "blacklisted" }).catch(err => { localEdgeLoggingBuffer.push({ ts: Date.now(), level: 'error', msg: 'KV Error', error: err ? String(err) : 'Unknown Error' }); }));
                 return new Response("Forbidden", { status: 403, headers: getCorsHeaders(request, env, isMutation) });
@@ -1866,6 +1893,26 @@ export default {
                     status: 400,
                     headers: getCorsHeaders(request, env, isMutation),
                 });
+            }
+        }
+        if (request.method === "POST" && url.pathname === "/api/v1/firewall/quarantine") {
+            try {
+                const authHeader = request.headers.get("X-Asguard-Auth");
+                if (!authHeader || authHeader !== env.AXIM_INTERNAL_KEY) {
+                    return new Response("Unauthorized", { status: 401 });
+                }
+                const payload = await request.json();
+                if (!payload.ip || !payload.reason) {
+                    return new Response("Missing ip or reason", { status: 400 });
+                }
+                const ttl = payload.ttl_seconds || 86400;
+                if (env.IP_REPUTATION_KV) {
+                    await env.IP_REPUTATION_KV.put(payload.ip, JSON.stringify({ reason: payload.reason, timestamp: Date.now() }), { expirationTtl: ttl });
+                }
+                return new Response(JSON.stringify({ success: true, ip: payload.ip, ttl }), { status: 200 });
+            }
+            catch (e) {
+                return new Response("Bad Request", { status: 400 });
             }
         }
         if (request.method === "POST" && url.pathname === "/telemetry") {
