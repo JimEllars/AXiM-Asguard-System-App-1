@@ -2544,6 +2544,47 @@ const handlePurgeDlqItem = async (id: string) => {
                 >
                   [ WHITELIST IP ]
                 </button>
+                <button
+                  onClick={async () => {
+                    const ip = selectedThreat.sourceIp;
+                    const reqId = selectedThreat.id || selectedThreat.details?.requestId || 'unknown_req_id';
+                    const originalPayload = selectedThreat.details?.originalPayload || {};
+                    setIsInspectionDrawerOpen(false);
+
+                    // 1. Whitelist the IP
+                    try {
+                      await fetch(`${process.env.NEXT_PUBLIC_INTERCEPTOR_URL}/api/v1/blocklist/add`, {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          'X-Asguard-Auth': process.env.NEXT_PUBLIC_ASGUARD_API_KEY || ''
+                        },
+                        body: JSON.stringify({ ip, reason: "False positive replay whitelist", type: "whitelist" })
+                      });
+                    } catch (e) { console.error('Whitelist failed', e); }
+
+                    // 2. Dispatch webhook to Echo Recovery Manager
+                    try {
+                      const recoveryUrl = process.env.NEXT_PUBLIC_ECHO_RECOVERY_URL || 'http://localhost:3000';
+                      await fetch(`${recoveryUrl}/api/v1/recovery/replay-disputed`, {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          'X-Axim-Signature': process.env.NEXT_PUBLIC_AXIM_INTERNAL_KEY || 'test-key'
+                        },
+                        body: JSON.stringify({
+                          original_payload: originalPayload,
+                          request_id: reqId
+                        })
+                      });
+                      // Assuming success, toast would be nice but not available natively without context
+                    } catch (e) { console.error('Echo replay failed', e); }
+                  }}
+                  className="w-full bg-blue-950/40 hover:bg-blue-900/60 border border-blue-900/50 text-blue-500 py-2 rounded transition-colors text-xs font-bold tracking-widest mt-2"
+                >
+                  [ MARK AS FALSE POSITIVE & REPLAY ]
+                </button>
+
               </div>
             </div>
           </div>
