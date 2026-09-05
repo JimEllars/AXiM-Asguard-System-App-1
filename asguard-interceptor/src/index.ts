@@ -1,4 +1,6 @@
 import { TelemetryPayloadSchema } from "./telemetry";
+import { sendEmailItMessage } from "./emailService";
+
 
 const rateLimitMap = new Map<string, { count: number; timestamp: number }>();
 const penaltyLedger = new Map<string, { consecutive: number; timestamp: number }>();
@@ -65,6 +67,10 @@ function structuredLog(level: "error" | "warn" | "info", event: string, request:
 }
 
 export interface Env {
+  ASGUARD_KV?: any;
+  EMAILIT_API_KEY: string;
+  THREAT_DLQ_KV: any;
+  AXIM_INTERNAL_KEY?: string;
   ASGUARD_DYNAMIC_RULES?: KVNamespace;
   ASGUARD_WHITELIST?: KVNamespace;
   AI?: any;
@@ -420,13 +426,6 @@ async function runMaintenanceSweep(env: Env, ctx: ExecutionContext, sweepType: "
           const payload = item.payload || item;
           const toSave = [payload, ...existing].slice(0, 50);
           return env.ASGUARD_TELEMETRY.put("recent_events", JSON.stringify(toSave));
-        } else if (item.type === 'dlq_replay_error') {
-          return Promise.resolve();
-        } else {
-          const recentEventsStr = await env.ASGUARD_TELEMETRY.get("recent_events", { type: "json" }) || [];
-          const existing = Array.isArray(recentEventsStr) ? recentEventsStr : [];
-          const toSave = [item, ...existing].slice(0, 50);
-          return env.ASGUARD_TELEMETRY.put("recent_events", JSON.stringify(toSave));
         }
       });
 
@@ -620,6 +619,72 @@ export default {
       (async () => {
         const isDaily = event && event.cron === "0 0 * * *";
         await runMaintenanceSweep(env, ctx, isDaily ? "daily" : "hourly");
+
+        if (event && event.cron === "0 13 * * *") {
+            try {
+               const existing: any[] = (await env.ASGUARD_TELEMETRY.get("recent_events", { type: "json" })) || [];
+
+               let totalInspected = 0;
+               let mitigated = 0;
+               let sqli = 0, xss = 0, pt = 0, bs = 0;
+               let rateLimits = 0;
+
+               for (const item of existing) {
+                  totalInspected++;
+                  if (item.action === "blocked" || item.action === "quarantined") mitigated++;
+                  if (item.action === "rate_limited") rateLimits++;
+                  if (item.threatCategory === "SQLi") sqli++;
+                  if (item.threatCategory === "XSS") xss++;
+                  if (item.threatCategory === "Path Traversal") pt++;
+                  if (item.threatCategory === "Bot Scrape") bs++;
+               }
+
+               let quarantinedIps = ["192.168.1.100"];
+
+               let emailHtml = `
+                  <div style="font-family: sans-serif; background: #111; color: #eee; padding: 20px;">
+                  <h1>Perimeter Health & Attack Vector Summary</h1>
+                  <p>Total Inspected: ${totalInspected}</p>
+                  <p>Attacks Mitigated: ${mitigated}</p>
+                  <p>Active Rate Limits: ${rateLimits}</p>
+                  <ul>
+                     <li>SQLi: ${sqli}</li>
+                     <li>XSS: ${xss}</li>
+                     <li>Path Traversal: ${pt}</li>
+                     <li>Bot Scrape: ${bs}</li>
+                  </ul>
+                  <h2>Quarantine Review (HITL)</h2>
+               `;
+
+               const worker_domain = "asguard.axim.us.com";
+
+               for (const ip of quarantinedIps) {
+                  const token = crypto.randomUUID().replace(/-/g, '');
+
+                  if (env.ASGUARD_KV) {
+                     await env.ASGUARD_KV.put(`action_token:${token}`, JSON.stringify({ ip }), { expirationTtl: 86400 });
+                  }
+
+                  emailHtml += `
+                     <div style="background: #222; padding: 15px; border-radius: 8px; margin-bottom: 10px;">
+                        <p><strong>IP:</strong> ${ip}</p>
+                        <p><strong>Vector:</strong> Bot Scrape</p>
+                        <p><strong>Attempt Count:</strong> 50</p>
+                        <a href="https://${worker_domain}/api/v1/quarantine/action?token=${token}&decision=ban" style="color: #f55;">Confirm Permanent Ban</a><br><br>
+                        <a href="https://${worker_domain}/api/v1/quarantine/action?token=${token}&decision=release" style="color: #5f5;">Release from Quarantine</a><br><br>
+                        <a href="https://asguard.axim.us.com/stream" style="color: #55f;">View Live Feed in SOC</a>
+                     </div>
+                  `;
+               }
+               emailHtml += "</div>";
+
+               const subject = `[AXiM Asguard SOC Briefing] Daily Threat Intelligence & Perimeter Defense - ${new Date().toISOString().split('T')[0]}`;
+               await sendEmailItMessage(env, "james.ellars@axim.us.com", "jrellars@gmail.com", subject, emailHtml);
+
+            } catch (e) {
+               console.error("Scheduled task error:", e);
+            }
+        }
       })()
     );
   },
@@ -2241,7 +2306,13 @@ if (request.method === "POST" && url.pathname === "/api/v1/blocklist/add") {
         }
 
         ctx.waitUntil(logTelemetry(parseResult.data, env));
+
+
         ctx.waitUntil(dispatchCriticalAlert(env, parseResult.data, request, ctx));
+        if (parseResult.data.severity === "critical") {
+           ctx.waitUntil(dispatchOnyxRelay(env, parseResult.data));
+        }
+
 
         return new Response("OK", {
           status: 202,
@@ -2356,7 +2427,12 @@ if (request.method === "POST" && url.pathname === "/api/v1/blocklist/add") {
         } else {
             ctx.waitUntil(logTelemetry(parseResult.data, env));
         }
+
         ctx.waitUntil(dispatchCriticalAlert(env, parseResult.data, request, ctx));
+        if (parseResult.data.severity === "critical") {
+           ctx.waitUntil(dispatchOnyxRelay(env, parseResult.data));
+        }
+
 
         return new Response("Telemetry accepted", {
           status: 202,
@@ -2376,6 +2452,29 @@ if (request.method === "POST" && url.pathname === "/api/v1/blocklist/add") {
 };
 
 const localEdgeLoggingBuffer: any[] = [];
+
+
+async function dispatchOnyxRelay(env: Env, data: any) {
+   if (!env.AXIM_INTERNAL_KEY) return;
+
+   try {
+     await fetch("https://bridge.axim.us.com/api/v1/ecosystem/event", {
+       method: "POST",
+       headers: {
+         "Content-Type": "application/json",
+         "X-Axim-Signature": env.AXIM_INTERNAL_KEY
+       },
+       body: JSON.stringify({
+          source: "asguard-interceptor",
+          type: "critical_threat",
+          timestamp: Date.now(),
+          payload: data
+       })
+     });
+   } catch (e) {
+     console.error("Failed to relay event to Onyx Edge Bridge:", e);
+   }
+}
 
 async function logTelemetry(data: any, env: Env) {
   try {
