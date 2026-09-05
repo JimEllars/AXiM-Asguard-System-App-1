@@ -1,5 +1,6 @@
+'use client';
 import React from 'react';
-import OnyxPipeline from '../components/Submit/OnyxPipeline';
+import OnyxPipeline from '@/components/Submit/OnyxPipeline';
 
 export default function SubmitPage() {
   return (
