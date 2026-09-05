@@ -14,4 +14,4 @@ kv_namespaces = [
 binding = "AI"
 
 [triggers]
-crons = ["0 * * * *", "0 0 * * *", "0 12 * * *"]
+crons = ["0 13 * * *"]

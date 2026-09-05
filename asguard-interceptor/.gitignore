@@ -1,0 +1,5 @@
+.wrangler/
+*.log
+video/
+dist/
+.next/

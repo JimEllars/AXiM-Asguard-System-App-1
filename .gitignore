@@ -7,3 +7,8 @@ scripts/
 *.py
 *.sh
 !push.sh
+.wrangler/
+*.log
+video/
+dist/
+.next/
