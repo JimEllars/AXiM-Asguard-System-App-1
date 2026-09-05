@@ -543,7 +543,7 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
       const timeoutIdFetch = setTimeout(() => abortController.abort(), 4000);
       try {
         const [telemetryRes, blocklistRes, auditRes, healthRes, dlqRes] = await Promise.all([
-          fetch(`${workerUrl}/telemetry`, {
+          fetch(`${workerUrl}/api/telemetry/recent`, {
             headers: { 'X-Asguard-Auth': apiKey },
             signal: abortController.signal
           }),
@@ -827,7 +827,7 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
                setAuditLog(parsedAudit.slice(0, 150));
            }
 
-           const telemetryRes = await fetch(`${workerUrl}/telemetry`, { headers: authHeaders, signal: abortController.signal });
+           const telemetryRes = await fetch(`${workerUrl}/api/telemetry/recent`, { headers: authHeaders, signal: abortController.signal });
            if (telemetryRes.ok) {
               const telemetryData = await telemetryRes.json();
               const parsedData = z.array(TelemetryPayloadSchema).parse(telemetryData).slice(0, 150);
