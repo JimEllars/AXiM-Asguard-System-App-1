@@ -2,6 +2,7 @@
 import LiveChat from "@/components/Stream/LiveChat";
 import React, { useState, useEffect } from 'react';
 import GlobalThreatMap from '@/components/Stream/GlobalThreatMap';
+import { ErrorBoundary } from 'react-error-boundary';
 
 const MOCK_VODS = [
   {
@@ -33,6 +34,23 @@ const MOCK_VODS = [
     duration: "05:30"
   }
 ];
+
+
+const ThreatMapFallback = ({ error }: { error: any }) => (
+  <div className="w-full h-full bg-slate-900 border border-slate-700 rounded-xl p-6 flex flex-col items-center justify-center text-center">
+    <svg className="w-12 h-12 text-red-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+    <h3 className="text-lg font-bold text-slate-200">Map Visualization Unavailable</h3>
+    <p className="text-sm text-slate-400 mt-2 max-w-md">The WebGL/Canvas context failed to initialize. Displaying tabular telemetry fallback instead.</p>
+    <div className="mt-6 w-full max-w-lg border border-slate-800 rounded bg-slate-950 p-4">
+      <div className="flex justify-between border-b border-slate-800 pb-2 mb-2 text-xs font-mono text-slate-500">
+         <span>Time</span><span>Event Type</span><span>Source</span>
+      </div>
+      <div className="flex justify-between text-xs font-mono text-slate-300">
+         <span>Just now</span><span className="text-amber-500">Render Fault</span><span>Local Client</span>
+      </div>
+    </div>
+  </div>
+);
 
 export default function StreamPage() {
   const [aximUser, setAximUser] = useState<string | null>(null);
@@ -141,7 +159,9 @@ export default function StreamPage() {
       </div>
 
       <div className="w-full max-w-7xl mx-auto h-[400px] mt-6">
-        <GlobalThreatMap />
+        <ErrorBoundary FallbackComponent={ThreatMapFallback}>
+          <GlobalThreatMap />
+        </ErrorBoundary>
       </div>
 
       <div className="w-full max-w-7xl mx-auto mt-8">

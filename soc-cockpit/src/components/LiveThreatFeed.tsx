@@ -696,10 +696,10 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
 
     const setupRealtime = () => {
       channel = supabase
-        .channel('schema-db-changes')
+        .channel('live-threats')
         .on(
           'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'security_audit_logs' },
+          { event: 'INSERT', schema: 'public', table: 'security_events' },
           (payload) => {
             // Add new items instantly and trigger row accents via standard state transition
             setFlash(true);

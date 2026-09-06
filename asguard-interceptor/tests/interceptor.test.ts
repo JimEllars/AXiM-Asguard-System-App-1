@@ -24,7 +24,7 @@ describe("Asguard Interceptor", () => {
       },
       body: JSON.stringify({}),
     });
-    const env = {
+    const env: any = { EMAILIT_API_KEY: "mock",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
       ASGUARD_API_KEY: "test-auth-key"
@@ -39,7 +39,7 @@ describe("Asguard Interceptor", () => {
     const request = new Request("https://example.com/webhooks/stripe", {
       method: "POST"
     });
-    const env = {
+    const env: any = { EMAILIT_API_KEY: "mock",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
       ASGUARD_API_KEY: "test-auth-key"
@@ -73,7 +73,7 @@ describe("Asguard Interceptor", () => {
       body: JSON.stringify(payload),
     });
 
-    const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+    const env: any = { EMAILIT_API_KEY: "mock", ASGUARD_API_KEY: "test-auth-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
     const ctx = { waitUntil: vi.fn() } as any;
 
     const response = await worker.fetch(request, env, ctx);
@@ -100,7 +100,7 @@ describe("Asguard Interceptor", () => {
       body: JSON.stringify(payload),
     });
 
-    const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+    const env: any = { EMAILIT_API_KEY: "mock", ASGUARD_API_KEY: "test-auth-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
     const ctx = { waitUntil: vi.fn() } as any;
 
     const response = await worker.fetch(request, env, ctx);
@@ -120,7 +120,7 @@ describe("Asguard Interceptor", () => {
   });
 
   it("should trigger client-error throttle circuit breaker returning 429", async () => {
-    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
+    const env: any = { EMAILIT_API_KEY: "mock", ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
@@ -156,7 +156,7 @@ describe("Asguard Interceptor", () => {
       headers: { "cf-connecting-ip": "1.2.3.4" },
     });
 
-    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
+    const env: any = { EMAILIT_API_KEY: "mock", ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
@@ -177,7 +177,7 @@ describe("Asguard Interceptor", () => {
       method: "OPTIONS",
     });
 
-    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
+    const env: any = { EMAILIT_API_KEY: "mock", ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
@@ -198,7 +198,7 @@ describe("Asguard Interceptor", () => {
       headers: { "cf-connecting-ip": "1.2.3.4" },
     });
 
-    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
+    const env: any = { EMAILIT_API_KEY: "mock", ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
@@ -217,7 +217,7 @@ describe("Asguard Interceptor", () => {
       headers: { "cf-connecting-ip": "1.2.3.4" },
     });
 
-    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
+    const env: any = { EMAILIT_API_KEY: "mock", ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
@@ -246,7 +246,7 @@ describe("Asguard Interceptor", () => {
     // @ts-ignore
     request.cf = { country: "US", colo: "DFW" };
 
-    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
+    const env: any = { EMAILIT_API_KEY: "mock", ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
@@ -279,7 +279,7 @@ describe("Asguard Interceptor", () => {
       put: vi.fn().mockResolvedValue(undefined),
     };
 
-    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
+    const env: any = { EMAILIT_API_KEY: "mock", ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockSlowTelemetryKV as any,
@@ -306,7 +306,7 @@ describe("Asguard Interceptor", () => {
       headers: { "cf-connecting-ip": "1.2.3.4" },
     });
 
-    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
+    const env: any = { EMAILIT_API_KEY: "mock", ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
@@ -319,7 +319,7 @@ describe("Asguard Interceptor", () => {
   });
   it("rejects GET /telemetry without valid auth", async () => {
     const request = new Request("https://example.com/telemetry");
-    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
+    const env: any = { EMAILIT_API_KEY: "mock", ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
@@ -335,7 +335,7 @@ describe("Asguard Interceptor", () => {
     const request = new Request("https://example.com/telemetry", {
       headers: { "X-Asguard-Auth": "test-auth-key" },
     });
-    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
+    const env: any = { EMAILIT_API_KEY: "mock", ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
@@ -348,7 +348,7 @@ describe("Asguard Interceptor", () => {
 
   it("rejects GET /blocklist without valid auth", async () => {
     const request = new Request("https://example.com/blocklist");
-    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
+    const env: any = { EMAILIT_API_KEY: "mock", ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
@@ -368,7 +368,7 @@ describe("Asguard Interceptor", () => {
     const request = new Request("https://example.com/blocklist", {
       headers: { "X-Asguard-Auth": "test-auth-key" },
     });
-    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
+    const env: any = { EMAILIT_API_KEY: "mock", ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
@@ -382,7 +382,7 @@ describe("Asguard Interceptor", () => {
   });
 
   it("POST /blocklist should block manual requests from revoked admin wallets", async () => {
-    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
+    const env: any = { EMAILIT_API_KEY: "mock", ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "test-api-key",
       ASGUARD_BLACKLIST: {
          get: vi.fn().mockImplementation(async (key: string) => {
@@ -419,7 +419,7 @@ describe("Asguard Interceptor", () => {
       },
       body: JSON.stringify({ key: "ip:10.0.0.1", action: "block" }),
     });
-    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
+    const env: any = { EMAILIT_API_KEY: "mock", ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
@@ -442,7 +442,7 @@ describe("Asguard Interceptor", () => {
       },
       body: JSON.stringify({ key: "ip:10.0.0.1", action: "unblock" }),
     });
-    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
+    const env: any = { EMAILIT_API_KEY: "mock", ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
@@ -463,7 +463,7 @@ describe("Asguard Interceptor", () => {
       },
       body: JSON.stringify({ key: "ip:10.0.0.2", action: "block", ttl: 3600 }),
     });
-    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
+    const env: any = { EMAILIT_API_KEY: "mock", ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
@@ -496,7 +496,7 @@ describe("Asguard Interceptor", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ key: "ip:10.0.0.3", action: "block" }),
     });
-    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
+    const env: any = { EMAILIT_API_KEY: "mock", ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
@@ -519,7 +519,7 @@ describe("Asguard Interceptor", () => {
     const requestGet = new Request("https://example.com/telemetry", {
       headers: { "X-Asguard-Auth": "test-auth-key" },
     });
-    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
+    const env: any = { EMAILIT_API_KEY: "mock", ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
@@ -570,7 +570,7 @@ describe("Asguard Interceptor", () => {
     // @ts-ignore
     request.cf = { country: "US", colo: "DFW" };
 
-    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
+    const env: any = { EMAILIT_API_KEY: "mock", ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
@@ -594,7 +594,7 @@ describe("Asguard Interceptor", () => {
       headers: { "X-Asguard-Auth": "test-auth-key" },
     });
 
-    const env = {
+    const env: any = { EMAILIT_API_KEY: "mock",
       ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockSuccessKV as any,
@@ -629,7 +629,7 @@ describe("Asguard Interceptor", () => {
       headers: { "X-Asguard-Auth": "test-auth-key" },
     });
 
-    const env = {
+    const env: any = { EMAILIT_API_KEY: "mock",
       ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockCriticalKV as any,
@@ -659,7 +659,7 @@ describe("Asguard Interceptor", () => {
       headers: { "X-Asguard-Auth": "test-auth-key" },
     });
 
-    const env = {
+    const env: any = { EMAILIT_API_KEY: "mock",
       ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockHighKV as any,
@@ -688,7 +688,7 @@ describe("Asguard Interceptor", () => {
       headers: { "X-Asguard-Auth": "test-auth-key" },
     });
 
-    const env = {
+    const env: any = { EMAILIT_API_KEY: "mock",
       ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockFailedKV as any,
@@ -704,7 +704,7 @@ describe("Asguard Interceptor", () => {
   });
 
   it("rejects illegal CORS origin on mutations and preflight, but allows matching origin array and subdomains", async () => {
-    const env = {
+    const env: any = { EMAILIT_API_KEY: "mock",
       ALLOWED_ORIGIN: 'https://production-domain.com,https://app.production-domain.com',
       ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
@@ -747,7 +747,7 @@ describe("Asguard Interceptor", () => {
 
 
   it("should process authenticated POST /dlq/replay by logging telemetry and dropping the KV record", async () => {
-    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
+    const env: any = { EMAILIT_API_KEY: "mock", ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
@@ -795,7 +795,7 @@ describe("Asguard Interceptor", () => {
       body: bodyData
     });
 
-        const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
+        const env: any = { EMAILIT_API_KEY: "mock", ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
@@ -816,7 +816,7 @@ describe("Asguard Interceptor", () => {
       headers: {},
       body: bodyData
     });
-    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
+    const env: any = { EMAILIT_API_KEY: "mock", ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
@@ -837,7 +837,7 @@ describe("Asguard Interceptor", () => {
       headers: { "Stripe-Signature": "invalid_sig" },
       body: bodyData
     });
-    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
+    const env: any = { EMAILIT_API_KEY: "mock", ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
@@ -871,7 +871,7 @@ describe("Asguard Interceptor", () => {
       headers: { "Stripe-Signature": validSignature },
       body: bodyData
     });
-    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
+    const env: any = { EMAILIT_API_KEY: "mock", ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
@@ -891,7 +891,7 @@ describe("Asguard Interceptor", () => {
       headers: { "Stripe-Signature": "valid_but_will_fail" },
       body: bodyData
     });
-    const env = { ALLOWED_ORIGIN: 'https://production-domain.com',
+    const env: any = { EMAILIT_API_KEY: "mock", ALLOWED_ORIGIN: 'https://production-domain.com',
       ASGUARD_API_KEY: "test-auth-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
@@ -911,7 +911,7 @@ describe("Autonomous Blocklist Endpoint", () => {
       },
       body: JSON.stringify({}),
     });
-    const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+    const env: any = { EMAILIT_API_KEY: "mock", ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
     const ctx = { waitUntil: vi.fn() } as any;
     const response = await worker.fetch(request, env as any, ctx as any);
     expect(response.status).toBe(400);
@@ -927,7 +927,7 @@ describe("Autonomous Blocklist Endpoint", () => {
         key: "wallet:0x12345"
       }),
     });
-    const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+    const env: any = { EMAILIT_API_KEY: "mock", ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
     const ctx = { waitUntil: vi.fn() } as any;
     const response = await worker.fetch(request, env as any, ctx as any);
     expect(response.status).toBe(400);
@@ -948,7 +948,7 @@ describe("Autonomous Blocklist Endpoint", () => {
           ttl: 3600
         }),
       });
-      const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+      const env: any = { EMAILIT_API_KEY: "mock", ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
       const ctx = { waitUntil: vi.fn() } as any;
       const response = await worker.fetch(request, env as any, ctx as any);
       expect(response.status).toBe(400);
@@ -971,7 +971,7 @@ describe("Autonomous Blocklist Endpoint", () => {
           ttl: 3600
         }),
       });
-      const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+      const env: any = { EMAILIT_API_KEY: "mock", ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
       const ctx = { waitUntil: vi.fn() } as any;
       const response = await worker.fetch(request, env as any, ctx as any);
       expect(response.status).toBe(400);
@@ -989,7 +989,7 @@ describe("Autonomous Blocklist Endpoint", () => {
         key: "ip:1.1.1.1"
       }),
     });
-    const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+    const env: any = { EMAILIT_API_KEY: "mock", ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
     const ctx = { waitUntil: vi.fn() } as any;
     const response = await worker.fetch(request, env as any, ctx as any);
     expect(response.status).toBe(401);
@@ -1006,7 +1006,7 @@ describe("Autonomous Blocklist Endpoint", () => {
         ttl: 1000000 // greater than 7 days max
       }),
     });
-    const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+    const env: any = { EMAILIT_API_KEY: "mock", ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
     const ctx = { waitUntil: vi.fn() } as any;
     const response = await worker.fetch(request, env as any, ctx as any);
     expect(response.status).toBe(201);
@@ -1014,7 +1014,7 @@ describe("Autonomous Blocklist Endpoint", () => {
 
   describe("GET /dlq", () => {
     it("returns active items when view is omitted or active", async () => {
-      const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+      const env: any = { EMAILIT_API_KEY: "mock", ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
       const ctx = { waitUntil: vi.fn() } as any;
 
       mockTelemetryKV.list.mockResolvedValueOnce({ keys: [{ name: "dlq:1" }, { name: "dlq:2" }] });
@@ -1032,7 +1032,7 @@ describe("Autonomous Blocklist Endpoint", () => {
     });
 
     it("returns quarantined items when view is quarantined", async () => {
-      const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+      const env: any = { EMAILIT_API_KEY: "mock", ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
       const ctx = { waitUntil: vi.fn() } as any;
 
       mockTelemetryKV.list.mockResolvedValueOnce({ keys: [{ name: "dlq:1" }, { name: "dlq:2" }] });
@@ -1052,7 +1052,7 @@ describe("Autonomous Blocklist Endpoint", () => {
 
   describe("DELETE /dlq", () => {
     it("returns 401 if unauthorized", async () => {
-      const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+      const env: any = { EMAILIT_API_KEY: "mock", ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
       const ctx = { waitUntil: vi.fn() } as any;
       const request = new Request("https://asguard.local/dlq?id=dlq-123", { method: "DELETE" });
       const response = await worker.fetch(request, env as any, ctx as any);
@@ -1060,7 +1060,7 @@ describe("Autonomous Blocklist Endpoint", () => {
     });
 
     it("returns 400 if id is missing", async () => {
-      const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+      const env: any = { EMAILIT_API_KEY: "mock", ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
       const ctx = { waitUntil: vi.fn() } as any;
       const request = new Request("https://asguard.local/dlq", {
         method: "DELETE",
@@ -1071,7 +1071,7 @@ describe("Autonomous Blocklist Endpoint", () => {
     });
 
     it("deletes the dlq entry and audits it", async () => {
-      const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+      const env: any = { EMAILIT_API_KEY: "mock", ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
       const ctx = { waitUntil: vi.fn() } as any;
       const request = new Request("https://asguard.local/dlq?id=dlq-123", {
         method: "DELETE",
@@ -1093,7 +1093,7 @@ describe("Autonomous Blocklist Endpoint", () => {
 
   describe("POST /dlq/bulk-purge", () => {
     it("returns 401 if unauthorized", async () => {
-      const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+      const env: any = { EMAILIT_API_KEY: "mock", ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
       const ctx = { waitUntil: vi.fn() } as any;
       const request = new Request("https://asguard.local/dlq/bulk-purge", { method: "POST" });
       const response = await worker.fetch(request, env as any, ctx as any);
@@ -1101,7 +1101,7 @@ describe("Autonomous Blocklist Endpoint", () => {
     });
 
     it("returns 400 if payload is invalid", async () => {
-      const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+      const env: any = { EMAILIT_API_KEY: "mock", ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
       const ctx = { waitUntil: vi.fn() } as any;
       const request = new Request("https://asguard.local/dlq/bulk-purge", {
         method: "POST",
@@ -1113,7 +1113,7 @@ describe("Autonomous Blocklist Endpoint", () => {
     });
 
     it("purges multiple dlq items and writes audit logs with wallet auth", async () => {
-      const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+      const env: any = { EMAILIT_API_KEY: "mock", ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
       const ctx = { waitUntil: vi.fn() } as any;
       const body = { ids: ["dlq-123", "dlq-456"] };
       const request = new Request("https://asguard.local/dlq/bulk-purge", {
@@ -1145,7 +1145,7 @@ describe("Autonomous Blocklist Endpoint", () => {
 
   describe("POST /dlq/bulk-replay", () => {
     it("returns 401 if unauthorized", async () => {
-      const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+      const env: any = { EMAILIT_API_KEY: "mock", ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
       const ctx = { waitUntil: vi.fn() } as any;
       const request = new Request("https://asguard.local/dlq/bulk-replay", { method: "POST" });
       const response = await worker.fetch(request, env as any, ctx as any);
@@ -1153,7 +1153,7 @@ describe("Autonomous Blocklist Endpoint", () => {
     });
 
     it("returns 400 if payload is not array", async () => {
-      const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+      const env: any = { EMAILIT_API_KEY: "mock", ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
       const ctx = { waitUntil: vi.fn() } as any;
       const request = new Request("https://asguard.local/dlq/bulk-replay", {
         method: "POST",
@@ -1165,7 +1165,7 @@ describe("Autonomous Blocklist Endpoint", () => {
     });
 
     it("replays multiple dlq items", async () => {
-      const env = { ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+      const env: any = { EMAILIT_API_KEY: "mock", ASGUARD_API_KEY: "test-auth-key", ASGUARD_AI_MUTATION_KEY: "test-ai-mutation-key", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
       const ctx = { waitUntil: vi.fn() } as any;
       const body = [
         "dlq-123",
@@ -1193,13 +1193,13 @@ describe("Autonomous Blocklist Endpoint", () => {
   describe("POST /dlq/unquarantine", () => {
     it("should return 401 without auth", async () => {
       const request = new Request("https://asguard.local/dlq/unquarantine", { method: "POST" });
-      const env = { ASGUARD_API_KEY: "test-key" } as any;
+      const env: any = { EMAILIT_API_KEY: "mock", ASGUARD_API_KEY: "test-key" } as any;
       const response = await worker.fetch(request, env, {} as any);
       expect(response.status).toBe(401);
     });
 
     it("should update dlq status to active and retryCount to 0", async () => {
-      const env = {
+      const env: any = { EMAILIT_API_KEY: "mock",
         ASGUARD_API_KEY: "test-key",
         ASGUARD_TELEMETRY: {
           get: vi.fn().mockResolvedValue(JSON.stringify({ id: "dlq-123", status: "quarantined", retryCount: 5 })),
@@ -1234,7 +1234,7 @@ describe("Autonomous Blocklist Endpoint", () => {
 
   describe("POST /admin/anomaly/triage", () => {
     it("returns 401 Unauthorized without auth headers", async () => {
-      const env = { ASGUARD_API_KEY: "test_api_key_123", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
+      const env: any = { EMAILIT_API_KEY: "mock", ASGUARD_API_KEY: "test_api_key_123", ASGUARD_BLACKLIST: mockKV as any, ASGUARD_TELEMETRY: mockTelemetryKV as any };
       const ctx = { waitUntil: vi.fn() } as any;
       const req = new Request("https://asguard.local/admin/anomaly/triage", {
         method: "POST",
@@ -1258,7 +1258,7 @@ describe("Autonomous Blocklist Endpoint", () => {
         delete: vi.fn(async (key: string) => { memoryStore.delete(key); }),
       };
 
-      const env = { ASGUARD_API_KEY: "test_api_key_123", ASGUARD_BLACKLIST: customMockKV as any, ASGUARD_TELEMETRY: customMockTelemetry as any };
+      const env: any = { EMAILIT_API_KEY: "mock", ASGUARD_API_KEY: "test_api_key_123", ASGUARD_BLACKLIST: customMockKV as any, ASGUARD_TELEMETRY: customMockTelemetry as any };
       const ctx = { waitUntil: vi.fn() } as any;
 
       // Stage queue with 2 IPs
@@ -1300,7 +1300,7 @@ describe("Autonomous Blocklist Endpoint", () => {
         delete: vi.fn(async (key: string) => { memoryStore.delete(key); }),
       };
 
-      const env = { ASGUARD_API_KEY: "test_api_key_123", ASGUARD_BLACKLIST: customMockKV as any, ASGUARD_TELEMETRY: customMockTelemetry as any };
+      const env: any = { EMAILIT_API_KEY: "mock", ASGUARD_API_KEY: "test_api_key_123", ASGUARD_BLACKLIST: customMockKV as any, ASGUARD_TELEMETRY: customMockTelemetry as any };
       const ctx = { waitUntil: vi.fn() } as any;
       const req = new Request("https://asguard.local/admin/anomaly/triage", {
         method: "POST",
@@ -1337,7 +1337,7 @@ describe("Autonomous Blocklist Endpoint", () => {
         delete: vi.fn(async (key: string) => { memoryStore.delete(key); }),
       };
 
-      const env = { ASGUARD_API_KEY: "test_api_key_123", ASGUARD_BLACKLIST: customMockKV as any, ASGUARD_TELEMETRY: customMockTelemetry as any };
+      const env: any = { EMAILIT_API_KEY: "mock", ASGUARD_API_KEY: "test_api_key_123", ASGUARD_BLACKLIST: customMockKV as any, ASGUARD_TELEMETRY: customMockTelemetry as any };
       const ctx = { waitUntil: vi.fn() } as any;
       // First let's put something in anomaly_queue
       await env.ASGUARD_TELEMETRY.put("anomaly_queue", JSON.stringify({ anomalyIp: "5.5.5.5", requestCount1h: 150, status: "pending_onyx_triage" }));
@@ -1373,7 +1373,7 @@ describe("Autonomous Blocklist Endpoint", () => {
       const request = new Request("https://asguard.local/admin/cron/trigger", {
         method: "POST",
       });
-      const env = { ASGUARD_API_KEY: "test-auth-key" };
+      const env: any = { EMAILIT_API_KEY: "mock", ASGUARD_API_KEY: "test-auth-key" };
       const ctx = { waitUntil: vi.fn() } as any;
 
       const response = await worker.fetch(request, env as any, ctx as any);
@@ -1381,7 +1381,7 @@ describe("Autonomous Blocklist Endpoint", () => {
     });
 
     it("executes sweep and returns 200 with heartbeat data", async () => {
-      const env = {
+      const env: any = { EMAILIT_API_KEY: "mock",
         ASGUARD_API_KEY: "test-auth-key",
         ASGUARD_BLACKLIST: mockKV,
         ASGUARD_TELEMETRY: mockTelemetryKV,
@@ -1422,7 +1422,7 @@ describe("Autonomous Blocklist Endpoint", () => {
 
   describe("Scheduled Handler", () => {
     it("dispatches critical alert on buffer overflow during hourly sweep", async () => {
-      const env = {
+      const env: any = { EMAILIT_API_KEY: "mock",
         ASGUARD_API_KEY: "test-auth-key",
         ASGUARD_BLACKLIST: mockKV,
         ASGUARD_TELEMETRY: mockTelemetryKV,
@@ -1463,7 +1463,7 @@ describe("Autonomous Blocklist Endpoint", () => {
     });
 
     it("executes hourly scheduled event correctly", async () => {
-      const env = {
+      const env: any = { EMAILIT_API_KEY: "mock",
         ASGUARD_API_KEY: "test-auth-key",
         ASGUARD_BLACKLIST: mockKV,
         ASGUARD_TELEMETRY: mockTelemetryKV,
@@ -1494,7 +1494,7 @@ describe("Autonomous Blocklist Endpoint", () => {
     });
 
     it("asserts anomaly_queue is updated when a mock IP exceeds 100 requests/hr during hourly sweeps", async () => {
-      const env = {
+      const env: any = { EMAILIT_API_KEY: "mock",
         ASGUARD_API_KEY: "test-auth-key",
         ASGUARD_BLACKLIST: mockKV,
         ASGUARD_TELEMETRY: mockTelemetryKV,
@@ -1533,7 +1533,7 @@ describe("Autonomous Blocklist Endpoint", () => {
     });
 
     it("executes daily scheduled event and handles threshold alerts", async () => {
-      const env = {
+      const env: any = { EMAILIT_API_KEY: "mock",
         ASGUARD_API_KEY: "test-auth-key",
         ASGUARD_BLACKLIST: mockKV,
         ASGUARD_TELEMETRY: mockTelemetryKV,

@@ -1,26 +1,71 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
-// For simplicity in this scaffolding phase, we pass a prop or use a local state.
-// In a full implementation, this would read from the auth context or cookies.
-export default function LiveChat({ isAuthenticated = false }) {
-  const [messages, setMessages] = useState([
+export interface ChatMetadata {
+  badges?: string[];
+  role?: string;
+  reputation?: number;
+}
+
+export interface UserMessage {
+  id: number;
+  user: string;
+  text: string;
+  time: string;
+  isSystem?: false;
+  metadata?: ChatMetadata;
+}
+
+export interface SystemAlert {
+  id: number;
+  text: string;
+  time: string;
+  isSystem: true;
+  user?: string;
+  metadata?: ChatMetadata;
+}
+
+export type ChatMessage = UserMessage | SystemAlert;
+
+interface LiveChatProps {
+  isAuthenticated?: boolean;
+}
+
+export default function LiveChat({ isAuthenticated = false }: LiveChatProps) {
+  const [messages, setMessages] = useState<ChatMessage[]>([
     { id: 1, user: 'System', text: 'Chat active. Awaiting broadcast.', time: '12:00 PM', isSystem: true },
-    { id: 2, user: 'WeatherWatcher99', text: 'Looks like the storm front is shifting west.', time: '12:01 PM' },
-    { id: 3, user: 'StormChaserBob', text: 'Checking radar now, massive cell developing.', time: '12:03 PM' }
+    { id: 2, user: 'WeatherWatcher99', text: 'Looks like the storm front is shifting west.', time: '12:01 PM', isSystem: false },
+    { id: 3, user: 'StormChaserBob', text: 'Checking radar now, massive cell developing.', time: '12:03 PM', isSystem: false }
   ]);
   const [inputValue, setInputValue] = useState('');
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom dummy ref logic could go here
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
-  const handleSubmit = (e) => {
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  // Basic sanitization to prevent XSS in chat
+  const sanitizeInput = (str: string) => {
+    return str.replace(/[<>]/g, (match) => {
+      return match === '<' ? '&lt;' : '&gt;';
+    });
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputValue.trim() || !isAuthenticated) return;
 
+    const sanitizedText = sanitizeInput(inputValue.trim());
+
     setMessages([...messages, {
       id: Date.now(),
-      user: 'You', // Placeholder for current user name
-      text: inputValue.trim(),
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      user: 'You',
+      text: sanitizedText,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      isSystem: false
     }]);
     setInputValue('');
   };
@@ -60,6 +105,7 @@ export default function LiveChat({ isAuthenticated = false }) {
             )}
           </div>
         ))}
+        <div ref={messagesEndRef} />
       </div>
 
       {/* Input Area */}
