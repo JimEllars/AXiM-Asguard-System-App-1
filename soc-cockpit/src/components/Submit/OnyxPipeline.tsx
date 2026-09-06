@@ -1,16 +1,28 @@
 import React, { useState, useRef } from 'react';
 
+export type PipelineStage = 'idle' | 'uploading' | 'analyzing' | 'mitigated' | 'failed';
+
+interface LocationData {
+  lat: number;
+  lng: number;
+}
+
+interface ToastData {
+  type: 'success' | 'error';
+  message: string;
+}
+
 export default function OnyxPipeline() {
-  const [file, setFile] = useState(null);
-  const [error, setError] = useState(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const [location, setLocation] = useState(null);
-  const [toast, setToast] = useState(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [stage, setStage] = useState<PipelineStage>('idle');
+  const [location, setLocation] = useState<LocationData | null>(null);
+  const [toast, setToast] = useState<ToastData | null>(null);
 
   const [quarantineIp, setQuarantineIp] = useState('');
   const [isQuarantining, setIsQuarantining] = useState(false);
 
-  const handleQuarantine = async (e) => {
+  const handleQuarantine = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     if (!quarantineIp) return;
     setIsQuarantining(true);
@@ -29,7 +41,7 @@ export default function OnyxPipeline() {
       } else {
         throw new Error('Failed to quarantine IP');
       }
-    } catch (err) {
+    } catch (err: any) {
       setToast({ type: 'error', message: `[ ERROR ] ${err.message}` });
     } finally {
       setIsQuarantining(false);
@@ -37,22 +49,25 @@ export default function OnyxPipeline() {
     }
   };
 
-  const fileInputRef = useRef(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileChange = (e) => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setError(null);
-    const selectedFile = e.target.files[0];
-    validateAndSetFile(selectedFile);
+    if (e.target.files && e.target.files[0]) {
+      validateAndSetFile(e.target.files[0]);
+    }
   };
 
-  const handleDrop = (e) => {
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setError(null);
-    const droppedFile = e.dataTransfer.files[0];
-    validateAndSetFile(droppedFile);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      const droppedFile = e.dataTransfer.files[0];
+      validateAndSetFile(droppedFile);
+    }
   };
 
-  const validateAndSetFile = (selectedFile) => {
+  const validateAndSetFile = (selectedFile: File) => {
     if (!selectedFile) return;
 
     // Client-side validation
@@ -70,20 +85,22 @@ export default function OnyxPipeline() {
     }
 
     setFile(selectedFile);
+    setStage('idle');
   };
 
-  const handleDragOver = (e) => {
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent | React.MouseEvent) => {
     e.preventDefault();
     if (!file) {
       setError('Please select a file to upload.');
+      setStage('failed');
       return;
     }
 
-    setIsUploading(true);
+    setStage('uploading');
     setError(null);
 
     try {
@@ -92,7 +109,7 @@ export default function OnyxPipeline() {
          throw new Error('Geolocation is not supported by your browser.');
       }
 
-      const position = await new Promise((resolve, reject) => {
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(resolve, reject, {
            timeout: 5000,
            maximumAge: 0,
@@ -121,6 +138,8 @@ export default function OnyxPipeline() {
         })
       }).catch(console.error);
 
+      setStage('analyzing');
+
       // Mock payload construction
       const payload = {
         file: file.name,
@@ -138,6 +157,8 @@ export default function OnyxPipeline() {
       // Simulate network request
       await new Promise(resolve => setTimeout(resolve, 1500));
 
+      setStage('mitigated');
+
       // Reset after success
       setFile(null);
       if (fileInputRef.current) {
@@ -145,7 +166,10 @@ export default function OnyxPipeline() {
       }
 
       setToast({ type: 'success', message: '[ MEDIA SUBMITTED TO ONYX PIPELINE ]' });
-      setTimeout(() => setToast(null), 5000);
+      setTimeout(() => {
+          setToast(null);
+          setStage('idle');
+      }, 5000);
 
       // Dispatch completion telemetry
       fetch(`${process.env.NEXT_PUBLIC_INTERCEPTOR_URL}/telemetry`, {
@@ -165,7 +189,8 @@ export default function OnyxPipeline() {
         })
       }).catch(console.error);
 
-    } catch (err) {
+    } catch (err: any) {
+      setStage('failed');
       setError(err.message || 'Failed to capture location or upload file.');
 
       if (file) {
@@ -191,10 +216,10 @@ export default function OnyxPipeline() {
 
       setToast({ type: 'error', message: `[ ERROR ] ${err.message || 'Failed to upload'}` });
       setTimeout(() => setToast(null), 5000);
-    } finally {
-      setIsUploading(false);
     }
   };
+
+  const isProcessing = stage === 'uploading' || stage === 'analyzing';
 
   return (
     <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 shadow-xl max-w-2xl mx-auto relative">
@@ -248,22 +273,28 @@ export default function OnyxPipeline() {
            )}
         </div>
 
-        {error && (
+        {error && stage === 'failed' && (
           <div className="bg-red-950/50 border border-red-900 text-red-400 px-4 py-3 rounded text-sm font-mono flex justify-between items-center">
             <span>[ERROR] {error}</span>
             <button type="button" onClick={handleSubmit} className="text-xs bg-red-900 hover:bg-red-800 px-2 py-1 rounded transition-colors">Retry</button>
           </div>
         )}
 
+        {stage === 'mitigated' && (
+          <div className="bg-emerald-950/50 border border-emerald-900 text-emerald-400 px-4 py-3 rounded text-sm font-mono flex justify-between items-center">
+            <span>[SUCCESS] File successfully analyzed and mitigated.</span>
+          </div>
+        )}
+
         <button
           type="submit"
-          disabled={!file || isUploading}
+          disabled={!file || isProcessing}
           className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-800 disabled:text-slate-500 text-white font-medium py-3 rounded-lg transition-colors flex justify-center items-center gap-2"
         >
-          {isUploading ? (
+          {isProcessing ? (
             <>
               <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin"></div>
-              <span>Processing...</span>
+              <span>Processing ({stage})...</span>
             </>
           ) : (
              <>

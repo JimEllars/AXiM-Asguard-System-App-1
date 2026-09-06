@@ -1,6 +1,6 @@
 export interface Env {
   EMAILIT_API_KEY: string;
-  THREAT_DLQ_KV: any;
+  THREAT_DLQ_KV?: any;
 }
 
 export async function sendEmailItMessage(env: Env, to: string | string[], bcc: string | string[], subject: string, html: string) {

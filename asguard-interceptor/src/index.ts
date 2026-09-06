@@ -1,4 +1,4 @@
-import { TelemetryPayloadSchema } from "./telemetry";
+import { TelemetryPayloadSchema, logToSupabase } from "./telemetry";
 import { sendEmailItMessage } from "./emailService";
 
 
@@ -69,7 +69,7 @@ function structuredLog(level: "error" | "warn" | "info", event: string, request:
 export interface Env {
   ASGUARD_KV?: any;
   EMAILIT_API_KEY: string;
-  THREAT_DLQ_KV: any;
+  THREAT_DLQ_KV?: any;
   AXIM_INTERNAL_KEY?: string;
   ASGUARD_DYNAMIC_RULES?: KVNamespace;
   ASGUARD_WHITELIST?: KVNamespace;
@@ -84,8 +84,6 @@ export interface Env {
   ASGUARD_ALERT_WEBHOOK_URL?: string;
   ASGUARD_ALERT_EMAIL?: string;
   AXIM_CORE_API_URL?: string;
-  AXIM_INTERNAL_KEY?: string;
-  EMAILIT_API_KEY?: string;
 }
 
 
@@ -2478,6 +2476,10 @@ async function dispatchOnyxRelay(env: Env, data: any) {
 
 async function logTelemetry(data: any, env: Env) {
   try {
+    // Interceptor Telemetry Pipeline Ingestion (Task 2)
+    // We log to Supabase in background (error caught internally)
+    Promise.resolve(logToSupabase(data, env)).catch(() => {});
+
     // Age-based eviction: remove items older than 15 minutes (900,000ms)
     const now = Date.now();
     for (let i = localEdgeLoggingBuffer.length - 1; i >= 0; i--) {
