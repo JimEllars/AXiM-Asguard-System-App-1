@@ -124,13 +124,13 @@ async function pushThreatTelemetry(env: Env, eventType: string, ip: string, deta
     structuredLog("error", "telemetry_push_failed", null, err);
     if (env.TELEMETRY_DLQ_KV) {
         try {
-            await env.TELEMETRY_DLQ_KV.put(`dlq:${Date.now()}-${Math.random()}`, JSON.stringify({
+            env.TELEMETRY_DLQ_KV.put(`dlq:${Date.now()}-${Math.random()}`, JSON.stringify({
                 id: `dlq-${Date.now()}`,
                 timestamp: Date.now(),
                 originNode: "UNKNOWN",
                 errorReason: String(err),
                 payload: payload
-            }));
+            })).catch((err: any) => { localEdgeLoggingBuffer.push({ ts: Date.now(), level: "error", msg: "KV Error", error: err ? String(err) : "Unknown Error" }) });
         } catch(dlqErr) {
             // failed to put to dlq
         }
@@ -492,7 +492,7 @@ async function runMaintenanceSweep(env: Env, ctx: ExecutionContext, sweepType: "
       }
 
       if (anomalyQueue.length > 0) {
-        await env.ASGUARD_TELEMETRY.put("anomaly_queue", JSON.stringify(anomalyQueue), { expirationTtl: 86400 });
+        ctx.waitUntil(env.ASGUARD_TELEMETRY.put("anomaly_queue", JSON.stringify(anomalyQueue), { expirationTtl: 86400 }).catch((err: any) => { localEdgeLoggingBuffer.push({ ts: Date.now(), level: "error", msg: "KV Error", error: err ? String(err) : "Unknown Error" }) }));
       } else {
         await env.ASGUARD_TELEMETRY.delete("anomaly_queue");
       }
@@ -555,14 +555,14 @@ async function runMaintenanceSweep(env: Env, ctx: ExecutionContext, sweepType: "
       });
 
       // Write the 24-hour summary metrics to ASGUARD_TELEMETRY
-      await env.ASGUARD_TELEMETRY.put("telemetry:summary:24h", JSON.stringify({
+      ctx.waitUntil(env.ASGUARD_TELEMETRY.put("telemetry:summary:24h", JSON.stringify({
          totalIntercepted24h,
          aiUnsafeCount24h: aiThreatCount24h,
          floodBans24h,
          activeBlocklistCount,
          timestamp: now,
          appOriginBreakdown: appOriginBreakdown24h
-      }), { expirationTtl: 86400 });
+      }), { expirationTtl: 86400 }).catch((err: any) => { localEdgeLoggingBuffer.push({ ts: Date.now(), level: "error", msg: "KV Error", error: err ? String(err) : "Unknown Error" }) }));
 
       if (aiThreatCount24h >= 5) {
          const alertPayload = {
@@ -599,7 +599,7 @@ async function runMaintenanceSweep(env: Env, ctx: ExecutionContext, sweepType: "
   };
 
   try {
-    await env.ASGUARD_TELEMETRY.put("system_health_heartbeat", JSON.stringify(heartbeat));
+    ctx.waitUntil(env.ASGUARD_TELEMETRY.put("system_health_heartbeat", JSON.stringify(heartbeat)).catch((err: any) => { localEdgeLoggingBuffer.push({ ts: Date.now(), level: "error", msg: "KV Error", error: err ? String(err) : "Unknown Error" }) }));
   } catch(e) {}
 
   structuredLog("info", "cron_daily_maintenance_completed", null, { timestamp: now, expiredKeysPurged: expiredKeysPurged });
@@ -660,7 +660,7 @@ export default {
                   const token = crypto.randomUUID().replace(/-/g, '');
 
                   if (env.ASGUARD_KV) {
-                     await env.ASGUARD_KV.put(`action_token:${token}`, JSON.stringify({ ip }), { expirationTtl: 86400 });
+                     ctx.waitUntil(env.ASGUARD_KV.put(`action_token:${token}`, JSON.stringify({ ip }), { expirationTtl: 86400 }).catch((err: any) => { localEdgeLoggingBuffer.push({ ts: Date.now(), level: "error", msg: "KV Error", error: err ? String(err) : "Unknown Error" }) }));
                   }
 
                   emailHtml += `
@@ -1173,7 +1173,7 @@ export default {
         let auditPromises: Promise<any>[] = [];
         for (const target of targets) {
           if (action === "block") {
-            await env.ASGUARD_BLACKLIST.put(`ip:${target}`, "1", { expirationTtl: ttl });
+            ctx.waitUntil(env.ASGUARD_BLACKLIST.put(`ip:${target}`, "1", { expirationTtl: ttl }).catch((err: any) => { localEdgeLoggingBuffer.push({ ts: Date.now(), level: "error", msg: "KV Error", error: err ? String(err) : "Unknown Error" }) }));
           }
 
           anomalyQueue = anomalyQueue.filter(item => item.anomalyIp !== target);
@@ -1186,7 +1186,7 @@ export default {
             authorizedByWallet,
             timestamp: now + triagedCount // slight offset for unique keys
           };
-          auditPromises.push(env.ASGUARD_TELEMETRY.put(`audit:${auditLog.timestamp}`, JSON.stringify(auditLog)));
+          ctx.waitUntil(env.ASGUARD_TELEMETRY.put(`audit:${auditLog.timestamp}`, JSON.stringify(auditLog)).catch((err: any) => { localEdgeLoggingBuffer.push({ ts: Date.now(), level: "error", msg: "KV Error", error: err ? String(err) : "Unknown Error" }) }));
         }
 
         await Promise.all(auditPromises);
@@ -1282,7 +1282,7 @@ export default {
         existingData.status = "active";
         existingData.retryCount = 0;
 
-        await env.ASGUARD_TELEMETRY.put(targetKvKey, JSON.stringify(existingData));
+        ctx.waitUntil(env.ASGUARD_TELEMETRY.put(targetKvKey, JSON.stringify(existingData)).catch((err: any) => { localEdgeLoggingBuffer.push({ ts: Date.now(), level: "error", msg: "KV Error", error: err ? String(err) : "Unknown Error" }) }));
 
         const authorizedByWallet = request.headers.get("X-Asguard-Signature") || "UNKNOWN";
         const timestamp = Date.now();
@@ -1438,7 +1438,7 @@ export default {
                   if (existingDlqDataStr) {
                     const existingDlqData = JSON.parse(existingDlqDataStr);
                     existingDlqData.retryCount = (existingDlqData.retryCount || 0) + 1;
-                    await env.ASGUARD_TELEMETRY.put(targetKvKey, JSON.stringify(existingDlqData));
+                    ctx.waitUntil(env.ASGUARD_TELEMETRY.put(targetKvKey, JSON.stringify(existingDlqData)).catch((err: any) => { localEdgeLoggingBuffer.push({ ts: Date.now(), level: "error", msg: "KV Error", error: err ? String(err) : "Unknown Error" }) }));
                   }
                 } catch (retryErr) {
                   structuredLog("error", "Failed to update DLQ retry count", request, retryErr);
@@ -1989,7 +1989,7 @@ export default {
         }
 
         if (env.ASGUARD_DYNAMIC_RULES) {
-          await env.ASGUARD_DYNAMIC_RULES.put(payload.rule.rule_name, JSON.stringify(payload.rule));
+          ctx.waitUntil(env.ASGUARD_DYNAMIC_RULES.put(payload.rule.rule_name, JSON.stringify(payload.rule)).catch((err: any) => { localEdgeLoggingBuffer.push({ ts: Date.now(), level: "error", msg: "KV Error", error: err ? String(err) : "Unknown Error" }) }));
         }
         return new Response(JSON.stringify({ success: true, message: "Rule deployed" }), {
           status: 200,
@@ -2337,7 +2337,7 @@ if (request.method === "POST" && url.pathname === "/api/v1/blocklist/add") {
         }
         const ttl = payload.ttl_seconds || 86400;
         if (env.IP_REPUTATION_KV) {
-          await env.IP_REPUTATION_KV.put(payload.ip, JSON.stringify({ reason: payload.reason, timestamp: Date.now() }), { expirationTtl: ttl });
+          ctx.waitUntil(env.IP_REPUTATION_KV.put(payload.ip, JSON.stringify({ reason: payload.reason, timestamp: Date.now() }), { expirationTtl: ttl }).catch((err: any) => { localEdgeLoggingBuffer.push({ ts: Date.now(), level: "error", msg: "KV Error", error: err ? String(err) : "Unknown Error" }) }));
         }
         return new Response(JSON.stringify({ success: true, ip: payload.ip, ttl }), { status: 200 });
       } catch (e) {
@@ -2478,7 +2478,7 @@ async function logTelemetry(data: any, env: Env) {
   try {
     // Interceptor Telemetry Pipeline Ingestion (Task 2)
     // We log to Supabase in background (error caught internally)
-    Promise.resolve(logToSupabase(data, env)).catch(() => {});
+    logToSupabase(data, env).catch((err: any) => { localEdgeLoggingBuffer.push({ ts: Date.now(), level: "error", msg: "Supabase Error", error: err ? String(err) : "Unknown Error" }) });
 
     // Age-based eviction: remove items older than 15 minutes (900,000ms)
     const now = Date.now();
@@ -2512,19 +2512,19 @@ async function logTelemetry(data: any, env: Env) {
       let toSave = [data, ...telemetryEvents, ...existing];
 
       const pruned = toSave.slice(0, 50);
-      await env.ASGUARD_TELEMETRY.put("recent_events", JSON.stringify(pruned));
+      env.ASGUARD_TELEMETRY.put("recent_events", JSON.stringify(pruned)).catch((err: any) => { localEdgeLoggingBuffer.push({ ts: Date.now(), level: "error", msg: "KV Error", error: err ? String(err) : "Unknown Error" }) });
 
       // Divert mutation error frames to a secondary background queue handler (DLQ pattern)
       if (mutationErrors.length > 0) {
         await Promise.all(mutationErrors.map(async (errFrame) => {
-           await env.ASGUARD_TELEMETRY.put(`dlq:${Date.now()}-${Math.random()}`, JSON.stringify({
+           env.ASGUARD_TELEMETRY.put(`dlq:${Date.now()}-${Math.random()}`, JSON.stringify({
               id: `dlq-${Date.now()}-${Math.random()}`,
               timestamp: Date.now(),
               originNode: "UNKNOWN", // Could be enriched if available
               droppedRoute: "worker_buffer",
               errorReason: "Mutation Error Diverted from Buffer",
               payload: errFrame
-           }));
+           })).catch((err: any) => { localEdgeLoggingBuffer.push({ ts: Date.now(), level: "error", msg: "KV Error", error: err ? String(err) : "Unknown Error" }) });
         }));
       }
     };
