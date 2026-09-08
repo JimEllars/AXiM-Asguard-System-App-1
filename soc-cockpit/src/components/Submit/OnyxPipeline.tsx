@@ -244,7 +244,7 @@ export default function OnyxPipeline() {
 
         {/* Dropzone */}
         <div
-          className={`border-2 border-dashed rounded-lg p-8 flex flex-col items-center justify-center transition-colors cursor-pointer ${file ? 'border-emerald-600 bg-emerald-950/20' : 'border-slate-700 hover:border-slate-500 bg-slate-950/50'}`}
+          className={`border-2 border-dashed rounded-lg p-8 flex flex-col items-center justify-center transition-all duration-300 shadow-inner cursor-pointer relative ${file ? 'border-emerald-600 bg-emerald-950/20' : 'border-slate-700 hover:border-slate-400 bg-slate-900/30 hover:bg-slate-900/60'}`}
           onDrop={handleDrop}
           onDragOver={handleDragOver}
           onClick={() => fileInputRef.current?.click()}

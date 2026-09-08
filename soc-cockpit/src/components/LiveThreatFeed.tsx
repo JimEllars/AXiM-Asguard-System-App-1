@@ -282,7 +282,7 @@ export default function LiveThreatFeed() {
   });
 
   const velocityShift = velocityHistory.length > 0 ? velocityHistory[velocityHistory.length - 1] : 'none';
-  const [realtimeStatus, setRealtimeStatus] = useState<'CONNECTED' | 'DISCONNECTED' | 'ERROR'>('DISCONNECTED');
+  const [realtimeStatus, setRealtimeStatus] = useState<'CONNECTED' | 'DISCONNECTED' | 'ERROR' | 'RECONNECTING'>('RECONNECTING');
   const [retryCount, setRetryCount] = useState<number>(0);
   const activeAccount = useActiveAccount();
 
@@ -741,7 +741,7 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
                 currentRetry = 0;
                 setRetryCount(0);
             } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
-                setRealtimeStatus(status === 'CLOSED' ? 'DISCONNECTED' : 'ERROR');
+                setRealtimeStatus('RECONNECTING');
                 // Auto-Heal backoff
                 const backoffIntervals = [2000, 5000, 10000];
                 const delay = backoffIntervals[Math.min(currentRetry, backoffIntervals.length - 1)];
@@ -1466,6 +1466,19 @@ const handlePurgeDlqItem = async (id: string) => {
 
       {/* AI Guard Status & Cron Automation */}
       <div className="flex flex-wrap items-center gap-3 mb-2">
+        {/* Realtime Status Badge */}
+        <div className={`text-xs px-3 py-1.5 rounded-md font-mono flex items-center gap-2 w-max border ${
+           realtimeStatus === 'CONNECTED' ? 'bg-emerald-950/50 border-emerald-900 text-emerald-400' :
+           realtimeStatus === 'RECONNECTING' ? 'bg-amber-950/50 border-amber-900 text-amber-400 animate-pulse' :
+           'bg-red-950/50 border-red-900 text-red-400'
+        }`}>
+           <span className={`w-2 h-2 rounded-full ${
+             realtimeStatus === 'CONNECTED' ? 'bg-emerald-500' :
+             realtimeStatus === 'RECONNECTING' ? 'bg-amber-500 animate-bounce' :
+             'bg-red-500'
+           }`}></span>
+           {realtimeStatus === 'CONNECTED' ? 'RT: CONNECTED' : realtimeStatus === 'RECONNECTING' ? 'RT: RECONNECTING' : 'RT: OFFLINE'}
+        </div>
         <div className="text-xs bg-purple-950/50 border border-purple-900 px-3 py-1.5 rounded-md text-purple-400 font-mono flex items-center gap-2 w-max">
           <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
           WORKERS_AI_GUARD: LLAMA-GUARD-3 ACTIVE
@@ -1935,7 +1948,7 @@ const handlePurgeDlqItem = async (id: string) => {
                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                           <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
                         </div>
-                        <div className="text-slate-400 font-mono text-sm tracking-wider uppercase">Perimeter Shield Fully Functional: Zero Threat Anomalies Detected</div>
+                        <div className="border border-slate-800/50 bg-slate-950/20 rounded font-mono p-6 text-center text-xs text-slate-500 w-full uppercase">Perimeter Shield Fully Functional: Zero Threat Anomalies Detected</div>
                      </div>
                   </div>
                ) : (
@@ -2135,7 +2148,7 @@ const handlePurgeDlqItem = async (id: string) => {
                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                           <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
                         </div>
-                        <div className="text-slate-400 font-mono text-sm tracking-wider uppercase">Perimeter Shield Active: Zero Edge Drop Anomalies Detected</div>
+                        <div className="border border-slate-800/50 bg-slate-950/20 rounded font-mono p-6 text-center text-xs text-slate-500 w-full uppercase">Perimeter Shield Active: Zero Edge Drop Anomalies Detected</div>
                      </div>
                   </div>
                ) : (
@@ -2261,7 +2274,7 @@ const handlePurgeDlqItem = async (id: string) => {
                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                           <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
                         </div>
-                        <div className="text-slate-400 font-mono text-sm tracking-wider uppercase">Perimeter Shield Active: Zero Edge Drop Anomalies Detected</div>
+                        <div className="border border-slate-800/50 bg-slate-950/20 rounded font-mono p-6 text-center text-xs text-slate-500 w-full uppercase">Perimeter Shield Active: Zero Edge Drop Anomalies Detected</div>
                      </div>
                   </div>
                ) : (
@@ -2437,7 +2450,7 @@ const handlePurgeDlqItem = async (id: string) => {
                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                           <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
                         </div>
-                        <div className="text-slate-400 font-mono text-sm tracking-wider uppercase">[ SYSTEM INTEGRITY EXCELLENT: DEAD LETTER QUEUE VACANT ]</div>
+                        <div className="border border-slate-800/50 bg-slate-950/20 rounded font-mono p-6 text-center text-xs text-slate-500 w-full uppercase">[ SYSTEM INTEGRITY EXCELLENT: DEAD LETTER QUEUE VACANT ]</div>
                      </div>
                   </div>
                ) : (
