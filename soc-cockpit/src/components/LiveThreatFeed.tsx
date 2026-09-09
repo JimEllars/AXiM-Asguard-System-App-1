@@ -233,6 +233,7 @@ export default function LiveThreatFeed() {
   const [healthStatus, setHealthStatus] = useState<'ok' | 'degraded' | 'unknown'>('unknown');
   const [globalThreatLevel, setGlobalThreatLevel] = useState<string>('LOW');
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isReconnecting, setIsReconnecting] = useState(false);
   const [isCooldown, setIsCooldown] = useState(false);
   const [edgeMetrics, setEdgeMetrics] = useState({ rateLimitSize: 0, penaltyLedgerSize: 0 });
   const [lastHeartbeat, setLastHeartbeat] = useState<number | null>(null);

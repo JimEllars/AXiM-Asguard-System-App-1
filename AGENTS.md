@@ -1,0 +1,4 @@
+- **Middleware and Error Recovery**: All `try/catch` handlers for auth and routing have been fortified in Next.js middleware and API components.
+- **Constant Time Ingestion**: The edge ingest route verifies a Bearer token cryptographically via an XOR bitwise length check (constant time) before unmarshaling the payload schema.
+- **Non-blocking KV**: All external Cloudflare side effects and Supabase REST executions have been correctly pushed into Cloudflare's `ExecutionContext` stack via `ctx.waitUntil()` inside `asguard-interceptor/src/telemetry.ts` and `index.ts`.
+- **WS Channels Cleanup**: Real-time websocket channels within `LiveThreatFeed.tsx` perform accurate optimistic UI resets and strict teardowns.

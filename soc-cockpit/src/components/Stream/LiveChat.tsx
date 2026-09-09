@@ -37,6 +37,7 @@ export default function LiveChat({ isAuthenticated = false }: LiveChatProps) {
     { id: 3, user: 'StormChaserBob', text: 'Checking radar now, massive cell developing.', time: '12:03 PM', isSystem: false }
   ]);
   const [inputValue, setInputValue] = useState('');
+  const [isReconnecting, setIsReconnecting] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -80,11 +81,17 @@ export default function LiveChat({ isAuthenticated = false }: LiveChatProps) {
           Ecosystem Comms
         </h3>
         <div className="flex items-center gap-2 text-xs font-mono">
-          <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-          </span>
-          <span className="text-emerald-400">142 ONLINE</span>
+          {isReconnecting ? (
+            <span className="text-amber-500 animate-pulse">Reconnecting...</span>
+          ) : (
+            <>
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              <span className="text-emerald-400">142 ONLINE</span>
+            </>
+          )}
         </div>
       </div>
 
