@@ -140,7 +140,7 @@ export default function OnyxPipeline() {
 
       setStage('analyzing');
 
-      // Mock payload construction
+      // Payload construction
       const payload = {
         file: file.name,
         type: file.type,
@@ -154,8 +154,16 @@ export default function OnyxPipeline() {
 
       console.log('Onyx Pipeline Payload:', payload);
 
-      // Simulate network request
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Proxy request to Next.js route handler to securely attach ONYX_PIPELINE_SECRET
+      const ingestRes = await fetch('/api/ingest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!ingestRes.ok) {
+         throw new Error("Pipeline rejected payload");
+      }
 
       setStage('mitigated');
 

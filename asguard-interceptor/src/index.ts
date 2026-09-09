@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { TelemetryPayloadSchema, logToSupabase } from "./telemetry";
 import { sendEmailItMessage } from "./emailService";
 
@@ -67,6 +68,7 @@ function structuredLog(level: "error" | "warn" | "info", event: string, request:
 }
 
 export interface Env {
+  ONYX_PIPELINE_SECRET?: string;
   ASGUARD_KV?: any;
   EMAILIT_API_KEY: string;
   THREAT_DLQ_KV?: any;
@@ -836,9 +838,66 @@ export default {
           country: (request.cf && request.cf.country) ? request.cf.country : "XX",
           colo: (request.cf && request.cf.colo) ? request.cf.colo : "UNKNOWN"
         };
-        ctx.waitUntil(logTelemetry(payload, env));
+        ctx.waitUntil(logTelemetry(payload, env, ctx));
 
         return new Response("Unauthorized", { status: 401, headers: getCorsHeaders(request, env, isMutation) });
+      }
+    }
+
+
+
+    // Task 2: Secure Pipeline Ingestion Handshake
+    if (request.method === "POST" && url.pathname === "/api/v1/ingest") {
+      const authHeader = request.headers.get("Authorization");
+
+      // Constant-time comparison for ONYX_PIPELINE_SECRET
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+         return new Response("Unauthorized", { status: 401, headers: getCorsHeaders(request, env, isMutation) });
+      }
+
+      const token = authHeader.split(" ")[1];
+      const expectedToken = env.ONYX_PIPELINE_SECRET || "default_pipeline_secret";
+
+      // Cryptographically secure constant-time comparison
+      let isAuthorized = false;
+      if (token.length === expectedToken.length) {
+         let match = 0;
+         for (let i = 0; i < token.length; i++) {
+           match |= token.charCodeAt(i) ^ expectedToken.charCodeAt(i);
+         }
+         isAuthorized = match === 0;
+      }
+
+      if (!isAuthorized) {
+         return new Response("Unauthorized", { status: 401, headers: getCorsHeaders(request, env, isMutation) });
+      }
+
+      try {
+        const body = await request.json();
+
+        // Lightweight JSON payload validation
+        const IngestSchema = z.object({
+           file: z.string(),
+           type: z.string(),
+           size: z.number(),
+           metadata: z.object({
+             lat: z.number().optional(),
+             lng: z.number().optional(),
+             timestamp: z.number()
+           })
+        });
+
+        const parseResult = IngestSchema.safeParse(body);
+        if (!parseResult.success) {
+           return new Response("Invalid payload", { status: 400, headers: getCorsHeaders(request, env, isMutation) });
+        }
+
+        return new Response(JSON.stringify({ success: true, message: "Pipeline ingestion accepted" }), {
+           status: 200,
+           headers: { "Content-Type": "application/json", ...getCorsHeaders(request, env, isMutation) }
+        });
+      } catch (e) {
+        return new Response("Bad Request", { status: 400, headers: getCorsHeaders(request, env, isMutation) });
       }
     }
 
@@ -878,7 +937,7 @@ export default {
           appOrigin: "axim-asguard",
           details: { caller_number, call_sid, recommendation, risk_score }
         };
-        ctx.waitUntil(logTelemetry(telemetryPayload, env).catch(e => {
+        ctx.waitUntil(logTelemetry(telemetryPayload, env, ctx).catch(e => {
             const buffer = localEdgeLoggingBuffer || [];
             buffer.push({ timestamp: Date.now(), level: 'error', message: 'Failed telemetry log' });
         }));
@@ -1735,7 +1794,7 @@ export default {
           try {
             if (payloadToReplay) {
                 // If payload is provided in the record, try to re-dispatch it
-                await logTelemetry(payloadToReplay, env);
+                await logTelemetry(payloadToReplay, env, ctx);
             }
 
             await Promise.all([
@@ -2303,7 +2362,7 @@ if (request.method === "POST" && url.pathname === "/api/v1/blocklist/add") {
           });
         }
 
-        ctx.waitUntil(logTelemetry(parseResult.data, env));
+        ctx.waitUntil(logTelemetry(parseResult.data, env, ctx));
 
 
         ctx.waitUntil(dispatchCriticalAlert(env, parseResult.data, request, ctx));
@@ -2423,7 +2482,7 @@ if (request.method === "POST" && url.pathname === "/api/v1/blocklist/add") {
                payload: parseResult.data
             })));
         } else {
-            ctx.waitUntil(logTelemetry(parseResult.data, env));
+            ctx.waitUntil(logTelemetry(parseResult.data, env, ctx));
         }
 
         ctx.waitUntil(dispatchCriticalAlert(env, parseResult.data, request, ctx));
@@ -2474,11 +2533,12 @@ async function dispatchOnyxRelay(env: Env, data: any) {
    }
 }
 
-async function logTelemetry(data: any, env: Env) {
+async function logTelemetry(data: any, env: Env, ctx?: ExecutionContext) {
   try {
     // Interceptor Telemetry Pipeline Ingestion (Task 2)
     // We log to Supabase in background (error caught internally)
-    logToSupabase(data, env).catch((err: any) => { localEdgeLoggingBuffer.push({ ts: Date.now(), level: "error", msg: "Supabase Error", error: err ? String(err) : "Unknown Error" }) });
+    const supabaseLogPromise = logToSupabase(data, env, ctx).catch((err: any) => { localEdgeLoggingBuffer.push({ ts: Date.now(), level: "error", msg: "Supabase Error", error: err ? String(err) : "Unknown Error" }) });
+    if (ctx) ctx.waitUntil(supabaseLogPromise);
 
     // Age-based eviction: remove items older than 15 minutes (900,000ms)
     const now = Date.now();

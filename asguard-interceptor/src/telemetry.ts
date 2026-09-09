@@ -4,6 +4,9 @@ export const TelemetryPayloadSchema = z.object({
   sourceIp: z.string().ip(),
   timestamp: z.number(),
   eventType: z.enum(['authentication_failure', 'signature_tampering', 'suspicious_activity', 'client_error', 'threat.blocked', 'rate_limit.exceeded', 'bot_challenge.failed', 'ip.quarantined', 'onyx_pipeline_job_executed', 'telephony.threat_evaluated']),
+  requestId: z.string().optional(),
+  executionDuration: z.number().optional(),
+  actionTaken: z.string().optional(),
   threatScore: z.number().optional(),
   severity: z.enum(['low', 'medium', 'high', 'critical']),
   requestMethod: z.string().optional(),
@@ -29,35 +32,45 @@ export const TelemetryPayloadSchema = z.object({
 
 export type TelemetryPayload = z.infer<typeof TelemetryPayloadSchema>;
 
-export async function logToSupabase(payload: TelemetryPayload, env: any) {
-  try {
-    const supabaseUrl = env.SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL || 'https://mock.supabase.co';
-    const supabaseKey = env.SUPABASE_ANON_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'mock-key';
+export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: any) {
+  const executeLog = async () => {
+    try {
+      const supabaseUrl = env.SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL || 'https://mock.supabase.co';
+      const supabaseKey = env.SUPABASE_ANON_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'mock-key';
 
-    const res = await fetch(`${supabaseUrl}/rest/v1/security_events`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': supabaseKey,
-        'Authorization': `Bearer ${supabaseKey}`,
-        'Prefer': 'return=minimal'
-      },
-      body: JSON.stringify({
-        source_ip: payload.sourceIp,
-        timestamp: new Date(payload.timestamp).toISOString(),
-        event_type: payload.eventType,
-        severity: payload.severity,
-        country: payload.country,
-        action_taken: payload.details?.action_taken || 'logged',
-        threat_score: payload.edgeBotScore || payload.botScore || 0,
-        payload_details: payload.details || {}
-      })
-    });
+      const res = await fetch(`${supabaseUrl}/rest/v1/security_events`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify({
+          source_ip: payload.sourceIp,
+          timestamp: new Date(payload.timestamp).toISOString(),
+          event_type: payload.eventType,
+          severity: payload.severity,
+          country: payload.country,
+          action_taken: payload.actionTaken || payload.details?.action_taken || 'logged',
+          threat_score: payload.threatScore || payload.edgeBotScore || payload.botScore || 0,
+          request_id: payload.requestId,
+          execution_duration: payload.executionDuration,
+          payload_details: payload.details || {}
+        })
+      });
 
-    if (!res.ok) {
-       console.error(`Supabase write failed: ${res.status} ${res.statusText}`);
+      if (!res.ok) {
+         console.error(`Supabase write failed: ${res.status} ${res.statusText}`);
+      }
+    } catch (error) {
+       console.error("Failed to write to Supabase security_events:", error);
     }
-  } catch (error) {
-     console.error("Failed to write to Supabase security_events:", error);
+  };
+
+  if (ctx && ctx.waitUntil) {
+    ctx.waitUntil(executeLog());
+  } else {
+    await executeLog();
   }
 }

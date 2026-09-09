@@ -1584,3 +1584,61 @@ describe("Autonomous Blocklist Endpoint", () => {
     });
   });
 });
+
+describe("Pipeline Ingestion Endpoint", () => {
+  let ingestEnv: any;
+  let ingestCtx: any;
+
+  beforeEach(() => {
+    ingestEnv = {
+      ASGUARD_KV: { put: vi.fn(), get: vi.fn() },
+      ASGUARD_BLACKLIST: { list: vi.fn().mockResolvedValue({ keys: [] }) },
+      ASGUARD_TELEMETRY: { put: vi.fn(), get: vi.fn() },
+      EMAILIT_API_KEY: "test",
+      ASGUARD_API_KEY: "test",
+      ALLOWED_ORIGIN: "*"
+    };
+    ingestCtx = { waitUntil: vi.fn() };
+  });
+
+  it("rejects without authorization", async () => {
+    const request = new Request("http://localhost/api/v1/ingest", {
+      method: "POST",
+      body: JSON.stringify({ file: "test.jpg", type: "image/jpeg", size: 1024, metadata: { timestamp: Date.now() } })
+    });
+    const response = await worker.fetch(request, ingestEnv, ingestCtx);
+    expect(response.status).toBe(401);
+  });
+
+  it("rejects with invalid token", async () => {
+    const request = new Request("http://localhost/api/v1/ingest", {
+      method: "POST",
+      headers: { Authorization: "Bearer wrong_token" },
+      body: JSON.stringify({ file: "test.jpg", type: "image/jpeg", size: 1024, metadata: { timestamp: Date.now() } })
+    });
+    const response = await worker.fetch(request, ingestEnv, ingestCtx);
+    expect(response.status).toBe(401);
+  });
+
+  it("accepts with valid token and valid payload", async () => {
+    ingestEnv.ONYX_PIPELINE_SECRET = "test_secret";
+    const request = new Request("http://localhost/api/v1/ingest", {
+      method: "POST",
+      headers: { Authorization: "Bearer test_secret" },
+      body: JSON.stringify({ file: "test.jpg", type: "image/jpeg", size: 1024, metadata: { timestamp: Date.now() } })
+    });
+    const response = await worker.fetch(request, ingestEnv, ingestCtx);
+    expect(response.status).toBe(200);
+  });
+
+  it("rejects valid token but invalid payload", async () => {
+    ingestEnv.ONYX_PIPELINE_SECRET = "test_secret";
+    const request = new Request("http://localhost/api/v1/ingest", {
+      method: "POST",
+      headers: { Authorization: "Bearer test_secret" },
+      body: JSON.stringify({ file: "test.jpg" }) // missing fields
+    });
+    const response = await worker.fetch(request, ingestEnv, ingestCtx);
+    expect(response.status).toBe(400);
+  });
+});
