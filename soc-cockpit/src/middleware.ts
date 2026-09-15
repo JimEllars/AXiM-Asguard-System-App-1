@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   try {
     const pathname = request.nextUrl.pathname;
 
@@ -20,37 +20,77 @@ export function middleware(request: NextRequest) {
     // Ensure Cloudflare edge standards are met with request.cookies.getAll() and response.cookies.set()
     const allCookies = request.cookies.getAll();
     const sessionCookie = allCookies.find(c => c.name === 'axim_session');
-    const asguardAuthToken = allCookies.find(c => c.name === 'asguard_auth_token');
+    const tokenQueryParam = request.nextUrl.searchParams?.get('token');
+    const token = sessionCookie?.value || tokenQueryParam;
 
-    let response = NextResponse.next();
-
-    // Only protect SOC operator routes, which are essentially anything not ignored above
-    if (!sessionCookie && !asguardAuthToken) {
-      const currentUrl = request.nextUrl.pathname + request.nextUrl.search;
-      const returnUrl = encodeURIComponent(`https://asguard.axim.us.com${currentUrl}`);
-
-      const redirectUrl = `https://passport.axim.us.com/login?redirect=https://asguard.axim.us.com/auth/callback&returnUrl=${returnUrl}`;
-
-      response = NextResponse.redirect(redirectUrl, 307);
+    if (!token) {
+      const redirectUrl = `https://passport.axim.us.com/login?redirect_to=https://asguard.axim.us.com`;
+      return NextResponse.redirect(redirectUrl, 307);
     }
 
-    // To meet the requirement "response.cookies.set() patterns compatible with OpenNext edge builds",
-    // we ensure we're copying existing response cookies if we did any modification (mock setting here if needed).
-    if (sessionCookie) {
+    // Verify token using AXiM Passport SSO
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+
+    let isSuperUser = false;
+    let userEmail = '';
+
+    try {
+      const res = await fetch('https://passport.axim.us.com/api/v1/auth/verify-token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ token }),
+        signal: controller.signal as any,
+      });
+
+      clearTimeout(timeout);
+
+      if (res.ok) {
+        const data = await res.json();
+        userEmail = data.email || '';
+
+        // Explicitly recognize Super Users
+        if (userEmail === 'james.ellars@axim.us.com' || userEmail === 'jrellars@gmail.com') {
+           isSuperUser = true;
+        } else if (data.role === 'super_user') {
+           isSuperUser = true;
+        }
+      } else {
+        const redirectUrl = `https://passport.axim.us.com/login?redirect_to=https://asguard.axim.us.com`;
+        return NextResponse.redirect(redirectUrl, 307);
+      }
+    } catch (e) {
+      // In case passport is down, we might need a fallback or redirect
+      const redirectUrl = `https://passport.axim.us.com/login?redirect_to=https://asguard.axim.us.com`;
+      return NextResponse.redirect(redirectUrl, 307);
+    }
+
+    const response = NextResponse.next();
+
+    if (isSuperUser) {
+       response.headers.set('x-user-role', 'super_user');
+    }
+    if (userEmail) {
+       response.headers.set('x-user-email', userEmail);
+    }
+
+    // Pass down the token as a cookie
+    if (token) {
       response.cookies.set({
         name: 'axim_session',
-        value: sessionCookie.value,
+        value: token,
         path: '/',
         httpOnly: true,
         secure: true,
         sameSite: 'lax',
       });
-    }
-
-    if (asguardAuthToken) {
+      // We also set the auth token for layout guards that require 'asguard_auth_token'
+      // although layout guard expects a JWT with specific claims which we might mock/issue.
       response.cookies.set({
         name: 'asguard_auth_token',
-        value: asguardAuthToken.value,
+        value: token,
         path: '/',
         httpOnly: true,
         secure: true,
@@ -60,23 +100,13 @@ export function middleware(request: NextRequest) {
 
     return response;
   } catch (error) {
-    // If environment variables are missing or Edge cookie parsing encounters network drops,
-    // fall back to a graceful redirect or allow cached public asset bypass without throwing uncaught 500 runtime errors.
     console.error('Middleware Error:', error);
-    return NextResponse.redirect('https://passport.axim.us.com/login', 307);
+    return NextResponse.redirect('https://passport.axim.us.com/login?redirect_to=https://asguard.axim.us.com', 307);
   }
 }
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - api (API routes)
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico, sitemap.xml, robots.txt (metadata files)
-     * - public (public assets)
-     */
     '/((?!api|_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt|public/).*)',
   ],
 };
