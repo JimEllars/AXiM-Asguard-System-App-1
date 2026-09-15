@@ -38,7 +38,7 @@ export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: a
       const supabaseUrl = env.SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL || 'https://mock.supabase.co';
       const supabaseKey = env.SUPABASE_ANON_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'mock-key';
 
-      const res = await fetch(`${supabaseUrl}/rest/v1/security_events`, {
+      const res = await fetch(`${supabaseUrl}/rest/v1/telemetry_events`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

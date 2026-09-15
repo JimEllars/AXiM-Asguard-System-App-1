@@ -200,47 +200,31 @@ async function evaluateEdgeSafety(env: Env, inputContent: string) {
   }
 }
 
+
 async function dispatchCriticalAlert(env: Env, eventPayload: any, request: Request | null, ctx: ExecutionContext) {
   try {
-    if (!env.ASGUARD_ALERT_WEBHOOK_URL) return;
-    if (eventPayload.severity !== "critical" && eventPayload.severity !== "high") return;
+    if (eventPayload.severity !== "critical") return;
 
-    let webhookSuccess = false;
-    try {
-      // Non-blocking fetch
-      const response = await fetch(env.ASGUARD_ALERT_WEBHOOK_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          alert: "Critical Security Incident",
-          event: eventPayload
-        })
-      });
-      if (response.ok) {
-        webhookSuccess = true;
-      }
-    } catch (e) {
-      structuredLog("error", "Webhook dispatch failed", request, e);
-    }
+    if (env.EMAILIT_API_KEY && env.ASGUARD_ALERT_EMAIL) {
+      const subject = `[CRITICAL ALERT] Security Incident Detected from ${eventPayload.sourceIp || 'Unknown IP'}`;
 
-    if (!webhookSuccess) {
-      if (env.ASGUARD_ALERT_EMAIL) {
-        structuredLog("warn", "critical_alert_webhook_failed_fallback_triggered", request, {
-          event: eventPayload,
-          fallbackEmail: env.ASGUARD_ALERT_EMAIL
-        });
+      const html = `
+        <h2>Critical Security Incident</h2>
+        <p><strong>Incident ID:</strong> ${eventPayload.requestId || 'N/A'}</p>
+        <p><strong>Blocked IP:</strong> ${eventPayload.sourceIp || 'Unknown'}</p>
+        <p><strong>Country:</strong> ${eventPayload.country || 'Unknown'}</p>
+        <p><strong>Attack Vector:</strong> ${eventPayload.eventType || 'Unknown'}</p>
+        <p><strong>Target Resource:</strong> ${eventPayload.targetResource || 'Unknown'}</p>
+        <p><strong>Timestamp:</strong> ${new Date(eventPayload.timestamp || Date.now()).toISOString()}</p>
+        <p><a href="https://asguard.axim.us.com/stream">View Incident in SOC Cockpit</a></p>
+      `;
 
-        ctx.waitUntil((async () => {
-          // Out-of-band alert payload dispatch simulation
-          console.log(`[ALERT FALLBACK] Dispatching alert to ${env.ASGUARD_ALERT_EMAIL} for payload:`, eventPayload);
-        })());
-      }
+      ctx.waitUntil(sendEmailItMessage(env, env.ASGUARD_ALERT_EMAIL, [], subject, html));
     }
   } catch (e) {
     structuredLog("error", "Critical alert fallback failed", request, e);
   }
+
 }
 
 

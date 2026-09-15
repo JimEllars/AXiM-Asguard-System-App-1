@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 
+// Use a fallback for mock data in case stream is empty
 const MOCK_ATTACKS = [
   { id: 1, lat: 55.7558, lng: 37.6173, country: 'RU', intensity: 8, severity: 'high' },
   { id: 2, lat: 39.9042, lng: 116.4074, country: 'CN', intensity: 7, severity: 'high' },
@@ -9,10 +10,58 @@ const MOCK_ATTACKS = [
   { id: 6, lat: 28.6139, lng: 77.2090, country: 'IN', intensity: 5, severity: 'medium' },
 ];
 
+interface ThreatEvent {
+  id: string;
+  lat: number;
+  lng: number;
+  country: string;
+  severity: string;
+  timestamp: number;
+}
+
 export default function GlobalThreatMap() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [pulses, setPulses] = useState<{index: number, timestamp: number}[]>([]);
+
+  // Keep real-time stream of attacks
+  const [streamedAttacks, setStreamedAttacks] = useState<ThreatEvent[]>([]);
+  const [pulses, setPulses] = useState<{id: string, lat: number, lng: number, severity: string, timestamp: number}[]>([]);
+
+  useEffect(() => {
+    const eventSource = new EventSource('/api/ingest/stream');
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'ping' || data.type === 'connected') return;
+
+        // Ensure bounded memory (last 100 events)
+        setStreamedAttacks(prev => {
+          const updated = [data, ...prev].slice(0, 100);
+          return updated;
+        });
+
+        // Add a pulse for the new event
+        setPulses(prev => {
+          const now = Date.now();
+          const active = prev.filter(p => now - p.timestamp < 2000); // 2 seconds TTL
+          return [...active, {
+            id: data.id || Math.random().toString(36).substr(2, 9),
+            lat: data.lat || 0,
+            lng: data.lng || 0,
+            severity: data.severity || 'low',
+            timestamp: now
+          }];
+        });
+      } catch (err) {
+        console.error("Error parsing stream event", err);
+      }
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, []);
 
   // Animation and resize logic for WebGL/Canvas
   useEffect(() => {
@@ -37,14 +86,22 @@ export default function GlobalThreatMap() {
     window.addEventListener('resize', resize);
     resize();
 
-    // Pulse generator
+    // Pulse generator for MOCK_ATTACKS if stream is empty
     const pulseInterval = setInterval(() => {
-      const index = Math.floor(Math.random() * MOCK_ATTACKS.length);
-      setPulses(prev => {
-        const now = Date.now();
-        const active = prev.filter(p => now - p.timestamp < 2000); // keep alive for 2 seconds
-        return [...active, { index, timestamp: now }];
-      });
+      if (streamedAttacks.length === 0) {
+        const mockAttack = MOCK_ATTACKS[Math.floor(Math.random() * MOCK_ATTACKS.length)];
+        setPulses(prev => {
+          const now = Date.now();
+          const active = prev.filter(p => now - p.timestamp < 2000);
+          return [...active, {
+            id: mockAttack.id.toString() + now,
+            lat: mockAttack.lat,
+            lng: mockAttack.lng,
+            severity: mockAttack.severity,
+            timestamp: now
+          }];
+        });
+      }
     }, 800);
 
     const render = () => {
@@ -69,13 +126,15 @@ export default function GlobalThreatMap() {
         ctx!.fill();
       });
 
+      const itemsToRender = streamedAttacks.length > 0 ? streamedAttacks : MOCK_ATTACKS;
+
       // Render attacks
-      MOCK_ATTACKS.forEach((attack, i) => {
+      itemsToRender.forEach((attack) => {
         // Approximate lat/lng to canvas x/y
         const x = ((attack.lng + 180) / 360) * width;
         const y = ((90 - attack.lat) / 180) * height;
 
-        const isHighSeverity = attack.severity === 'high';
+        const isHighSeverity = attack.severity === 'high' || attack.severity === 'critical';
 
         // Base dot
         ctx!.beginPath();
@@ -86,49 +145,52 @@ export default function GlobalThreatMap() {
         // Label
         ctx!.fillStyle = '#94a3b8'; // slate-400
         ctx!.font = '10px monospace';
-        ctx!.fillText(attack.country, x + 8, y + 4);
+        ctx!.fillText(attack.country || 'XX', x + 8, y + 4);
+      });
 
-        // Render active pulses
-        const activePulses = pulses.filter(p => p.index === i);
-        activePulses.forEach(pulse => {
-          const age = now - pulse.timestamp;
-          if (age < 2000) {
-            const progress = age / 2000;
-            const radius = 3 + (progress * attack.intensity * 4);
-            const opacity = 1 - progress;
+      // Render active pulses
+      pulses.forEach(pulse => {
+        const x = ((pulse.lng + 180) / 360) * width;
+        const y = ((90 - pulse.lat) / 180) * height;
+        const isHighSeverity = pulse.severity === 'high' || pulse.severity === 'critical';
+        const age = now - pulse.timestamp;
 
-            ctx!.beginPath();
-            ctx!.arc(x, y, radius, 0, Math.PI * 2);
-            ctx!.strokeStyle = isHighSeverity ? `rgba(239, 68, 68, ${opacity})` : `rgba(0, 240, 255, ${opacity})`;
-            ctx!.lineWidth = 2;
-            ctx!.stroke();
+        if (age < 2000) {
+          const progress = age / 2000;
+          const radius = 3 + (progress * 32); // arbitrary scale for intensity
+          const opacity = 1 - progress;
 
-            // Render trajectory arc to arbitrary center (representing Edge / Origin)
-            const targetX = width / 2;
-            const targetY = height / 2;
+          ctx!.beginPath();
+          ctx!.arc(x, y, radius, 0, Math.PI * 2);
+          ctx!.strokeStyle = isHighSeverity ? `rgba(239, 68, 68, ${opacity})` : `rgba(0, 240, 255, ${opacity})`;
+          ctx!.lineWidth = 2;
+          ctx!.stroke();
 
-            ctx!.beginPath();
-            ctx!.moveTo(x, y);
-            // control point for arc
-            const cpX = (x + targetX) / 2;
-            const cpY = Math.min(y, targetY) - 50;
-            ctx!.quadraticCurveTo(cpX, cpY, targetX, targetY);
+          // Render trajectory arc to arbitrary center (representing Edge / Origin)
+          const targetX = width / 2;
+          const targetY = height / 2;
 
-            // Gradient for arc
-            const grad = ctx!.createLinearGradient(x, y, targetX, targetY);
-            if (isHighSeverity) {
-               grad.addColorStop(0, `rgba(239, 68, 68, ${opacity * 0.5})`);
-               grad.addColorStop(1, 'rgba(239, 68, 68, 0)');
-            } else {
-               grad.addColorStop(0, `rgba(0, 240, 255, ${opacity * 0.5})`);
-               grad.addColorStop(1, 'rgba(0, 240, 255, 0)');
-            }
+          ctx!.beginPath();
+          ctx!.moveTo(x, y);
+          // control point for arc
+          const cpX = (x + targetX) / 2;
+          const cpY = Math.min(y, targetY) - 50;
+          ctx!.quadraticCurveTo(cpX, cpY, targetX, targetY);
 
-            ctx!.strokeStyle = grad;
-            ctx!.lineWidth = 1;
-            ctx!.stroke();
+          // Gradient for arc
+          const grad = ctx!.createLinearGradient(x, y, targetX, targetY);
+          if (isHighSeverity) {
+             grad.addColorStop(0, `rgba(239, 68, 68, ${opacity * 0.5})`);
+             grad.addColorStop(1, 'rgba(239, 68, 68, 0)');
+          } else {
+             grad.addColorStop(0, `rgba(0, 240, 255, ${opacity * 0.5})`);
+             grad.addColorStop(1, 'rgba(0, 240, 255, 0)');
           }
-        });
+
+          ctx!.strokeStyle = grad;
+          ctx!.lineWidth = 1;
+          ctx!.stroke();
+        }
       });
 
       animationFrameId = requestAnimationFrame(render);
@@ -140,7 +202,7 @@ export default function GlobalThreatMap() {
       clearInterval(pulseInterval);
       cancelAnimationFrame(animationFrameId);
     };
-  }, [pulses]);
+  }, [pulses, streamedAttacks]);
 
   return (
     <div ref={containerRef} className="w-full h-full relative bg-slate-950 rounded-xl border border-slate-800 overflow-hidden flex items-center justify-center p-4">

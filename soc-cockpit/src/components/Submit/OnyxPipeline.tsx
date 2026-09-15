@@ -154,14 +154,17 @@ export default function OnyxPipeline() {
 
       console.log('Onyx Pipeline Payload:', payload);
 
-      // Proxy request to Next.js route handler to securely attach ONYX_PIPELINE_SECRET
-      const ingestRes = await fetch('/api/ingest', {
+
+      // Dispatch the payload to the Onyx Mk3 triage endpoint
+      const onyxRes = await fetch('https://edge-bridge.axim.us.com/api/v1/onyx/summon', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Axim-Signature': process.env.NEXT_PUBLIC_ONYX_PIPELINE_SECRET || ''
+        },
         body: JSON.stringify(payload)
       });
-
-      if (!ingestRes.ok) {
+if (!onyxRes.ok) {
          throw new Error("Pipeline rejected payload");
       }
 
