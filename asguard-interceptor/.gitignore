@@ -3,3 +3,4 @@
 video/
 dist/
 .next/
+venv/\nvenv2/\n*.exe\n*.so\nnode_modules/
