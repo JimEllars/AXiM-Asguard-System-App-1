@@ -678,6 +678,11 @@ export default {
     env: Env,
     ctx: ExecutionContext,
   ): Promise<Response> {
+    const __start_time = Date.now();
+    let _isMutationFallback = request.method !== "GET" && request.method !== "HEAD" && request.method !== "OPTIONS";
+    try {
+      const response = await (async () => {
+
     const startTime = Date.now();
     let response: Response;
     try {
@@ -695,7 +700,29 @@ export default {
     }
     newResponse.headers.set("Server-Timing", serverTiming);
     return newResponse;
-  },
+
+      })();
+
+      const newHeaders = new Headers(response.headers);
+      const duration = Date.now() - __start_time;
+      newHeaders.set('Server-Timing', `edge-exec;dur=${duration};desc="Stateless Perimeter Check"`);
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: newHeaders
+      });
+    } catch (e) {
+      const duration = Date.now() - __start_time;
+      const headers = getCorsHeaders(request, env, _isMutationFallback);
+      // getCorsHeaders returns an object
+      const newHeaders = new Headers(headers as Record<string, string>);
+      newHeaders.set('Server-Timing', `edge-exec;dur=${duration};desc="Stateless Perimeter Check"`);
+      return new Response("Internal Edge Error", {
+        status: 500,
+        headers: newHeaders
+      });
+    }
+},
 
   async handle(
     request: Request,

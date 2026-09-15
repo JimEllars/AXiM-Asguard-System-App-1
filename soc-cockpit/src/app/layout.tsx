@@ -22,10 +22,37 @@ export default async function RootLayout({
   if (token) {
     try {
       // Decode JWT safely and strictly check for the required claim
-      const decoded = jwt.decode(token);
-      if (decoded && typeof decoded === 'object' && 'axim_internal_admin' in decoded) {
-        if (decoded.axim_internal_admin === true) {
-          hasAccess = true;
+      let decoded: any = jwt.decode(token);
+
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 1000);
+        // We try to verify via edge API, if that fails due to latency, we fall back to local cryptographic check
+        const aximCoreUrl = process.env.NEXT_PUBLIC_AXIM_CORE_API_URL || 'https://api.axim.us.com';
+        const res = await fetch(`${aximCoreUrl}/api/v1/auth/verify`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token }),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+           const body = await res.json();
+           if (body.valid && body.claims?.axim_internal_admin === true) {
+              hasAccess = true;
+           }
+        } else {
+           throw new Error("Edge auth failure");
+        }
+      } catch (e) {
+        // Fall back to local cryptographic check
+        const secret = process.env.JWT_SECRET || 'fallback_secret_must_be_32_bytes_long_min!';
+        decoded = jwt.verify(token, secret);
+        if (decoded && typeof decoded === 'object' && 'axim_internal_admin' in decoded) {
+          if (decoded.axim_internal_admin === true) {
+            hasAccess = true;
+          }
         }
       }
     } catch (err) {
