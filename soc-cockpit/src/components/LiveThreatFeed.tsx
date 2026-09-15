@@ -1,19 +1,31 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from 'react';
-import { useRouter, useSearchParams, usePathname } from 'next/navigation';
-import { z } from 'zod';
-import { supabase } from '@/utils/supabaseClient';
-import { useActiveAccount, useReadContract, useDisconnect, useActiveWallet } from 'thirdweb/react';
-import { createThirdwebClient, getContract } from 'thirdweb';
-import { arbitrum } from 'thirdweb/chains';
-
+import React, { useEffect, useState, useRef } from "react";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import { z } from "zod";
+import { supabase } from "@/utils/supabaseClient";
+import {
+  useActiveAccount,
+  useReadContract,
+  useDisconnect,
+  useActiveWallet,
+} from "thirdweb/react";
+import { createThirdwebClient, getContract } from "thirdweb";
+import { arbitrum } from "thirdweb/chains";
 
 const TelemetryPayloadSchema = z.object({
   sourceIp: z.string().ip(),
   timestamp: z.number(),
-  eventType: z.enum(['authentication_failure', 'signature_tampering', 'suspicious_activity', 'threat.blocked', 'rate_limit.exceeded', 'bot_challenge.failed', 'ip.quarantined']),
-  severity: z.enum(['low', 'medium', 'high', 'critical']),
+  eventType: z.enum([
+    "authentication_failure",
+    "signature_tampering",
+    "suspicious_activity",
+    "threat.blocked",
+    "rate_limit.exceeded",
+    "bot_challenge.failed",
+    "ip.quarantined",
+  ]),
+  severity: z.enum(["low", "medium", "high", "critical"]),
   requestMethod: z.string().optional(),
   targetResource: z.string().optional(),
   signatureMetadata: z.string().optional(),
@@ -54,22 +66,20 @@ interface AnomalyQueueItem {
   status: string;
 }
 
-
 const client = createThirdwebClient({
-  clientId: process.env.NEXT_PUBLIC_THIRDWEB_CLIENT_ID || 'default-client-id',
+  clientId: process.env.NEXT_PUBLIC_THIRDWEB_CLIENT_ID || "default-client-id",
 });
 
 const adminSbtContract = getContract({
   client,
   chain: arbitrum,
-  address: (process.env.NEXT_PUBLIC_ADMIN_SBT_ADDRESS as `0x${string}`) || '0x0000000000000000000000000000000000000000',
+  address:
+    (process.env.NEXT_PUBLIC_ADMIN_SBT_ADDRESS as `0x${string}`) ||
+    "0x0000000000000000000000000000000000000000",
 });
 
-
-
-
 function formatTimeLeft(ms: number) {
-  if (ms <= 0) return 'Expired';
+  if (ms <= 0) return "Expired";
   const mins = Math.floor(ms / 60000);
   const hours = Math.floor(mins / 60);
   if (hours > 0) return `Expires in ~${hours}h`;
@@ -103,8 +113,8 @@ function LeaseTimer({ expiration }: { expiration: number }) {
 export default function LiveThreatFeed() {
   const [aximUser, setAximUser] = useState<string | null>(null);
   useEffect(() => {
-    if (typeof document !== 'undefined') {
-      const match = document.cookie.match(new RegExp('(^| )axim_user=([^;]+)'));
+    if (typeof document !== "undefined") {
+      const match = document.cookie.match(new RegExp("(^| )axim_user=([^;]+)"));
       if (match) {
         setAximUser(decodeURIComponent(match[2]));
       }
@@ -113,21 +123,32 @@ export default function LiveThreatFeed() {
 
   useEffect(() => {
     let source = null;
-    const sseUrl = `${process.env.NEXT_PUBLIC_AXIM_CORE_API_URL || 'https://api.axim.us.com'}/api/v1/onyx/stream`;
+    const sseUrl = `${process.env.NEXT_PUBLIC_AXIM_CORE_API_URL || "https://api.axim.us.com"}/api/v1/onyx/stream`;
     try {
       source = new EventSource(sseUrl);
       source.onmessage = (event) => {
         try {
           const parsed = JSON.parse(event.data);
           // Assuming the event matches our telemetry types or something similar
-          if (['threat.blocked', 'rate_limit.exceeded', 'suspicious_activity', 'bot_challenge.failed', 'ip.quarantined'].includes(parsed.event_type || parsed.eventType)) {
+          if (
+            [
+              "threat.blocked",
+              "rate_limit.exceeded",
+              "suspicious_activity",
+              "bot_challenge.failed",
+              "ip.quarantined",
+            ].includes(parsed.event_type || parsed.eventType)
+          ) {
             setAuditLog((prev: any) => {
-              const newFeed = [{
-                ...parsed,
-                id: `sse-${Date.now()}-${Math.random()}`,
-                timestamp: parsed.timestamp || Date.now(),
-                isNewStreamEvent: true // mark to trigger flashing animation
-              }, ...prev].slice(0, 100);
+              const newFeed = [
+                {
+                  ...parsed,
+                  id: `sse-${Date.now()}-${Math.random()}`,
+                  timestamp: parsed.timestamp || Date.now(),
+                  isNewStreamEvent: true, // mark to trigger flashing animation
+                },
+                ...prev,
+              ].slice(0, 100);
               return newFeed;
             });
             setLastSynced(new Date());
@@ -154,25 +175,27 @@ export default function LiveThreatFeed() {
     const dataToExport = filteredAuditLog || auditLog;
     if (!dataToExport || dataToExport.length === 0) return;
     const header = "Timestamp,Action,Target Key,TTL,Authorized Wallet\n";
-    const rows = dataToExport.map(event => {
+    const rows = dataToExport.map((event) => {
       const timestamp = new Date(event.timestamp).toISOString();
       const action = event.action || "";
       const target = event.target || "";
       const ttl = event.ttl !== undefined ? event.ttl.toString() : "";
       const wallet = event.authorizedByWallet || "";
       // Escape fields containing commas or quotes
-      const row = [timestamp, action, target, ttl, wallet].map(field => {
-        if (field.includes(',') || field.includes('"')) {
-          return `"${field.replace(/"/g, '""')}"`;
-        }
-        return field;
-      }).join(',');
+      const row = [timestamp, action, target, ttl, wallet]
+        .map((field) => {
+          if (field.includes(",") || field.includes('"')) {
+            return `"${field.replace(/"/g, '""')}"`;
+          }
+          return field;
+        })
+        .join(",");
       return row;
     });
-    const csvString = header + rows.join('\n');
-    const blob = new Blob([csvString], { type: 'text/csv' });
+    const csvString = header + rows.join("\n");
+    const blob = new Blob([csvString], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
+    const link = document.createElement("a");
     link.href = url;
     link.download = `asguard_audit_log_${Date.now()}.csv`;
     document.body.appendChild(link);
@@ -181,22 +204,26 @@ export default function LiveThreatFeed() {
     URL.revokeObjectURL(url);
   };
 
-
-  const [annotations, setAnnotations] = React.useState<Record<string, string>>(() => {
-    if (typeof window === 'undefined') return {};
-    try {
-      const stored = sessionStorage.getItem('asguard_annotations');
-      return stored ? JSON.parse(stored) : {};
-    } catch {
-      return {};
-    }
-  });
+  const [annotations, setAnnotations] = React.useState<Record<string, string>>(
+    () => {
+      if (typeof window === "undefined") return {};
+      try {
+        const stored = sessionStorage.getItem("asguard_annotations");
+        return stored ? JSON.parse(stored) : {};
+      } catch {
+        return {};
+      }
+    },
+  );
 
   const handleAnnotationChange = (key: string, value: string) => {
     if (value.length > 60) return;
     const newAnnotations = { ...annotations, [key]: value };
     setAnnotations(newAnnotations);
-    sessionStorage.setItem('asguard_annotations', JSON.stringify(newAnnotations));
+    sessionStorage.setItem(
+      "asguard_annotations",
+      JSON.stringify(newAnnotations),
+    );
   };
 
   const handleAnnotationBlur = async (key: string) => {
@@ -206,12 +233,16 @@ export default function LiveThreatFeed() {
 
     try {
       await fetch(`${workerUrl}/blocklist`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'X-Asguard-Auth': apiKey || '',
-          'Content-Type': 'application/json'
+          "X-Asguard-Auth": apiKey || "",
+          "Content-Type": "application/json",
         },
-        body: JSON.stringify({ key, action: 'update_note', note: annotations[key] || '' })
+        body: JSON.stringify({
+          key,
+          action: "update_note",
+          note: annotations[key] || "",
+        }),
       });
     } catch (err) {
       console.error("Error saving note:", err);
@@ -223,33 +254,56 @@ export default function LiveThreatFeed() {
   const pathname = usePathname();
 
   const [data, setData] = useState<TelemetryPayload[]>([]);
-  const [blocklist, setBlocklist] = useState<{ name: string; expiration?: number; note?: string }[]>([]);
+  const [blocklist, setBlocklist] = useState<
+    { name: string; expiration?: number; note?: string }[]
+  >([]);
   const [autoRefresh, setAutoRefresh] = useState<boolean>(true);
   const autoRefreshRef = useRef(autoRefresh);
-  useEffect(() => { autoRefreshRef.current = autoRefresh; }, [autoRefresh]);
+  useEffect(() => {
+    autoRefreshRef.current = autoRefresh;
+  }, [autoRefresh]);
   const [selectedIps, setSelectedIps] = useState<Set<string>>(new Set());
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [healthStatus, setHealthStatus] = useState<'ok' | 'degraded' | 'unknown'>('unknown');
-  const [globalThreatLevel, setGlobalThreatLevel] = useState<string>('LOW');
+  const [healthStatus, setHealthStatus] = useState<
+    "ok" | "degraded" | "unknown"
+  >("unknown");
+  const [globalThreatLevel, setGlobalThreatLevel] = useState<string>("LOW");
   const [isSyncing, setIsSyncing] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [isCooldown, setIsCooldown] = useState(false);
-  const [edgeMetrics, setEdgeMetrics] = useState({ rateLimitSize: 0, penaltyLedgerSize: 0 });
+  const [edgeMetrics, setEdgeMetrics] = useState({
+    rateLimitSize: 0,
+    penaltyLedgerSize: 0,
+    memoryUsage: { rss: 0, heapUsed: 0 },
+  });
   const [lastHeartbeat, setLastHeartbeat] = useState<number | null>(null);
-  const [heartbeatDetails, setHeartbeatDetails] = useState<Record<string, unknown> | null>(null);
-  const [telemetrySummary, setTelemetrySummary] = useState<Record<string, unknown> | null>(null);
+  const [heartbeatDetails, setHeartbeatDetails] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
+  const [telemetrySummary, setTelemetrySummary] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
   const [forceSweepLoading, setForceSweepLoading] = useState(false);
   const [showToast, setShowToast] = useState(false);
 
   const forceSweep = async () => {
     try {
       setForceSweepLoading(true);
-      const res = await fetch(`${process.env.NEXT_PUBLIC_WORKER_URL || "https://asguard.local"}/admin/cron/trigger`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Asguard-Auth": process.env.NEXT_PUBLIC_ASGUARD_API_KEY || "", "X-Asguard-Signature": activeAccount?.address || "UNKNOWN" },
-        body: JSON.stringify({ type: "hourly" })
-      });
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_WORKER_URL || "https://asguard.local"}/admin/cron/trigger`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Asguard-Auth": process.env.NEXT_PUBLIC_ASGUARD_API_KEY || "",
+            "X-Asguard-Signature": activeAccount?.address || "UNKNOWN",
+          },
+          body: JSON.stringify({ type: "hourly" }),
+        },
+      );
       if (res.ok) {
         const data = await res.json();
         if (data.heartbeat) {
@@ -267,23 +321,30 @@ export default function LiveThreatFeed() {
 
   const [showCronPopover, setShowCronPopover] = useState(false);
   const [edgeLatency, setEdgeLatency] = useState<string | null>(null);
-  const [velocityHistory, setVelocityHistory] = useState<('up' | 'down' | 'none')[]>(() => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('asguard_velocity_history');
+  const [velocityHistory, setVelocityHistory] = useState<
+    ("up" | "down" | "none")[]
+  >(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("asguard_velocity_history");
       if (stored) {
         try {
           const parsed = JSON.parse(stored);
           if (Array.isArray(parsed)) return parsed;
-        } catch(e) {
-          console.error('Failed to parse velocity history', e);
+        } catch (e) {
+          console.error("Failed to parse velocity history", e);
         }
       }
     }
     return [];
   });
 
-  const velocityShift = velocityHistory.length > 0 ? velocityHistory[velocityHistory.length - 1] : 'none';
-  const [realtimeStatus, setRealtimeStatus] = useState<'CONNECTED' | 'DISCONNECTED' | 'ERROR' | 'RECONNECTING'>('RECONNECTING');
+  const velocityShift =
+    velocityHistory.length > 0
+      ? velocityHistory[velocityHistory.length - 1]
+      : "none";
+  const [realtimeStatus, setRealtimeStatus] = useState<
+    "CONNECTED" | "DISCONNECTED" | "ERROR" | "RECONNECTING"
+  >("RECONNECTING");
   const [retryCount, setRetryCount] = useState<number>(0);
   const activeAccount = useActiveAccount();
 
@@ -293,7 +354,13 @@ export default function LiveThreatFeed() {
 
   // Restrict re-evaluation loops to manual synchronization events or on page mount
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const sbtParams = React.useMemo(() => [activeAccount?.address || "0x0000000000000000000000000000000000000000"] as const, [activeAccount?.address, sbtEvalTrigger]);
+  const sbtParams = React.useMemo(
+    () =>
+      [
+        activeAccount?.address || "0x0000000000000000000000000000000000000000",
+      ] as const,
+    [activeAccount?.address, sbtEvalTrigger],
+  );
   const { data: sbtBalance, isLoading: isSbtLoading } = useReadContract({
     contract: adminSbtContract,
     method: "function balanceOf(address owner) view returns (uint256)",
@@ -302,21 +369,34 @@ export default function LiveThreatFeed() {
       enabled: !!activeAccount?.address,
     },
   });
-  const hasAdminSbt: boolean = (sbtBalance && sbtBalance > BigInt(0)) ? true : false;
-
+  const hasAdminSbt: boolean =
+    sbtBalance && sbtBalance > BigInt(0) ? true : false;
 
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState(false);
-  const [severityFilter, setSeverityFilter] = useState<'all' | 'high' | 'medium' | 'low'>((searchParams?.get('severity') as 'all' | 'high' | 'medium' | 'low') || 'all');
-  const [vectorFilter, setVectorFilter] = useState<'all' | 'critical' | 'sqli_xss' | 'ddos'>('all');
+  const [severityFilter, setSeverityFilter] = useState<
+    "all" | "high" | "medium" | "low"
+  >(
+    (searchParams?.get("severity") as "all" | "high" | "medium" | "low") ||
+      "all",
+  );
+  const [vectorFilter, setVectorFilter] = useState<
+    "all" | "critical" | "sqli_xss" | "ddos"
+  >("all");
   const [aiUnsafeOnly, setAiUnsafeOnly] = useState<boolean>(false);
   const [selectedThreat, setSelectedThreat] = useState<any>(null);
   const [isInspectionDrawerOpen, setIsInspectionDrawerOpen] = useState(false);
-  const [appOriginFilter, setAppOriginFilter] = useState<string>(searchParams?.get('origin') || 'all');
-    const [searchQuery, setSearchQuery] = useState(searchParams?.get('search') || '');
-  const [localSearchQuery, setLocalSearchQuery] = useState(searchParams?.get('search') || '');
-  const [auditSearchQuery, setAuditSearchQuery] = useState('');
-  const [localAuditSearchQuery, setLocalAuditSearchQuery] = useState('');
+  const [appOriginFilter, setAppOriginFilter] = useState<string>(
+    searchParams?.get("origin") || "all",
+  );
+  const [searchQuery, setSearchQuery] = useState(
+    searchParams?.get("search") || "",
+  );
+  const [localSearchQuery, setLocalSearchQuery] = useState(
+    searchParams?.get("search") || "",
+  );
+  const [auditSearchQuery, setAuditSearchQuery] = useState("");
+  const [localAuditSearchQuery, setLocalAuditSearchQuery] = useState("");
 
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -331,7 +411,9 @@ export default function LiveThreatFeed() {
     }, 300);
     return () => clearTimeout(handler);
   }, [localAuditSearchQuery]);
-  const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
+  const [actionLoading, setActionLoading] = useState<Record<string, boolean>>(
+    {},
+  );
 
   const [dlqRecords, setDlqRecords] = useState<DlqRecord[]>([]);
   const [anomalyQueue, setAnomalyQueue] = useState<AnomalyQueueItem[]>([]);
@@ -339,28 +421,32 @@ export default function LiveThreatFeed() {
 
   const [selectedDlqIds, setSelectedDlqIds] = useState<string[]>([]);
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
-  const [dlqSearchQuery, setDlqSearchQuery] = useState('');
-  const [dlqView, setDlqView] = useState<'active' | 'quarantined'>('active');
-  const [debouncedDlqSearch, setDebouncedDlqSearch] = useState('');
-  const [replayingState, setReplayingState] = useState<Record<string, boolean>>({});
+  const [dlqSearchQuery, setDlqSearchQuery] = useState("");
+  const [dlqView, setDlqView] = useState<"active" | "quarantined">("active");
+  const [debouncedDlqSearch, setDebouncedDlqSearch] = useState("");
+  const [replayingState, setReplayingState] = useState<Record<string, boolean>>(
+    {},
+  );
   const [copiedAuditRow, setCopiedAuditRow] = useState<string | null>(null);
 
-
-  const handleTriageAnomaly = async (action: 'block' | 'dismiss') => {
+  const handleTriageAnomaly = async (action: "block" | "dismiss") => {
     if (anomalyQueue.length === 0) return;
 
     try {
-      const authKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY || '';
-      const walletAddr = activeAccount?.address || 'UNKNOWN';
-      const res = await fetch(`${process.env.NEXT_PUBLIC_ASGUARD_WORKER_URL}/admin/anomaly/triage`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Asguard-Auth': authKey,
-          'X-Asguard-Signature': walletAddr,
+      const authKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY || "";
+      const walletAddr = activeAccount?.address || "UNKNOWN";
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_ASGUARD_WORKER_URL}/admin/anomaly/triage`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Asguard-Auth": authKey,
+            "X-Asguard-Signature": walletAddr,
+          },
+          body: JSON.stringify({ ip: "ALL", action }),
         },
-        body: JSON.stringify({ ip: "ALL", action })
-      });
+      );
 
       if (res.ok) {
         const data = await res.json();
@@ -368,17 +454,31 @@ export default function LiveThreatFeed() {
         setAnomalyQueue([]);
         setShowTriageModal(false);
 
-        setToasts(prev => [...prev, { id: Math.random().toString(), message: `[ ${count} ANOMALIES TRIAGED: ${action.toUpperCase()} ]`, type: 'emerald' }]);
+        setToasts((prev) => [
+          ...prev,
+          {
+            id: Math.random().toString(),
+            message: `[ ${count} ANOMALIES TRIAGED: ${action.toUpperCase()} ]`,
+            type: "emerald",
+          },
+        ]);
       } else {
-        throw new Error('Failed to triage anomaly');
+        throw new Error("Failed to triage anomaly");
       }
     } catch (e) {
       console.error(e);
-      setToasts(prev => [...prev, { id: Math.random().toString(), message: '[ TRIAGE FAILED ]', type: 'error' }]);
+      setToasts((prev) => [
+        ...prev,
+        {
+          id: Math.random().toString(),
+          message: "[ TRIAGE FAILED ]",
+          type: "error",
+        },
+      ]);
     }
   };
 
-const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
+  const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
     navigator.clipboard.writeText(JSON.stringify(event, null, 2));
     setCopiedAuditRow(rowId);
     setTimeout(() => {
@@ -393,15 +493,25 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
     return () => clearTimeout(timer);
   }, [dlqSearchQuery]);
 
-
-  const filteredDlq = dlqRecords.filter(record => dlqView === 'quarantined' ? record.status === 'quarantined' : record.status !== 'quarantined').filter(record =>
-    record.originNode.toLowerCase().includes(debouncedDlqSearch.toLowerCase()) ||
-    record.droppedRoute.toLowerCase().includes(debouncedDlqSearch.toLowerCase()) ||
-    record.errorReason.toLowerCase().includes(debouncedDlqSearch.toLowerCase())
-  ).slice(0, 30);
-
-
-
+  const filteredDlq = dlqRecords
+    .filter((record) =>
+      dlqView === "quarantined"
+        ? record.status === "quarantined"
+        : record.status !== "quarantined",
+    )
+    .filter(
+      (record) =>
+        record.originNode
+          .toLowerCase()
+          .includes(debouncedDlqSearch.toLowerCase()) ||
+        record.droppedRoute
+          .toLowerCase()
+          .includes(debouncedDlqSearch.toLowerCase()) ||
+        record.errorReason
+          .toLowerCase()
+          .includes(debouncedDlqSearch.toLowerCase()),
+    )
+    .slice(0, 30);
 
   const isInitialMount = useRef(true);
 
@@ -412,44 +522,56 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
     }
     const params = new URLSearchParams(searchParams?.toString() || "");
     if (searchQuery) {
-      params.set('search', searchQuery);
+      params.set("search", searchQuery);
     } else {
-      params.delete('search');
+      params.delete("search");
     }
-    if (severityFilter && severityFilter !== 'all') {
-      params.set('severity', severityFilter);
+    if (severityFilter && severityFilter !== "all") {
+      params.set("severity", severityFilter);
     } else {
-      params.delete('severity');
+      params.delete("severity");
     }
-    if (appOriginFilter && appOriginFilter !== 'all') {
-      params.set('origin', appOriginFilter);
+    if (appOriginFilter && appOriginFilter !== "all") {
+      params.set("origin", appOriginFilter);
     } else {
-      params.delete('origin');
+      params.delete("origin");
     }
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-  }, [searchQuery, severityFilter, appOriginFilter, pathname, router, searchParams]);
+  }, [
+    searchQuery,
+    severityFilter,
+    appOriginFilter,
+    pathname,
+    router,
+    searchParams,
+  ]);
 
   const [telemetryPage, setTelemetryPage] = useState(0);
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [auditPage, setAuditPage] = useState(0);
-  const [auditTimeRange, setAuditTimeRange] = useState<"all" | "1h" | "24h">("all");
+  const [auditTimeRange, setAuditTimeRange] = useState<"all" | "1h" | "24h">(
+    "all",
+  );
 
   const itemsPerPage = 10;
 
-
   const [auditLog, setAuditLog] = useState<AuditEvent[]>([]);
   const [copiedRow, setCopiedRow] = useState<number | null>(null);
-  const [toasts, setToasts] = useState<{ id: string; message: string; type: 'success' | 'error' | 'emerald' }[]>([]);
+  const [toasts, setToasts] = useState<
+    { id: string; message: string; type: "success" | "error" | "emerald" }[]
+  >([]);
 
-  const addToast = React.useCallback((message: string, type: 'success' | 'error' | 'emerald') => {
-    const id = Date.now().toString() + Math.floor(Math.random() * 1000).toString();
-    setToasts((prev) => [...prev, { id, message, type }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 3000);
-  }, []);
-
-
+  const addToast = React.useCallback(
+    (message: string, type: "success" | "error" | "emerald") => {
+      const id =
+        Date.now().toString() + Math.floor(Math.random() * 1000).toString();
+      setToasts((prev) => [...prev, { id, message, type }]);
+      setTimeout(() => {
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+      }, 3000);
+    },
+    [],
+  );
 
   useEffect(() => {
     const fetchBackgroundStatus = async () => {
@@ -463,37 +585,55 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
       try {
         const [healthRes, dlqRes, blocklistRes, auditRes] = await Promise.all([
           fetch(`${workerUrl}/health`, {
-            headers: { 'X-Asguard-Auth': apiKey },
-            signal: abortController.signal
+            headers: { "X-Asguard-Auth": apiKey },
+            signal: abortController.signal,
           }),
           fetch(`${workerUrl}/dlq?view=${dlqView}`, {
-            headers: { 'X-Asguard-Auth': apiKey },
-            signal: abortController.signal
+            headers: { "X-Asguard-Auth": apiKey },
+            signal: abortController.signal,
           }),
           fetch(`${workerUrl}/blocklist`, {
-            headers: { 'X-Asguard-Auth': apiKey },
-            signal: abortController.signal
+            headers: { "X-Asguard-Auth": apiKey },
+            signal: abortController.signal,
           }),
           fetch(`${workerUrl}/audit`, {
-            headers: { 'X-Asguard-Auth': apiKey },
-            signal: abortController.signal
-          })
+            headers: { "X-Asguard-Auth": apiKey },
+            signal: abortController.signal,
+          }),
         ]);
         clearTimeout(timeoutId);
 
         if (healthRes.ok) {
           const healthData = await healthRes.json();
-          setEdgeMetrics({ rateLimitSize: healthData.rateLimitSize || 0, penaltyLedgerSize: healthData.penaltyLedgerSize || 0 });
-          setHealthStatus(healthData.status === 'ok' && healthData.blacklist === 'ok' && healthData.telemetry === 'ok' ? 'ok' : 'degraded');
-          if (healthData.globalThreatLevel) setGlobalThreatLevel(healthData.globalThreatLevel);
-          if (healthData.lastHeartbeat) setLastHeartbeat(healthData.lastHeartbeat);
-          if (healthData.heartbeatDetails) setHeartbeatDetails(healthData.heartbeatDetails);
+          setEdgeMetrics({
+            rateLimitSize: healthData.rateLimitSize || 0,
+            penaltyLedgerSize: healthData.penaltyLedgerSize || 0,
+            memoryUsage: healthData.memoryUsage || { rss: 0, heapUsed: 0 },
+          });
+          setHealthStatus(
+            healthData.status === "ok" &&
+              healthData.blacklist === "ok" &&
+              healthData.telemetry === "ok"
+              ? "ok"
+              : "degraded",
+          );
+          if (healthData.globalThreatLevel)
+            setGlobalThreatLevel(healthData.globalThreatLevel);
+          if (healthData.lastHeartbeat)
+            setLastHeartbeat(healthData.lastHeartbeat);
+          if (healthData.heartbeatDetails)
+            setHeartbeatDetails(healthData.heartbeatDetails);
 
-          if (healthData.telemetrySummary) setTelemetrySummary(healthData.telemetrySummary);
-          if (healthData.anomaly_queue) setAnomalyQueue(Array.isArray(healthData.anomaly_queue) ? healthData.anomaly_queue : [healthData.anomaly_queue]);
-
+          if (healthData.telemetrySummary)
+            setTelemetrySummary(healthData.telemetrySummary);
+          if (healthData.anomaly_queue)
+            setAnomalyQueue(
+              Array.isArray(healthData.anomaly_queue)
+                ? healthData.anomaly_queue
+                : [healthData.anomaly_queue],
+            );
         } else {
-          setHealthStatus('degraded');
+          setHealthStatus("degraded");
         }
 
         if (dlqRes.ok) {
@@ -502,19 +642,27 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
         }
 
         if (blocklistRes.ok) {
-           const blocklistData = await blocklistRes.json();
-           const parsedBlocklist = z.array(z.object({ name: z.string(), expiration: z.number().optional(), note: z.string().optional() })).parse(blocklistData);
-           setBlocklist(parsedBlocklist);
+          const blocklistData = await blocklistRes.json();
+          const parsedBlocklist = z
+            .array(
+              z.object({
+                name: z.string(),
+                expiration: z.number().optional(),
+                note: z.string().optional(),
+              }),
+            )
+            .parse(blocklistData);
+          setBlocklist(parsedBlocklist);
         }
 
         if (auditRes.ok) {
-           const auditData = await auditRes.json();
-           const parsedAudit = z.array(AuditEventSchema).parse(auditData);
-           setAuditLog(parsedAudit.slice(0, 150));
+          const auditData = await auditRes.json();
+          const parsedAudit = z.array(AuditEventSchema).parse(auditData);
+          setAuditLog(parsedAudit.slice(0, 150));
         }
       } catch (err) {
         console.error("Background polling failed", err);
-        setHealthStatus('degraded');
+        setHealthStatus("degraded");
         // Gracefully preserve last indexed edgeMetrics allocation sizes by not overwriting them
       }
     };
@@ -543,35 +691,40 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
       const abortController = new AbortController();
       const timeoutIdFetch = setTimeout(() => abortController.abort(), 4000);
       try {
-        const [telemetryRes, blocklistRes, auditRes, healthRes, dlqRes] = await Promise.all([
-          fetch(`${workerUrl}/api/telemetry/recent`, {
-            headers: { 'X-Asguard-Auth': apiKey },
-            signal: abortController.signal
-          }),
-          fetch(`${workerUrl}/blocklist`, {
-            headers: { 'X-Asguard-Auth': apiKey },
-            signal: abortController.signal
-          }),
-          fetch(`${workerUrl}/audit`, {
-            headers: { 'X-Asguard-Auth': apiKey },
-            signal: abortController.signal
-          }),
-          fetch(`${workerUrl}/health`, {
-            headers: { 'X-Asguard-Auth': apiKey },
-            signal: abortController.signal
-          }),
-          fetch(`${workerUrl}/dlq?view=${dlqView}`, {
-            headers: { 'X-Asguard-Auth': apiKey },
-            signal: abortController.signal
-          })
-        ]);
+        const [telemetryRes, blocklistRes, auditRes, healthRes, dlqRes] =
+          await Promise.all([
+            fetch(`${workerUrl}/api/telemetry/recent`, {
+              headers: { "X-Asguard-Auth": apiKey },
+              signal: abortController.signal,
+            }),
+            fetch(`${workerUrl}/blocklist`, {
+              headers: { "X-Asguard-Auth": apiKey },
+              signal: abortController.signal,
+            }),
+            fetch(`${workerUrl}/audit`, {
+              headers: { "X-Asguard-Auth": apiKey },
+              signal: abortController.signal,
+            }),
+            fetch(`${workerUrl}/health`, {
+              headers: { "X-Asguard-Auth": apiKey },
+              signal: abortController.signal,
+            }),
+            fetch(`${workerUrl}/dlq?view=${dlqView}`, {
+              headers: { "X-Asguard-Auth": apiKey },
+              signal: abortController.signal,
+            }),
+          ]);
         clearTimeout(timeoutIdFetch);
 
         if (!telemetryRes.ok) {
-          throw new Error(`Failed to fetch telemetry: ${telemetryRes.statusText}`);
+          throw new Error(
+            `Failed to fetch telemetry: ${telemetryRes.statusText}`,
+          );
         }
         if (!blocklistRes.ok) {
-          throw new Error(`Failed to fetch blocklist: ${blocklistRes.statusText}`);
+          throw new Error(
+            `Failed to fetch blocklist: ${blocklistRes.statusText}`,
+          );
         }
         if (!auditRes.ok) {
           throw new Error(`Failed to fetch audit: ${auditRes.statusText}`);
@@ -579,24 +732,42 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
 
         if (healthRes.ok) {
           const healthData = await healthRes.json();
-          setEdgeMetrics({ rateLimitSize: healthData.rateLimitSize || 0, penaltyLedgerSize: healthData.penaltyLedgerSize || 0 });
-          setHealthStatus(healthData.status === 'ok' && healthData.blacklist === 'ok' && healthData.telemetry === 'ok' ? 'ok' : 'degraded');
-          if (healthData.globalThreatLevel) setGlobalThreatLevel(healthData.globalThreatLevel);
-          if (healthData.lastHeartbeat) setLastHeartbeat(healthData.lastHeartbeat);
-          if (healthData.heartbeatDetails) setHeartbeatDetails(healthData.heartbeatDetails);
+          setEdgeMetrics({
+            rateLimitSize: healthData.rateLimitSize || 0,
+            penaltyLedgerSize: healthData.penaltyLedgerSize || 0,
+            memoryUsage: healthData.memoryUsage || { rss: 0, heapUsed: 0 },
+          });
+          setHealthStatus(
+            healthData.status === "ok" &&
+              healthData.blacklist === "ok" &&
+              healthData.telemetry === "ok"
+              ? "ok"
+              : "degraded",
+          );
+          if (healthData.globalThreatLevel)
+            setGlobalThreatLevel(healthData.globalThreatLevel);
+          if (healthData.lastHeartbeat)
+            setLastHeartbeat(healthData.lastHeartbeat);
+          if (healthData.heartbeatDetails)
+            setHeartbeatDetails(healthData.heartbeatDetails);
 
-          if (healthData.telemetrySummary) setTelemetrySummary(healthData.telemetrySummary);
-          if (healthData.anomaly_queue) setAnomalyQueue(Array.isArray(healthData.anomaly_queue) ? healthData.anomaly_queue : [healthData.anomaly_queue]);
-
+          if (healthData.telemetrySummary)
+            setTelemetrySummary(healthData.telemetrySummary);
+          if (healthData.anomaly_queue)
+            setAnomalyQueue(
+              Array.isArray(healthData.anomaly_queue)
+                ? healthData.anomaly_queue
+                : [healthData.anomaly_queue],
+            );
         } else {
-          setHealthStatus('degraded');
+          setHealthStatus("degraded");
         }
 
         if (!dlqRes.ok) {
           throw new Error(`Failed to fetch DLQ: ${dlqRes.statusText}`);
         }
 
-        const serverTiming = telemetryRes.headers.get('Server-Timing');
+        const serverTiming = telemetryRes.headers.get("Server-Timing");
         if (serverTiming) {
           const match = serverTiming.match(/dur=([0-9.]+)/);
           if (match && match[1]) {
@@ -609,9 +780,20 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
         const jsonAuditData = await auditRes.json();
         const jsonDlqData = await dlqRes.json();
 
-        const parsedData = z.array(TelemetryPayloadSchema).parse(jsonTelemetryData).slice(0, 150);
-        const parsedBlocklist = z.array(z.object({ name: z.string(), expiration: z.number().optional(), note: z.string().optional() })).parse(jsonBlocklistData);
-        setAnnotations(prev => {
+        const parsedData = z
+          .array(TelemetryPayloadSchema)
+          .parse(jsonTelemetryData)
+          .slice(0, 150);
+        const parsedBlocklist = z
+          .array(
+            z.object({
+              name: z.string(),
+              expiration: z.number().optional(),
+              note: z.string().optional(),
+            }),
+          )
+          .parse(jsonBlocklistData);
+        setAnnotations((prev) => {
           let updated = false;
           const next = { ...prev };
           for (const item of parsedBlocklist) {
@@ -621,62 +803,84 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
             }
           }
           if (updated) {
-            sessionStorage.setItem('asguard_annotations', JSON.stringify(next));
+            sessionStorage.setItem("asguard_annotations", JSON.stringify(next));
             return next;
           }
           return prev;
         });
         const parsedAudit = z.array(AuditEventSchema).parse(jsonAuditData);
 
-        setData(prev => {
+        setData((prev) => {
           // Merge new objects, unshift to top and cap at 50
           let newData = [...parsedData];
           if (prev.length > 0) {
-            const newEvents = parsedData.filter(d => !prev.some(p => p.timestamp === d.timestamp && p.sourceIp === d.sourceIp));
+            const newEvents = parsedData.filter(
+              (d) =>
+                !prev.some(
+                  (p) =>
+                    p.timestamp === d.timestamp && p.sourceIp === d.sourceIp,
+                ),
+            );
             if (newEvents.length > 0) {
               newData = [...newEvents, ...prev].slice(0, 150);
             } else {
               newData = prev; // Nothing new, keep prev to avoid unnecessary re-renders
             }
           } else {
-             // Cap initial payload too
-             newData = newData.slice(0, 150);
+            // Cap initial payload too
+            newData = newData.slice(0, 150);
           }
 
           if (JSON.stringify(prev) !== JSON.stringify(newData)) {
             // Update velocity indicator based on prev length
             if (prev.length > 0) {
-                let shift: 'up' | 'down' | 'none' = 'none';
-                if (newData.length > prev.length) shift = 'up';
-                else if (newData.length < prev.length) shift = 'down';
+              let shift: "up" | "down" | "none" = "none";
+              if (newData.length > prev.length) shift = "up";
+              else if (newData.length < prev.length) shift = "down";
 
-                setVelocityHistory(prevHistory => {
-                  const newHistory = [...prevHistory, shift].slice(-5);
-                  if (typeof window !== 'undefined') {
-                    localStorage.setItem('asguard_velocity_history', JSON.stringify(newHistory));
-                  }
-                  return newHistory;
-                });
+              setVelocityHistory((prevHistory) => {
+                const newHistory = [...prevHistory, shift].slice(-5);
+                if (typeof window !== "undefined") {
+                  localStorage.setItem(
+                    "asguard_velocity_history",
+                    JSON.stringify(newHistory),
+                  );
+                }
+                return newHistory;
+              });
             }
             return newData;
           }
           return prev;
         });
         const parsedDlq = z.array(DlqRecordSchema).parse(jsonDlqData);
-        setBlocklist(prev => JSON.stringify(prev) !== JSON.stringify(parsedBlocklist) ? parsedBlocklist : prev);
-        setAuditLog(prev => JSON.stringify(prev) !== JSON.stringify(parsedAudit.slice(0, 150)) ? parsedAudit.slice(0, 150) : prev);
-        setDlqRecords(prev => JSON.stringify(prev) !== JSON.stringify(parsedDlq.slice(0, 150)) ? parsedDlq.slice(0, 150) : prev);
+        setBlocklist((prev) =>
+          JSON.stringify(prev) !== JSON.stringify(parsedBlocklist)
+            ? parsedBlocklist
+            : prev,
+        );
+        setAuditLog((prev) =>
+          JSON.stringify(prev) !== JSON.stringify(parsedAudit.slice(0, 150))
+            ? parsedAudit.slice(0, 150)
+            : prev,
+        );
+        setDlqRecords((prev) =>
+          JSON.stringify(prev) !== JSON.stringify(parsedDlq.slice(0, 150))
+            ? parsedDlq.slice(0, 150)
+            : prev,
+        );
         setLastSynced(new Date());
         setError(null);
 
         setFlash(true);
         setTimeout(() => setFlash(false), 500);
-
       } catch (err: unknown) {
         console.error("Error fetching data:", err);
-        setHealthStatus('degraded');
+        setHealthStatus("degraded");
         if (err instanceof Error && err.name === "AbortError") {
-          setError("[ EDGE SYNC TIMEOUT: RETRYING ADAPTIVE INTERCEPTOR CHANNELS ]");
+          setError(
+            "[ EDGE SYNC TIMEOUT: RETRYING ADAPTIVE INTERCEPTOR CHANNELS ]",
+          );
         } else if (err instanceof Error) {
           setError(err.message);
         } else {
@@ -687,73 +891,71 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
       }
     };
 
-
-
-
-
     let channel: ReturnType<typeof supabase.channel>;
     let timeoutId: NodeJS.Timeout;
     let currentRetry = 0; // Fix: use local tracking
 
     const setupRealtime = () => {
       channel = supabase
-        .channel('live-threats')
+        .channel("live-threats")
         .on(
-          'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'security_events' },
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "security_events" },
           (payload) => {
             // Add new items instantly and trigger row accents via standard state transition
             setFlash(true);
             setTimeout(() => setFlash(false), 500);
 
             if (payload.new && autoRefreshRef.current) {
-               const newLog: Record<string, unknown> = { ...payload.new };
-               for (const key in newLog) {
-                   if (newLog[key] === null) {
-                       newLog[key] = undefined;
-                   }
-               }
-               if (newLog.eventType) {
-                   const parsed = TelemetryPayloadSchema.safeParse(newLog);
-                   if (parsed.success) {
-                       setData(prev => {
-                           const newData = [...prev];
-                           newData.unshift(parsed.data);
-                           return newData.slice(0, 150);
-                       });
-                   }
-               } else {
-                   const parsed = AuditEventSchema.safeParse(newLog);
-                   if (parsed.success) {
-                       setAuditLog(prev => {
-                           const newData = [...prev];
-                           newData.unshift(parsed.data);
-                           return newData.slice(0, 150);
-                       });
-                   }
-               }
+              const newLog: Record<string, unknown> = { ...payload.new };
+              for (const key in newLog) {
+                if (newLog[key] === null) {
+                  newLog[key] = undefined;
+                }
+              }
+              if (newLog.eventType) {
+                const parsed = TelemetryPayloadSchema.safeParse(newLog);
+                if (parsed.success) {
+                  setData((prev) => {
+                    const newData = [...prev];
+                    newData.unshift(parsed.data);
+                    return newData.slice(0, 150);
+                  });
+                }
+              } else {
+                const parsed = AuditEventSchema.safeParse(newLog);
+                if (parsed.success) {
+                  setAuditLog((prev) => {
+                    const newData = [...prev];
+                    newData.unshift(parsed.data);
+                    return newData.slice(0, 150);
+                  });
+                }
+              }
             }
-          }
+          },
         )
         .subscribe((status) => {
-            if (status === 'SUBSCRIBED') {
-                setRealtimeStatus('CONNECTED');
+          if (status === "SUBSCRIBED") {
+            setRealtimeStatus("CONNECTED");
 
-                currentRetry = 0;
-                setRetryCount(0);
-            } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
-                setRealtimeStatus('RECONNECTING');
-                // Auto-Heal backoff
-                const backoffIntervals = [2000, 5000, 10000];
-                const delay = backoffIntervals[Math.min(currentRetry, backoffIntervals.length - 1)];
+            currentRetry = 0;
+            setRetryCount(0);
+          } else if (status === "CLOSED" || status === "CHANNEL_ERROR") {
+            setRealtimeStatus("RECONNECTING");
+            // Auto-Heal backoff
+            const backoffIntervals = [2000, 5000, 10000];
+            const delay =
+              backoffIntervals[
+                Math.min(currentRetry, backoffIntervals.length - 1)
+              ];
 
-                timeoutId = setTimeout(() => {
-
-                    currentRetry++;
-                    setRetryCount(currentRetry);
-                    setupRealtime();
-                }, delay);
-            }
+            timeoutId = setTimeout(() => {
+              currentRetry++;
+              setRetryCount(currentRetry);
+              setupRealtime();
+            }, delay);
+          }
         });
     };
 
@@ -761,21 +963,17 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
 
     fetchTelemetry();
 
-
     return () => {
       if (channel) supabase.removeChannel(channel);
       if (timeoutId) clearTimeout(timeoutId);
     };
   }, [dlqView]);
 
-
   // Instead of an effect, we could reset pages when handling filter changes or just allow the effect, but the linter complains.
   // Since we don't have setSeverityFilter wrapped, we'll disable the linter here for this specific necessity.
   useEffect(() => {
-
     setTelemetryPage(0);
   }, [severityFilter, searchQuery, appOriginFilter]);
-
 
   const syncAbortControllerRef = React.useRef<AbortController | null>(null);
 
@@ -792,90 +990,133 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
     const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
     const apiKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY;
     if (workerUrl && apiKey) {
-       // Using an out of band fetch to the background status endpoint, which is essentially hitting /health, /dlq, /blocklist, /audit
-       const authHeaders = { 'X-Asguard-Auth': apiKey };
+      // Using an out of band fetch to the background status endpoint, which is essentially hitting /health, /dlq, /blocklist, /audit
+      const authHeaders = { "X-Asguard-Auth": apiKey };
 
-       try {
-           const signal = abortController.signal;
-           const [healthRes, dlqRes, blocklistRes, auditRes] = await Promise.all([
-              fetch(`${workerUrl}/health`, { headers: authHeaders, signal }),
-              fetch(`${workerUrl}/api/dlq?view=${dlqView}`, { headers: authHeaders, signal }),
-              fetch(`${workerUrl}/blocklist`, { headers: authHeaders, signal }),
-              fetch(`${workerUrl}/audit`, { headers: authHeaders, signal })
-           ]);
+      try {
+        const signal = abortController.signal;
+        const [healthRes, dlqRes, blocklistRes, auditRes] = await Promise.all([
+          fetch(`${workerUrl}/health`, { headers: authHeaders, signal }),
+          fetch(`${workerUrl}/api/dlq?view=${dlqView}`, {
+            headers: authHeaders,
+            signal,
+          }),
+          fetch(`${workerUrl}/blocklist`, { headers: authHeaders, signal }),
+          fetch(`${workerUrl}/audit`, { headers: authHeaders, signal }),
+        ]);
 
-           if (healthRes.ok) {
-              const healthData = await healthRes.json();
-          setEdgeMetrics({ rateLimitSize: healthData.rateLimitSize || 0, penaltyLedgerSize: healthData.penaltyLedgerSize || 0 });
-          setHealthStatus(healthData.status === 'ok' && healthData.blacklist === 'ok' && healthData.telemetry === 'ok' ? 'ok' : 'degraded');
-          if (healthData.globalThreatLevel) setGlobalThreatLevel(healthData.globalThreatLevel);
-          if (healthData.lastHeartbeat) setLastHeartbeat(healthData.lastHeartbeat);
-          if (healthData.heartbeatDetails) setHeartbeatDetails(healthData.heartbeatDetails);
+        if (healthRes.ok) {
+          const healthData = await healthRes.json();
+          setEdgeMetrics({
+            rateLimitSize: healthData.rateLimitSize || 0,
+            penaltyLedgerSize: healthData.penaltyLedgerSize || 0,
+            memoryUsage: healthData.memoryUsage || { rss: 0, heapUsed: 0 },
+          });
+          setHealthStatus(
+            healthData.status === "ok" &&
+              healthData.blacklist === "ok" &&
+              healthData.telemetry === "ok"
+              ? "ok"
+              : "degraded",
+          );
+          if (healthData.globalThreatLevel)
+            setGlobalThreatLevel(healthData.globalThreatLevel);
+          if (healthData.lastHeartbeat)
+            setLastHeartbeat(healthData.lastHeartbeat);
+          if (healthData.heartbeatDetails)
+            setHeartbeatDetails(healthData.heartbeatDetails);
 
-          if (healthData.telemetrySummary) setTelemetrySummary(healthData.telemetrySummary);
-          if (healthData.anomaly_queue) setAnomalyQueue(Array.isArray(healthData.anomaly_queue) ? healthData.anomaly_queue : [healthData.anomaly_queue]);
+          if (healthData.telemetrySummary)
+            setTelemetrySummary(healthData.telemetrySummary);
+          if (healthData.anomaly_queue)
+            setAnomalyQueue(
+              Array.isArray(healthData.anomaly_queue)
+                ? healthData.anomaly_queue
+                : [healthData.anomaly_queue],
+            );
+        }
+        if (dlqRes.ok)
+          setDlqRecords(await dlqRes.json().then((d) => d.slice(0, 150)));
+        if (blocklistRes.ok) {
+          const blocklistData = await blocklistRes.json();
+          const parsedBlocklist = z
+            .array(
+              z.object({
+                name: z.string(),
+                expiration: z.number().optional(),
+                note: z.string().optional(),
+              }),
+            )
+            .parse(blocklistData);
+          setBlocklist(parsedBlocklist);
+        }
+        if (auditRes.ok) {
+          const auditData = await auditRes.json();
+          const parsedAudit = z.array(AuditEventSchema).parse(auditData);
+          setAuditLog(parsedAudit.slice(0, 150));
+        }
 
-           }
-           if (dlqRes.ok) setDlqRecords(await dlqRes.json().then(d => d.slice(0, 150)));
-           if (blocklistRes.ok) {
-               const blocklistData = await blocklistRes.json();
-               const parsedBlocklist = z.array(z.object({ name: z.string(), expiration: z.number().optional(), note: z.string().optional() })).parse(blocklistData);
-               setBlocklist(parsedBlocklist);
-           }
-           if (auditRes.ok) {
-               const auditData = await auditRes.json();
-               const parsedAudit = z.array(AuditEventSchema).parse(auditData);
-               setAuditLog(parsedAudit.slice(0, 150));
-           }
-
-           const telemetryRes = await fetch(`${workerUrl}/api/telemetry/recent`, { headers: authHeaders, signal: abortController.signal });
-           if (telemetryRes.ok) {
-              const telemetryData = await telemetryRes.json();
-              const parsedData = z.array(TelemetryPayloadSchema).parse(telemetryData).slice(0, 150);
-              setData(parsedData);
-              setLastSynced(new Date());
-              setIsSyncing(false);
-              addToast("SYNC COMPLETE", "emerald");
-           }
-       } catch (err) {
-           setHealthStatus('degraded');
-           if ((err as Error).name === 'AbortError') {
-               console.log('Manual sync aborted due to new request');
-               setIsSyncing(false);
-           } else {
-               console.error("Manual sync failed", err);
-               setIsSyncing(false);
-           }
-       }
+        const telemetryRes = await fetch(`${workerUrl}/api/telemetry/recent`, {
+          headers: authHeaders,
+          signal: abortController.signal,
+        });
+        if (telemetryRes.ok) {
+          const telemetryData = await telemetryRes.json();
+          const parsedData = z
+            .array(TelemetryPayloadSchema)
+            .parse(telemetryData)
+            .slice(0, 150);
+          setData(parsedData);
+          setLastSynced(new Date());
+          setIsSyncing(false);
+          addToast("SYNC COMPLETE", "emerald");
+        }
+      } catch (err) {
+        setHealthStatus("degraded");
+        if ((err as Error).name === "AbortError") {
+          console.log("Manual sync aborted due to new request");
+          setIsSyncing(false);
+        } else {
+          console.error("Manual sync failed", err);
+          setIsSyncing(false);
+        }
+      }
     }
   }, [addToast, dlqView]);
 
-  const getSeverityColor = (severity: TelemetryPayload['severity']) => {
+  const getSeverityColor = (severity: TelemetryPayload["severity"]) => {
     switch (severity) {
-      case 'critical':
-      case 'high':
-        return 'animate-pulse text-red-400 bg-red-950/80 border-red-900';
-      case 'medium':
-        return 'text-amber-400 bg-transparent border-amber-500';
-      case 'low':
-        return 'text-slate-400 bg-transparent border-slate-700';
+      case "critical":
+      case "high":
+        return "animate-pulse text-red-400 bg-red-950/80 border-red-900";
+      case "medium":
+        return "text-amber-400 bg-transparent border-amber-500";
+      case "low":
+        return "text-slate-400 bg-transparent border-slate-700";
       default:
-        return 'text-slate-400 bg-transparent border-slate-800';
+        return "text-slate-400 bg-transparent border-slate-800";
     }
   };
 
-  const getEventName = (eventType: TelemetryPayload['eventType']) => {
+  const getEventName = (eventType: TelemetryPayload["eventType"]) => {
     switch (eventType) {
-      case 'authentication_failure': return 'Auth Failure';
-      case 'signature_tampering': return 'Sig Tamper';
-      case 'suspicious_activity': return 'Suspicious';
-      default: return eventType;
+      case "authentication_failure":
+        return "Auth Failure";
+      case "signature_tampering":
+        return "Sig Tamper";
+      case "suspicious_activity":
+        return "Suspicious";
+      default:
+        return eventType;
     }
-  }
+  };
 
-  const renderTelemetrySkeleton = () => (
+  const renderTelemetrySkeleton = () =>
     Array.from({ length: 5 }).map((_, i) => (
-      <div key={i} className="grid grid-cols-6 gap-4 items-center p-3 rounded bg-slate-900/40 border border-slate-800 animate-pulse">
+      <div
+        key={i}
+        className="grid grid-cols-6 gap-4 items-center p-3 rounded bg-slate-900/40 border border-slate-800 animate-pulse"
+      >
         <div className="h-4 bg-slate-800 rounded"></div>
         <div className="h-4 bg-slate-800 rounded"></div>
         <div className="h-4 bg-slate-800 rounded"></div>
@@ -883,23 +1124,17 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
         <div className="h-4 bg-slate-800 rounded"></div>
         <div className="h-4 bg-slate-800 rounded"></div>
       </div>
-    ))
-  );
+    ));
 
-  const renderBlocklistSkeleton = () => (
+  const renderBlocklistSkeleton = () =>
     Array.from({ length: 5 }).map((_, i) => (
-      <div key={i} className="p-3 rounded bg-slate-900/40 border border-slate-800 animate-pulse">
+      <div
+        key={i}
+        className="p-3 rounded bg-slate-900/40 border border-slate-800 animate-pulse"
+      >
         <div className="h-4 bg-slate-800 rounded w-3/4"></div>
       </div>
-    ))
-  );
-
-
-
-
-
-
-
+    ));
 
   const handleBulkPurgeDLQ = async () => {
     if (selectedDlqIds.length === 0) return;
@@ -912,19 +1147,21 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
       const timeoutId = setTimeout(() => controller.abort(), 5000);
 
       const res = await fetch(`${workerUrl}/dlq/bulk-purge`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'X-Asguard-Auth': apiKey || '',
+          "Content-Type": "application/json",
+          "X-Asguard-Auth": apiKey || "",
         },
         body: JSON.stringify({ ids: selectedDlqIds }),
-        signal: controller.signal
+        signal: controller.signal,
       });
       clearTimeout(timeoutId);
 
       if (!res.ok) throw new Error("Bulk purge failed");
 
-      setDlqRecords(prev => prev.filter(r => !selectedDlqIds.includes(r.id!)));
+      setDlqRecords((prev) =>
+        prev.filter((r) => !selectedDlqIds.includes(r.id!)),
+      );
       setSelectedDlqIds([]);
       addToast("[ BULK PURGE COMPLETE ]", "success");
     } catch (err) {
@@ -945,19 +1182,21 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
       const timeoutId = setTimeout(() => controller.abort(), 5000);
 
       const res = await fetch(`${workerUrl}/dlq/bulk-replay`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'X-Asguard-Auth': apiKey || '',
+          "Content-Type": "application/json",
+          "X-Asguard-Auth": apiKey || "",
         },
         body: JSON.stringify({ ids: selectedDlqIds }),
-        signal: controller.signal
+        signal: controller.signal,
       });
       clearTimeout(timeoutId);
 
       if (!res.ok) throw new Error("Bulk replay failed");
 
-      setDlqRecords(prev => prev.filter(r => !selectedDlqIds.includes(r.id)));
+      setDlqRecords((prev) =>
+        prev.filter((r) => !selectedDlqIds.includes(r.id)),
+      );
       setSelectedDlqIds([]);
       addToast("[ BULK REPLAY COMPLETE ]", "success");
     } catch (err) {
@@ -974,19 +1213,23 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
       const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
       const apiKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY;
       await Promise.all(
-        selectedDlqIds.map(id =>
+        selectedDlqIds.map((id) =>
           fetch(`${workerUrl}/dlq/unquarantine`, {
-            method: 'POST',
+            method: "POST",
             headers: {
-              'Content-Type': 'application/json',
-              'X-Asguard-Auth': apiKey || '',
-              'X-Asguard-Signature': activeAccount?.address || 'UNKNOWN'
+              "Content-Type": "application/json",
+              "X-Asguard-Auth": apiKey || "",
+              "X-Asguard-Signature": activeAccount?.address || "UNKNOWN",
             },
-            body: JSON.stringify({ id })
-          })
-        )
+            body: JSON.stringify({ id }),
+          }),
+        ),
       );
-      setDlqRecords(prev => prev.map(r => selectedDlqIds.includes(r.id) ? { ...r, status: undefined } : r));
+      setDlqRecords((prev) =>
+        prev.map((r) =>
+          selectedDlqIds.includes(r.id) ? { ...r, status: undefined } : r,
+        ),
+      );
       setSelectedDlqIds([]);
       addToast("[ BULK UNQUARANTINE COMPLETE ]", "success");
     } catch (err) {
@@ -1006,24 +1249,26 @@ const handleCopyAuditRow = (event: AuditEvent, rowId: string) => {
       }
 
       const res = await fetch(`${workerUrl}/dlq/unquarantine`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'X-Asguard-Auth': apiKey || '',
-          'X-Asguard-Signature': activeAccount?.address || 'UNKNOWN'
+          "Content-Type": "application/json",
+          "X-Asguard-Auth": apiKey || "",
+          "X-Asguard-Signature": activeAccount?.address || "UNKNOWN",
         },
-        body: JSON.stringify({ id })
+        body: JSON.stringify({ id }),
       });
       if (!res.ok) throw new Error("Unquarantine failed");
 
-      setDlqRecords(prev => prev.map(r => r.id === id ? { ...r, status: undefined } : r));
+      setDlqRecords((prev) =>
+        prev.map((r) => (r.id === id ? { ...r, status: undefined } : r)),
+      );
       addToast("[ ITEM UNQUARANTINED ]", "success");
     } catch (err) {
       addToast("Failed to unquarantine DLQ item", "error");
     }
   };
 
-const handlePurgeDlqItem = async (id: string) => {
+  const handlePurgeDlqItem = async (id: string) => {
     try {
       const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
       const apiKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY;
@@ -1033,15 +1278,15 @@ const handlePurgeDlqItem = async (id: string) => {
       }
 
       const res = await fetch(`${workerUrl}/dlq?id=${encodeURIComponent(id)}`, {
-        method: 'DELETE',
+        method: "DELETE",
         headers: {
-          'X-Asguard-Auth': apiKey || '',
-          'X-Asguard-Signature': activeAccount?.address || 'UNKNOWN'
-        }
+          "X-Asguard-Auth": apiKey || "",
+          "X-Asguard-Signature": activeAccount?.address || "UNKNOWN",
+        },
       });
       if (!res.ok) throw new Error("Purge failed");
 
-      setDlqRecords(prev => prev.filter(r => r.id !== id));
+      setDlqRecords((prev) => prev.filter((r) => r.id !== id));
       addToast("[ ITEM PURGED ]", "success");
     } catch (err) {
       addToast("Failed to purge item", "error");
@@ -1049,7 +1294,7 @@ const handlePurgeDlqItem = async (id: string) => {
   };
 
   const handleReplayPayload = async (id: string, fullEvent: unknown) => {
-    setReplayingState(prev => ({ ...prev, [id]: true }));
+    setReplayingState((prev) => ({ ...prev, [id]: true }));
 
     try {
       const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
@@ -1062,27 +1307,27 @@ const handlePurgeDlqItem = async (id: string) => {
       const abortController = new AbortController();
       const timeoutId = setTimeout(() => abortController.abort(), 5000);
       const response = await fetch(`${workerUrl}/api/dlq/bulk-replay`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'X-Asguard-Auth': apiKey || '',
-          'Content-Type': 'application/json'
+          "X-Asguard-Auth": apiKey || "",
+          "Content-Type": "application/json",
         },
         body: JSON.stringify(fullEvent),
-        signal: abortController.signal
+        signal: abortController.signal,
       });
       clearTimeout(timeoutId);
 
       if (response.ok) {
-        setDlqRecords(prev => prev.filter(record => record.id !== id));
+        setDlqRecords((prev) => prev.filter((record) => record.id !== id));
       } else {
         console.error("Failed to replay DLQ payload");
       }
 
-      addToast(`Payload ${id} successfully replayed.`, 'emerald');
+      addToast(`Payload ${id} successfully replayed.`, "emerald");
     } catch (error) {
-      addToast('Failed to replay payload.', 'error');
+      addToast("Failed to replay payload.", "error");
     } finally {
-      setReplayingState(prev => {
+      setReplayingState((prev) => {
         const next = { ...prev };
         delete next[id];
         return next;
@@ -1092,9 +1337,9 @@ const handlePurgeDlqItem = async (id: string) => {
 
   const handleExportAuditTrail = () => {
     const dataStr = JSON.stringify(auditLog, null, 2);
-    const blob = new Blob([dataStr], { type: 'application/json' });
+    const blob = new Blob([dataStr], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
+    const link = document.createElement("a");
     link.href = url;
     link.download = `asguard_audit_trail_${new Date().getTime()}.json`;
     document.body.appendChild(link);
@@ -1104,13 +1349,13 @@ const handlePurgeDlqItem = async (id: string) => {
   };
 
   const handleUnblock = async (key: string) => {
-    setActionLoading(prev => ({ ...prev, [key]: true }));
+    setActionLoading((prev) => ({ ...prev, [key]: true }));
     const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
     const apiKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY;
 
     if (!workerUrl || !apiKey) {
       console.error("Missing credentials for action");
-      setActionLoading(prev => ({ ...prev, [key]: false }));
+      setActionLoading((prev) => ({ ...prev, [key]: false }));
       return;
     }
 
@@ -1118,116 +1363,129 @@ const handlePurgeDlqItem = async (id: string) => {
     const timeoutIdFetch = setTimeout(() => abortController.abort(), 4000);
     try {
       const res = await fetch(`${workerUrl}/blocklist`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'X-Asguard-Auth': apiKey || '',
-          'Content-Type': 'application/json'
+          "X-Asguard-Auth": apiKey || "",
+          "Content-Type": "application/json",
         },
-        body: JSON.stringify({ key, action: 'unblock' }),
-        signal: abortController.signal
+        body: JSON.stringify({ key, action: "unblock" }),
+        signal: abortController.signal,
       });
       clearTimeout(timeoutIdFetch);
 
       if (!res.ok) {
-        throw new Error('Failed to unblock key');
+        throw new Error("Failed to unblock key");
       }
 
-      setBlocklist(prev => prev.filter(k => k.name !== key));
+      setBlocklist((prev) => prev.filter((k) => k.name !== key));
       addToast("Edge Rule Updated: Block Lifted", "success");
-
     } catch (err) {
       console.error("Error unblocking key:", err);
       addToast("Error lifting block", "error");
     } finally {
-      setActionLoading(prev => ({ ...prev, [key]: false }));
+      setActionLoading((prev) => ({ ...prev, [key]: false }));
     }
   };
 
-
-
   const handleQuarantine = async (ip: string, reason: string) => {
-    setActionLoading(prev => ({ ...prev, [ip]: true }));
+    setActionLoading((prev) => ({ ...prev, [ip]: true }));
     try {
       const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
       const apiKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY;
       if (!workerUrl || !apiKey) throw new Error("Missing credentials");
 
       const res = await fetch(`${workerUrl}/api/v1/firewall/quarantine`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'X-Asguard-Auth': apiKey
+          "Content-Type": "application/json",
+          "X-Asguard-Auth": apiKey,
         },
-        body: JSON.stringify({ ip, reason, ttl_seconds: 86400 })
+        body: JSON.stringify({ ip, reason, ttl_seconds: 86400 }),
       });
       if (!res.ok) throw new Error("Failed to quarantine");
 
       // The badge update logic can be handled via local state update or relying on the real-time feed updates.
       // We will assume setting it in blocklist locally for immediate UI feedback.
-      setBlocklist(prev => [{ name: `ip:${ip}`, expiration: Math.floor(Date.now() / 1000) + 86400, note: "QUARANTINED" }, ...prev]);
+      setBlocklist((prev) => [
+        {
+          name: `ip:${ip}`,
+          expiration: Math.floor(Date.now() / 1000) + 86400,
+          note: "QUARANTINED",
+        },
+        ...prev,
+      ]);
       addToast("[ IP QUARANTINED ]", "success");
     } catch (e) {
       addToast("Failed to quarantine IP", "error");
     } finally {
-      setActionLoading(prev => ({ ...prev, [ip]: false }));
+      setActionLoading((prev) => ({ ...prev, [ip]: false }));
     }
   };
 
   const handleBlock = async (key: string, ttl: number, reason: string) => {
-    setActionLoading(prev => ({ ...prev, [key]: true }));
+    setActionLoading((prev) => ({ ...prev, [key]: true }));
     const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
     const apiKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY;
 
     if (!workerUrl || !apiKey) {
       console.error("Missing credentials for action");
-      setActionLoading(prev => ({ ...prev, [key]: false }));
+      setActionLoading((prev) => ({ ...prev, [key]: false }));
       return;
     }
 
     const abortController = new AbortController();
     const timeoutIdFetch = setTimeout(() => abortController.abort(), 4000);
     try {
-      let actionStr = 'block';
-      if (reason === 'quarantine_subnet') actionStr = 'quarantine_subnet';
-      if (reason === 'whitelist') actionStr = 'whitelist';
+      let actionStr = "block";
+      if (reason === "quarantine_subnet") actionStr = "quarantine_subnet";
+      if (reason === "whitelist") actionStr = "whitelist";
 
       const res = await fetch(`${workerUrl}/blocklist`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'X-Asguard-Auth': apiKey || '',
-          'Content-Type': 'application/json'
+          "X-Asguard-Auth": apiKey || "",
+          "Content-Type": "application/json",
         },
-        body: JSON.stringify({ key, action: actionStr, ttl, details: { reason } }),
-        signal: abortController.signal
+        body: JSON.stringify({
+          key,
+          action: actionStr,
+          ttl,
+          details: { reason },
+        }),
+        signal: abortController.signal,
       });
       clearTimeout(timeoutIdFetch);
 
       if (!res.ok) {
-        throw new Error('Failed to block');
+        throw new Error("Failed to block");
       }
 
       // Optimistically update the blocklist
-      setBlocklist(prev => {
-        return prev.some(item => item.name === key) ? prev : [...prev, { name: key, expiration: Math.floor(Date.now() / 1000) + ttl }];
+      setBlocklist((prev) => {
+        return prev.some((item) => item.name === key)
+          ? prev
+          : [
+              ...prev,
+              { name: key, expiration: Math.floor(Date.now() / 1000) + ttl },
+            ];
       });
       addToast("[ MITIGATION APPLIED ]", "emerald");
-
     } catch (err) {
       console.error("Error blocking:", err);
       addToast("Error updating edge rule", "error");
     } finally {
-      setActionLoading(prev => ({ ...prev, [key]: false }));
+      setActionLoading((prev) => ({ ...prev, [key]: false }));
     }
   };
 
   const handleDropIp = async (ip: string) => {
-    setActionLoading(prev => ({ ...prev, [ip]: true }));
+    setActionLoading((prev) => ({ ...prev, [ip]: true }));
     const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
     const apiKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY;
 
     if (!workerUrl || !apiKey) {
       console.error("Missing credentials for action");
-      setActionLoading(prev => ({ ...prev, [ip]: false }));
+      setActionLoading((prev) => ({ ...prev, [ip]: false }));
       return;
     }
 
@@ -1235,35 +1493,38 @@ const handlePurgeDlqItem = async (id: string) => {
     const timeoutIdFetch = setTimeout(() => abortController.abort(), 4000);
     try {
       const res = await fetch(`${workerUrl}/blocklist`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'X-Asguard-Auth': apiKey || '',
-          'Content-Type': 'application/json'
+          "X-Asguard-Auth": apiKey || "",
+          "Content-Type": "application/json",
         },
-        body: JSON.stringify({ key: `ip:${ip}`, action: 'block' }),
-        signal: abortController.signal
+        body: JSON.stringify({ key: `ip:${ip}`, action: "block" }),
+        signal: abortController.signal,
       });
       clearTimeout(timeoutIdFetch);
 
       if (!res.ok) {
-        throw new Error('Failed to drop IP');
+        throw new Error("Failed to drop IP");
       }
 
       // Optimistically update the blocklist
-      setBlocklist(prev => {
+      setBlocklist((prev) => {
         const key = `ip:${ip}`;
-        return prev.some(item => item.name === key) ? prev : [...prev, { name: key, expiration: Math.floor(Date.now() / 1000) + 86400 }];
+        return prev.some((item) => item.name === key)
+          ? prev
+          : [
+              ...prev,
+              { name: key, expiration: Math.floor(Date.now() / 1000) + 86400 },
+            ];
       });
       addToast("Edge Rule Updated: Access Revoked", "success");
-
     } catch (err) {
       console.error("Error dropping IP:", err);
       addToast("Error updating edge rule", "error");
     } finally {
-      setActionLoading(prev => ({ ...prev, [ip]: false }));
+      setActionLoading((prev) => ({ ...prev, [ip]: false }));
     }
   };
-
 
   const edgeTrendAnalytics = React.useMemo(() => {
     const totalEvents = data.length;
@@ -1274,9 +1535,9 @@ const handlePurgeDlqItem = async (id: string) => {
     const coloCounts: Record<string, number> = {};
     const countryCounts: Record<string, number> = {};
 
-    data.forEach(event => {
-      const coloKey = event.colo || 'N/A';
-      const countryKey = event.country || 'XX';
+    data.forEach((event) => {
+      const coloKey = event.colo || "N/A";
+      const countryKey = event.country || "XX";
 
       coloCounts[coloKey] = (coloCounts[coloKey] || 0) + 1;
       countryCounts[countryKey] = (countryCounts[countryKey] || 0) + 1;
@@ -1289,7 +1550,7 @@ const handlePurgeDlqItem = async (id: string) => {
         name,
         count,
         percentage: (count / totalEvents) * 100,
-        isAnomalous: (count / totalEvents) > 0.4
+        isAnomalous: count / totalEvents > 0.4,
       }));
 
     const topCountries = Object.entries(countryCounts)
@@ -1299,63 +1560,88 @@ const handlePurgeDlqItem = async (id: string) => {
         name,
         count,
         percentage: (count / totalEvents) * 100,
-        isAnomalous: (count / totalEvents) > 0.4
+        isAnomalous: count / totalEvents > 0.4,
       }));
 
     return { topColos, topCountries, totalEvents };
   }, [data]);
 
   const filteredData = React.useMemo(() => {
-    return data.filter(event => {
+    return data.filter((event) => {
       // 1. Filter by severity
       let matchesSeverity = true;
-      if (severityFilter === 'high') {
-        matchesSeverity = event.severity === 'high' || event.severity === 'critical';
-      } else if (severityFilter !== 'all') {
+      if (severityFilter === "high") {
+        matchesSeverity =
+          event.severity === "high" || event.severity === "critical";
+      } else if (severityFilter !== "all") {
         matchesSeverity = event.severity === severityFilter;
       }
 
       // 2. Filter by app origin
       let matchesAppOrigin = true;
-      if (appOriginFilter !== 'all') {
-         const origin = event.appOrigin || 'unknown';
-         matchesAppOrigin = origin === appOriginFilter;
+      if (appOriginFilter !== "all") {
+        const origin = event.appOrigin || "unknown";
+        matchesAppOrigin = origin === appOriginFilter;
       }
 
       // 3. Filter by search query
       let matchesSearch = true;
-      if (searchQuery.trim() !== '') {
+      if (searchQuery.trim() !== "") {
         const query = searchQuery.toLowerCase();
         matchesSearch =
           event.sourceIp.toLowerCase().includes(query) ||
           getEventName(event.eventType).toLowerCase().includes(query) ||
-          JSON.stringify(event.details || {}).toLowerCase().includes(query);
+          JSON.stringify(event.details || {})
+            .toLowerCase()
+            .includes(query);
       }
 
       // 4. Filter by AI Unsafe Only
       let matchesAiUnsafe = true;
       if (aiUnsafeOnly) {
-          matchesAiUnsafe = event.aiThreatFlag === true;
+        matchesAiUnsafe = event.aiThreatFlag === true;
       }
 
       let matchesVector = true;
-      if (vectorFilter === 'critical') {
-        matchesVector = event.severity === 'critical' || event.severity === 'high';
-      } else if (vectorFilter === 'sqli_xss') {
-        matchesVector = getEventName(event.eventType).toLowerCase().includes('sql') || getEventName(event.eventType).toLowerCase().includes('xss') || JSON.stringify(event.details || {}).toLowerCase().includes('sql') || JSON.stringify(event.details || {}).toLowerCase().includes('xss');
-      } else if (vectorFilter === 'ddos') {
-        matchesVector = event.eventType === 'rate_limit.exceeded' || getEventName(event.eventType).toLowerCase().includes('ddos');
+      if (vectorFilter === "critical") {
+        matchesVector =
+          event.severity === "critical" || event.severity === "high";
+      } else if (vectorFilter === "sqli_xss") {
+        matchesVector =
+          getEventName(event.eventType).toLowerCase().includes("sql") ||
+          getEventName(event.eventType).toLowerCase().includes("xss") ||
+          JSON.stringify(event.details || {})
+            .toLowerCase()
+            .includes("sql") ||
+          JSON.stringify(event.details || {})
+            .toLowerCase()
+            .includes("xss");
+      } else if (vectorFilter === "ddos") {
+        matchesVector =
+          event.eventType === "rate_limit.exceeded" ||
+          getEventName(event.eventType).toLowerCase().includes("ddos");
       }
-      return matchesSeverity && matchesAppOrigin && matchesSearch && matchesAiUnsafe && matchesVector;
+      return (
+        matchesSeverity &&
+        matchesAppOrigin &&
+        matchesSearch &&
+        matchesAiUnsafe &&
+        matchesVector
+      );
     });
-  }, [data, severityFilter, searchQuery, appOriginFilter, aiUnsafeOnly, vectorFilter]);
+  }, [
+    data,
+    severityFilter,
+    searchQuery,
+    appOriginFilter,
+    aiUnsafeOnly,
+    vectorFilter,
+  ]);
 
   const paginatedTelemetry = React.useMemo(() => {
     const start = telemetryPage * itemsPerPage;
     return filteredData.slice(start, start + itemsPerPage);
   }, [filteredData, telemetryPage]);
-
-
 
   const filteredAuditLog = React.useMemo(() => {
     let filtered = auditLog;
@@ -1363,16 +1649,17 @@ const handlePurgeDlqItem = async (id: string) => {
     if (auditTimeRange !== "all") {
       const now = Date.now();
       const windowMs = auditTimeRange === "1h" ? 3600000 : 86400000;
-      filtered = filtered.filter(event => event.timestamp >= now - windowMs);
+      filtered = filtered.filter((event) => event.timestamp >= now - windowMs);
     }
 
     if (!auditSearchQuery.trim()) return filtered;
 
     const query = auditSearchQuery.toLowerCase();
-    return filtered.filter(event =>
-      event.action.toLowerCase().includes(query) ||
-      (event.target && event.target.toLowerCase().includes(query)) ||
-      (event.signature && event.signature.toLowerCase().includes(query))
+    return filtered.filter(
+      (event) =>
+        event.action.toLowerCase().includes(query) ||
+        (event.target && event.target.toLowerCase().includes(query)) ||
+        (event.signature && event.signature.toLowerCase().includes(query)),
     );
   }, [auditLog, auditSearchQuery, auditTimeRange]);
 
@@ -1381,21 +1668,21 @@ const handlePurgeDlqItem = async (id: string) => {
     return filteredAuditLog.slice(start, start + itemsPerPage);
   }, [filteredAuditLog, auditPage]);
 
-
-
   const floodMitigationCount = React.useMemo(() => {
-    return auditLog.filter(event => event.signature === 'FLOOD_CONTROL_MITIGATION').length;
+    return auditLog.filter(
+      (event) => event.signature === "FLOOD_CONTROL_MITIGATION",
+    ).length;
   }, [auditLog]);
 
   const hasHighDensityAnomaly = React.useMemo(() => {
-    if (data.length === 0) return { isAnomaly: false, ip: '', percentage: 0 };
+    if (data.length === 0) return { isAnomaly: false, ip: "", percentage: 0 };
     const currentViewport = data.slice(0, 150);
     const counts: Record<string, number> = {};
     for (const event of currentViewport) {
       counts[event.sourceIp] = (counts[event.sourceIp] || 0) + 1;
     }
     const totalViewportLogs = currentViewport.length;
-    let maxIp = '';
+    let maxIp = "";
     let maxCount = 0;
 
     for (const [ip, count] of Object.entries(counts)) {
@@ -1406,12 +1693,12 @@ const handlePurgeDlqItem = async (id: string) => {
     }
 
     const percentage = (maxCount / totalViewportLogs) * 100;
-    const threshold = totalViewportLogs * 0.20;
+    const threshold = totalViewportLogs * 0.2;
 
     if (maxCount > threshold) {
       return { isAnomaly: true, ip: maxIp, percentage: Math.round(percentage) };
     }
-    return { isAnomaly: false, ip: '', percentage: 0 };
+    return { isAnomaly: false, ip: "", percentage: 0 };
   }, [data]);
 
   if (activeAccount?.address && !isSbtLoading && !hasAdminSbt) {
@@ -1419,11 +1706,14 @@ const handlePurgeDlqItem = async (id: string) => {
       <div className="flex items-center justify-center h-full w-full bg-slate-950">
         <div className="bg-slate-900 border border-red-900 p-8 rounded-lg max-w-2xl w-full text-center">
           <p className="text-red-500 font-mono text-lg font-bold tracking-widest uppercase">
-            [ CRYPTOGRAPHIC AUTHORIZATION FAILURE: AXIM SECURITY ADMIN SOULBOUND TOKEN REQUIRED ]
+            [ CRYPTOGRAPHIC AUTHORIZATION FAILURE: AXIM SECURITY ADMIN SOULBOUND
+            TOKEN REQUIRED ]
           </p>
           <div className="mt-8 flex justify-center">
             <button
-              onClick={() => { if (activeWallet) disconnect(activeWallet); }}
+              onClick={() => {
+                if (activeWallet) disconnect(activeWallet);
+              }}
               className="px-6 py-3 bg-red-950 hover:bg-red-900 border border-red-500 text-red-500 font-mono text-sm font-bold tracking-wider uppercase transition-colors"
             >
               [ DISCONNECT WALLET ]
@@ -1442,9 +1732,9 @@ const handlePurgeDlqItem = async (id: string) => {
           <div
             key={toast.id}
             className={`px-4 py-3 rounded shadow-lg font-mono text-sm border pointer-events-auto transition-all transform slide-in-right ${
-              (toast.type === 'success' || toast.type === 'emerald')
-                ? 'bg-emerald-950/90 border-emerald-500 text-emerald-200'
-                : 'bg-red-950/90 border-red-500 text-red-200'
+              toast.type === "success" || toast.type === "emerald"
+                ? "bg-emerald-950/90 border-emerald-500 text-emerald-200"
+                : "bg-red-950/90 border-red-500 text-red-200"
             }`}
           >
             {toast.message}
@@ -1461,24 +1751,37 @@ const handlePurgeDlqItem = async (id: string) => {
           }}
           className="bg-red-950/80 border-b border-red-500 text-red-200 px-4 py-2 text-center font-mono text-sm font-bold tracking-wider uppercase mb-2 cursor-pointer hover:bg-red-900/80 transition-colors"
         >
-          [ CRITICAL ANOMALY DETECTED: IP {hasHighDensityAnomaly.ip} REPRESENTS {hasHighDensityAnomaly.percentage}% OF ACTIVE EDGE BLOCKS ]
+          [ CRITICAL ANOMALY DETECTED: IP {hasHighDensityAnomaly.ip} REPRESENTS{" "}
+          {hasHighDensityAnomaly.percentage}% OF ACTIVE EDGE BLOCKS ]
         </div>
       )}
 
       {/* AI Guard Status & Cron Automation */}
       <div className="flex flex-wrap items-center gap-3 mb-2">
         {/* Realtime Status Badge */}
-        <div className={`text-xs px-3 py-1.5 rounded-md font-mono flex items-center gap-2 w-max border ${
-           realtimeStatus === 'CONNECTED' ? 'bg-emerald-950/50 border-emerald-900 text-emerald-400' :
-           realtimeStatus === 'RECONNECTING' ? 'bg-amber-950/50 border-amber-900 text-amber-400 animate-pulse' :
-           'bg-red-950/50 border-red-900 text-red-400'
-        }`}>
-           <span className={`w-2 h-2 rounded-full ${
-             realtimeStatus === 'CONNECTED' ? 'bg-emerald-500' :
-             realtimeStatus === 'RECONNECTING' ? 'bg-amber-500 animate-bounce' :
-             'bg-red-500'
-           }`}></span>
-           {realtimeStatus === 'CONNECTED' ? 'RT: CONNECTED' : realtimeStatus === 'RECONNECTING' ? 'RT: RECONNECTING' : 'RT: OFFLINE'}
+        <div
+          className={`text-xs px-3 py-1.5 rounded-md font-mono flex items-center gap-2 w-max border ${
+            realtimeStatus === "CONNECTED"
+              ? "bg-emerald-950/50 border-emerald-900 text-emerald-400"
+              : realtimeStatus === "RECONNECTING"
+                ? "bg-amber-950/50 border-amber-900 text-amber-400 animate-pulse"
+                : "bg-red-950/50 border-red-900 text-red-400"
+          }`}
+        >
+          <span
+            className={`w-2 h-2 rounded-full ${
+              realtimeStatus === "CONNECTED"
+                ? "bg-emerald-500"
+                : realtimeStatus === "RECONNECTING"
+                  ? "bg-amber-500 animate-bounce"
+                  : "bg-red-500"
+            }`}
+          ></span>
+          {realtimeStatus === "CONNECTED"
+            ? "RT: CONNECTED"
+            : realtimeStatus === "RECONNECTING"
+              ? "RT: RECONNECTING"
+              : "RT: OFFLINE"}
         </div>
         <div className="text-xs bg-purple-950/50 border border-purple-900 px-3 py-1.5 rounded-md text-purple-400 font-mono flex items-center gap-2 w-max">
           <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
@@ -1486,7 +1789,7 @@ const handlePurgeDlqItem = async (id: string) => {
         </div>
         <div className="relative">
           <div
-            onClick={() => setShowCronPopover(prev => !prev)}
+            onClick={() => setShowCronPopover((prev) => !prev)}
             className="cursor-pointer hover:bg-emerald-900/50 transition-colors text-xs bg-emerald-950/50 border border-emerald-900 px-3 py-1.5 rounded-md text-emerald-400 font-mono flex items-center gap-2 w-max"
           >
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -1494,77 +1797,104 @@ const handlePurgeDlqItem = async (id: string) => {
           </div>
           {showCronPopover && (
             <div className="absolute top-full left-0 mt-2 w-max min-w-[300px] z-50 bg-slate-900/95 border border-slate-700 rounded shadow-xl p-4 font-mono text-xs">
-               <div className="text-slate-300 font-bold mb-3 uppercase tracking-wider border-b border-slate-700 pb-2 flex justify-between">
-                 <span>[ Cron Heartbeat Telemetry ]</span>
-                 <button onClick={() => setShowCronPopover(false)} className="text-slate-500 hover:text-slate-300">X</button>
-               </div>
-               {heartbeatDetails ? (
-                  <div className="space-y-2 text-slate-400">
-                     <div className="flex justify-between">
-                        <span>STATUS:</span>
-                        <span className={heartbeatDetails.status === 'ok' ? 'text-emerald-400' : 'text-amber-400'}>
-                           {heartbeatDetails.status === 'ok' ? 'OK' : 'DEGRADED'}
-                        </span>
-                     </div>
-                     <div className="flex justify-between">
-                        <span>LAST HEARTBEAT:</span>
+              <div className="text-slate-300 font-bold mb-3 uppercase tracking-wider border-b border-slate-700 pb-2 flex justify-between">
+                <span>[ Cron Heartbeat Telemetry ]</span>
+                <button
+                  onClick={() => setShowCronPopover(false)}
+                  className="text-slate-500 hover:text-slate-300"
+                >
+                  X
+                </button>
+              </div>
+              {heartbeatDetails ? (
+                <div className="space-y-2 text-slate-400">
+                  <div className="flex justify-between">
+                    <span>STATUS:</span>
+                    <span
+                      className={
+                        heartbeatDetails.status === "ok"
+                          ? "text-emerald-400"
+                          : "text-amber-400"
+                      }
+                    >
+                      {heartbeatDetails.status === "ok" ? "OK" : "DEGRADED"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>LAST HEARTBEAT:</span>
+                    <span className="text-slate-200">
+                      {heartbeatDetails.timestamp
+                        ? new Date(
+                            heartbeatDetails.timestamp as number,
+                          ).toLocaleString("en-GB")
+                        : "UNKNOWN"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>EXPIRED KEYS PURGED:</span>
+                    <span className="text-slate-200">
+                      {String(heartbeatDetails.expiredKeysPurged ?? 0)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>BUFFER FLUSHED:</span>
+                    <span className="text-slate-200">
+                      {String(heartbeatDetails.bufferFlushedCount ?? 0)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>CRON SCHEDULE:</span>
+                    <span className="text-slate-200">
+                      {String(heartbeatDetails.cronSchedule ?? "UNKNOWN")}
+                    </span>
+                  </div>
+
+                  {telemetrySummary && (
+                    <>
+                      <div className="border-t border-slate-700/50 my-2 pt-2 text-slate-300 font-bold text-[10px] uppercase tracking-wider">
+                        [ 24H Summary Metrics ]
+                      </div>
+                      <div className="flex justify-between">
+                        <span>TOTAL INTERCEPTED:</span>
                         <span className="text-slate-200">
-                           {heartbeatDetails.timestamp ? new Date(heartbeatDetails.timestamp as number).toLocaleString('en-GB') : 'UNKNOWN'}
+                          {String(telemetrySummary.totalIntercepted24h ?? 0)}
                         </span>
-                     </div>
-                     <div className="flex justify-between">
-                        <span>EXPIRED KEYS PURGED:</span>
-                        <span className="text-slate-200">{String(heartbeatDetails.expiredKeysPurged ?? 0)}</span>
-                     </div>
-                     <div className="flex justify-between">
-                        <span>BUFFER FLUSHED:</span>
-                        <span className="text-slate-200">{String(heartbeatDetails.bufferFlushedCount ?? 0)}</span>
-                     </div>
-                     <div className="flex justify-between">
-                        <span>CRON SCHEDULE:</span>
-                        <span className="text-slate-200">{String(heartbeatDetails.cronSchedule ?? 'UNKNOWN')}</span>
-                     </div>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>AI THREATS (UNSAFE):</span>
+                        <span className="text-slate-200">
+                          {String(telemetrySummary.aiUnsafeCount24h ?? 0)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>FLOOD BANS:</span>
+                        <span className="text-slate-200">
+                          {String(telemetrySummary.floodBans24h ?? 0)}
+                        </span>
+                      </div>
+                    </>
+                  )}
 
-                     {telemetrySummary && (
-                       <>
-                         <div className="border-t border-slate-700/50 my-2 pt-2 text-slate-300 font-bold text-[10px] uppercase tracking-wider">
-                           [ 24H Summary Metrics ]
-                         </div>
-                         <div className="flex justify-between">
-                            <span>TOTAL INTERCEPTED:</span>
-                            <span className="text-slate-200">{String(telemetrySummary.totalIntercepted24h ?? 0)}</span>
-                         </div>
-                         <div className="flex justify-between">
-                            <span>AI THREATS (UNSAFE):</span>
-                            <span className="text-slate-200">{String(telemetrySummary.aiUnsafeCount24h ?? 0)}</span>
-                         </div>
-                         <div className="flex justify-between">
-                            <span>FLOOD BANS:</span>
-                            <span className="text-slate-200">{String(telemetrySummary.floodBans24h ?? 0)}</span>
-                         </div>
-                       </>
-                     )}
-
-                     <div className="pt-3 border-t border-slate-700/50 mt-3 text-center flex flex-col gap-2">
-                       <button
-                          onClick={forceSweep}
-                          disabled={forceSweepLoading}
-                          className="w-full bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 border border-slate-600 rounded px-3 py-1 font-mono text-xs uppercase tracking-wider transition-colors"
-                       >
-                         {forceSweepLoading ? 'EXECUTING...' : '[ FORCE SWEEP ]'}
-                       </button>
-                       {showToast && (
-                         <div className="text-emerald-400 text-[10px] animate-pulse font-bold">
-                           [ CRON SWEEP EXECUTED ]
-                         </div>
-                       )}
-                     </div>
+                  <div className="pt-3 border-t border-slate-700/50 mt-3 text-center flex flex-col gap-2">
+                    <button
+                      onClick={forceSweep}
+                      disabled={forceSweepLoading}
+                      className="w-full bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 border border-slate-600 rounded px-3 py-1 font-mono text-xs uppercase tracking-wider transition-colors"
+                    >
+                      {forceSweepLoading ? "EXECUTING..." : "[ FORCE SWEEP ]"}
+                    </button>
+                    {showToast && (
+                      <div className="text-emerald-400 text-[10px] animate-pulse font-bold">
+                        [ CRON SWEEP EXECUTED ]
+                      </div>
+                    )}
                   </div>
-               ) : (
-                  <div className="text-slate-500 text-center py-2">
-                     Awaiting heartbeat sync...
-                  </div>
-               )}
+                </div>
+              ) : (
+                <div className="text-slate-500 text-center py-2">
+                  Awaiting heartbeat sync...
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1572,58 +1902,94 @@ const handlePurgeDlqItem = async (id: string) => {
 
       {/* Synchronization Clock */}
       <div className="flex flex-col sm:flex-row flex-wrap justify-between items-center gap-2 md:gap-3">
-        <div className={`text-xs font-mono border px-2 py-1.5 md:px-3 md:py-2 rounded flex items-center gap-2 ${
-          healthStatus === 'ok'
-            ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300'
-            : healthStatus === 'degraded'
-            ? 'bg-amber-950/80 border-amber-500 text-amber-300'
-            : 'bg-slate-900 border-slate-700 text-slate-400'
-        }`}>
-          {healthStatus === 'ok' ? 'STATUS: PERIMETER SECURE' : healthStatus === 'degraded' ? 'STATUS: PERIMETER DEGRADED' : 'STATUS: UNKNOWN'}
-          <span className={`h-2 w-2 rounded-full ${healthStatus === 'ok' ? 'bg-emerald-500 animate-pulse' : healthStatus === 'degraded' ? 'bg-amber-500 animate-pulse' : 'bg-red-500'}`}></span>
+        <div
+          className={`text-xs font-mono border px-2 py-1.5 md:px-3 md:py-2 rounded flex items-center gap-2 ${
+            healthStatus === "ok"
+              ? "bg-emerald-950/80 border-emerald-500 text-emerald-300"
+              : healthStatus === "degraded"
+                ? "bg-amber-950/80 border-amber-500 text-amber-300"
+                : "bg-slate-900 border-slate-700 text-slate-400"
+          }`}
+        >
+          {healthStatus === "ok"
+            ? "STATUS: PERIMETER SECURE"
+            : healthStatus === "degraded"
+              ? "STATUS: PERIMETER DEGRADED"
+              : "STATUS: UNKNOWN"}
+          <span
+            className={`h-2 w-2 rounded-full ${healthStatus === "ok" ? "bg-emerald-500 animate-pulse" : healthStatus === "degraded" ? "bg-amber-500 animate-pulse" : "bg-red-500"}`}
+          ></span>
         </div>
 
         {/* Global Threat Level Badge */}
-        <div className={`text-xs font-mono border px-2 py-1.5 md:px-3 md:py-2 rounded flex items-center gap-2 ${
-            globalThreatLevel === 'CRITICAL' ? 'bg-red-950/80 border-red-500 text-red-300' :
-            globalThreatLevel === 'HIGH' ? 'bg-amber-950/80 border-amber-500 text-amber-300' :
-            globalThreatLevel === 'ELEVATED' ? 'bg-yellow-950/80 border-yellow-500 text-yellow-300' :
-            'bg-emerald-950/80 border-emerald-500 text-emerald-300'
-        }`}>
-           <span>THREAT LEVEL: {globalThreatLevel}</span>
-           <span className={`h-2 w-2 rounded-full ${
-               globalThreatLevel === 'CRITICAL' ? 'bg-red-500 animate-pulse' :
-               globalThreatLevel === 'HIGH' ? 'bg-amber-500' :
-               globalThreatLevel === 'ELEVATED' ? 'bg-yellow-500' :
-               'bg-emerald-500'
-           }`}></span>
+        <div
+          className={`text-xs font-mono border px-2 py-1.5 md:px-3 md:py-2 rounded flex items-center gap-2 ${
+            globalThreatLevel === "CRITICAL"
+              ? "bg-red-950/80 border-red-500 text-red-300"
+              : globalThreatLevel === "HIGH"
+                ? "bg-amber-950/80 border-amber-500 text-amber-300"
+                : globalThreatLevel === "ELEVATED"
+                  ? "bg-yellow-950/80 border-yellow-500 text-yellow-300"
+                  : "bg-emerald-950/80 border-emerald-500 text-emerald-300"
+          }`}
+        >
+          <span>THREAT LEVEL: {globalThreatLevel}</span>
+          <span
+            className={`h-2 w-2 rounded-full ${
+              globalThreatLevel === "CRITICAL"
+                ? "bg-red-500 animate-pulse"
+                : globalThreatLevel === "HIGH"
+                  ? "bg-amber-500"
+                  : globalThreatLevel === "ELEVATED"
+                    ? "bg-yellow-500"
+                    : "bg-emerald-500"
+            }`}
+          ></span>
         </div>
 
         {/* Memory Allocation Tooltip */}
         <div className="relative group text-xs font-mono border px-2 py-1.5 md:px-3 md:py-2 rounded flex items-center gap-2 bg-slate-900 border-slate-700 text-slate-400 cursor-help transition-colors hover:bg-slate-800">
-           EDGE METRICS [?]
-           <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max max-w-xs opacity-0 transition-opacity group-hover:opacity-100 bg-slate-800 text-slate-200 text-[10px] rounded px-3 py-2 border border-slate-600 shadow-xl z-50 whitespace-nowrap flex flex-col gap-1 text-center">
-             <span>[ FLOOD LEDGER: {edgeMetrics.rateLimitSize}/10000 | PENALTY LEDGER: {edgeMetrics.penaltyLedgerSize}/1000 ]</span>
-             {lastHeartbeat && <span>[ LAST HEARTBEAT: {new Date(lastHeartbeat).toLocaleString('en-GB')} ]</span>}
-           </div>
+          EDGE METRICS [?]
+          <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max max-w-xs opacity-0 transition-opacity group-hover:opacity-100 bg-slate-800 text-slate-200 text-[10px] rounded px-3 py-2 border border-slate-600 shadow-xl z-50 whitespace-nowrap flex flex-col gap-1 text-center">
+            <span>
+              [ FLOOD LEDGER: {edgeMetrics.rateLimitSize}/10000 | PENALTY
+              LEDGER: {edgeMetrics.penaltyLedgerSize}/1000 ]
+            </span>
+            <span>
+              [ MEMORY (RSS):{" "}
+              {Math.round(edgeMetrics.memoryUsage.rss / 1024 / 1024)}MB | HEAP:{" "}
+              {Math.round(edgeMetrics.memoryUsage.heapUsed / 1024 / 1024)}MB ]
+            </span>
+            {lastHeartbeat && (
+              <span>
+                [ LAST HEARTBEAT:{" "}
+                {new Date(lastHeartbeat).toLocaleString("en-GB")} ]
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Wallet Status Badge */}
         <div className="text-xs font-mono border px-2 py-1.5 md:px-3 md:py-2 rounded transition-colors duration-300 flex items-center gap-2 bg-slate-950/80 border-slate-700 text-slate-300">
           {activeAccount ? (
-            <span>WALLET: {activeAccount.address.slice(0, 4)}...{activeAccount.address.slice(-2)}</span>
+            <span>
+              WALLET: {activeAccount.address.slice(0, 4)}...
+              {activeAccount.address.slice(-2)}
+            </span>
           ) : (
             <span>[ AUTH: WEB2 PROXIED GATEWAY MODE ]</span>
           )}
         </div>
-        <div className={`text-xs font-mono border px-2 py-1.5 md:px-3 md:py-2 rounded transition-colors duration-300 flex items-center gap-2 ${
-          realtimeStatus === 'CONNECTED'
-            ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300'
-            : realtimeStatus === 'ERROR'
-            ? 'bg-red-950/80 border-red-500 text-red-300'
-            : 'bg-amber-950/80 border-amber-500 text-amber-300'
-        }`}>
-          {realtimeStatus === 'CONNECTED' ? (
+        <div
+          className={`text-xs font-mono border px-2 py-1.5 md:px-3 md:py-2 rounded transition-colors duration-300 flex items-center gap-2 ${
+            realtimeStatus === "CONNECTED"
+              ? "bg-emerald-950/80 border-emerald-500 text-emerald-300"
+              : realtimeStatus === "ERROR"
+                ? "bg-red-950/80 border-red-500 text-red-300"
+                : "bg-amber-950/80 border-amber-500 text-amber-300"
+          }`}
+        >
+          {realtimeStatus === "CONNECTED" ? (
             <>
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -1631,7 +1997,7 @@ const handlePurgeDlqItem = async (id: string) => {
               </span>
               <span>CONNECTED</span>
             </>
-          ) : realtimeStatus === 'ERROR' ? (
+          ) : realtimeStatus === "ERROR" ? (
             <>
               <span className="relative flex h-2 w-2">
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
@@ -1648,73 +2014,91 @@ const handlePurgeDlqItem = async (id: string) => {
             </>
           )}
         </div>
-        <div className={`text-xs font-mono border px-2 py-1.5 md:px-3 md:py-2 rounded transition-colors duration-300 ${flash ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300' : 'bg-slate-900 border-slate-700 text-slate-400'}`}>
-          SYNC INTERVAL: 5000MS | LAST INDEXED: {lastSynced ? lastSynced.toLocaleTimeString('en-GB') : '--:--:--'}
+        <div
+          className={`text-xs font-mono border px-2 py-1.5 md:px-3 md:py-2 rounded transition-colors duration-300 ${flash ? "bg-emerald-950/80 border-emerald-500 text-emerald-300" : "bg-slate-900 border-slate-700 text-slate-400"}`}
+        >
+          SYNC INTERVAL: 5000MS | LAST INDEXED:{" "}
+          {lastSynced ? lastSynced.toLocaleTimeString("en-GB") : "--:--:--"}
         </div>
         <button
-           onClick={() => setAutoRefresh(prev => !prev)}
-           className={`px-2 py-1 rounded text-[10px] font-mono transition-colors border ${
-             autoRefresh
-               ? "bg-emerald-950/50 text-emerald-400 border-emerald-800"
-               : "bg-amber-950/50 text-amber-400 border-amber-800"
-           }`}
+          onClick={() => setAutoRefresh((prev) => !prev)}
+          className={`px-2 py-1 rounded text-[10px] font-mono transition-colors border ${
+            autoRefresh
+              ? "bg-emerald-950/50 text-emerald-400 border-emerald-800"
+              : "bg-amber-950/50 text-amber-400 border-amber-800"
+          }`}
         >
-           {autoRefresh ? "[ AUTO-REFRESH: ON ]" : "[ PAUSED ]"}
+          {autoRefresh ? "[ AUTO-REFRESH: ON ]" : "[ PAUSED ]"}
         </button>
         <button
-           onClick={handleManualSync}
-           disabled={isSyncing || isCooldown}
-           className={`text-xs font-mono border px-2 py-1.5 md:px-3 md:py-2 rounded transition-colors duration-300 bg-slate-800 hover:bg-slate-700 border-slate-600 text-slate-300 flex items-center gap-2 disabled:opacity-50 ${isCooldown && !isSyncing ? 'opacity-50' : ''}`}
+          onClick={handleManualSync}
+          disabled={isSyncing || isCooldown}
+          className={`text-xs font-mono border px-2 py-1.5 md:px-3 md:py-2 rounded transition-colors duration-300 bg-slate-800 hover:bg-slate-700 border-slate-600 text-slate-300 flex items-center gap-2 disabled:opacity-50 ${isCooldown && !isSyncing ? "opacity-50" : ""}`}
         >
-           {isSyncing ? '[ SYNCING LOGS... ]' : isCooldown ? '[ COOLING DOWN... ]' : 'SYNC NOW'}
+          {isSyncing
+            ? "[ SYNCING LOGS... ]"
+            : isCooldown
+              ? "[ COOLING DOWN... ]"
+              : "SYNC NOW"}
         </button>
       </div>
 
       {/* Capacity Progress Bars */}
       <div className="flex flex-col gap-2 mt-2">
-         {/* Rate Limit Size Bar */}
-         <div className="flex flex-col gap-1">
-            <div className="flex justify-between text-[10px] font-mono text-slate-400 uppercase tracking-wider">
-               <span>Rate Limit Map Depth</span>
-               <span>{edgeMetrics.rateLimitSize} / 10000</span>
-            </div>
-            <div className="w-full bg-slate-900 border border-slate-700 rounded h-2 overflow-hidden">
-               <div
-                  className={`h-full transition-all duration-500 ${edgeMetrics.rateLimitSize / 10000 > 0.7 ? 'bg-amber-500' : 'bg-slate-500'}`}
-                  style={{ width: `${Math.min(100, Math.max(0, (edgeMetrics.rateLimitSize / 10000) * 100))}%` }}
-               ></div>
-            </div>
-         </div>
-         {/* Penalty Ledger Size Bar */}
-         <div className="flex flex-col gap-1">
-            <div className="flex justify-between text-[10px] font-mono text-slate-400 uppercase tracking-wider">
-               <span>Penalty Ledger Depth</span>
-               <span>{edgeMetrics.penaltyLedgerSize} / 1000</span>
-            </div>
-            <div className="w-full bg-slate-900 border border-slate-700 rounded h-2 overflow-hidden">
-               <div
-                  className={`h-full transition-all duration-500 ${edgeMetrics.penaltyLedgerSize / 1000 > 0.7 ? 'bg-amber-500' : 'bg-slate-500'}`}
-                  style={{ width: `${Math.min(100, Math.max(0, (edgeMetrics.penaltyLedgerSize / 1000) * 100))}%` }}
-               ></div>
-            </div>
-         </div>
+        {/* Rate Limit Size Bar */}
+        <div className="flex flex-col gap-1">
+          <div className="flex justify-between text-[10px] font-mono text-slate-400 uppercase tracking-wider">
+            <span>Rate Limit Map Depth</span>
+            <span>{edgeMetrics.rateLimitSize} / 10000</span>
+          </div>
+          <div className="w-full bg-slate-900 border border-slate-700 rounded h-2 overflow-hidden">
+            <div
+              className={`h-full transition-all duration-500 ${edgeMetrics.rateLimitSize / 10000 > 0.7 ? "bg-amber-500" : "bg-slate-500"}`}
+              style={{
+                width: `${Math.min(100, Math.max(0, (edgeMetrics.rateLimitSize / 10000) * 100))}%`,
+              }}
+            ></div>
+          </div>
+        </div>
+        {/* Penalty Ledger Size Bar */}
+        <div className="flex flex-col gap-1">
+          <div className="flex justify-between text-[10px] font-mono text-slate-400 uppercase tracking-wider">
+            <span>Penalty Ledger Depth</span>
+            <span>{edgeMetrics.penaltyLedgerSize} / 1000</span>
+          </div>
+          <div className="w-full bg-slate-900 border border-slate-700 rounded h-2 overflow-hidden">
+            <div
+              className={`h-full transition-all duration-500 ${edgeMetrics.penaltyLedgerSize / 1000 > 0.7 ? "bg-amber-500" : "bg-slate-500"}`}
+              style={{
+                width: `${Math.min(100, Math.max(0, (edgeMetrics.penaltyLedgerSize / 1000) * 100))}%`,
+              }}
+            ></div>
+          </div>
+        </div>
       </div>
-
 
       {/* Metric Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-4 flex flex-col justify-between">
-          <div className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">Ingested Alerts</div>
+          <div className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">
+            Ingested Alerts
+          </div>
           <div className="text-2xl font-mono text-slate-200 flex items-center gap-2">
-            {isLoading ? '-' : data.length}
-            {velocityShift === 'up' && (
+            {isLoading ? "-" : data.length}
+            {velocityShift === "up" && (
               <span className="text-xs text-red-400 bg-red-950/50 px-1.5 py-0.5 rounded border border-red-900 flex items-center gap-1 transition-all">
-                ↑ <span className="text-[10px] uppercase tracking-wider">Expanding</span>
+                ↑{" "}
+                <span className="text-[10px] uppercase tracking-wider">
+                  Expanding
+                </span>
               </span>
             )}
-            {velocityShift === 'down' && (
+            {velocityShift === "down" && (
               <span className="text-xs text-emerald-400 bg-emerald-950/50 px-1.5 py-0.5 rounded border border-emerald-900 flex items-center gap-1 transition-all">
-                ↓ <span className="text-[10px] uppercase tracking-wider">Dropping</span>
+                ↓{" "}
+                <span className="text-[10px] uppercase tracking-wider">
+                  Dropping
+                </span>
               </span>
             )}
           </div>
@@ -1729,79 +2113,119 @@ const handlePurgeDlqItem = async (id: string) => {
             )}
           </div>
           <div className="text-2xl font-mono text-slate-200 flex items-center gap-2">
-             {isLoading ? '-' : blocklist.length}
+            {isLoading ? "-" : blocklist.length}
           </div>
         </div>
         <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-4 flex flex-col justify-between">
-          <div className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">Node Latency Target</div>
+          <div className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">
+            Node Latency Target
+          </div>
           <div>
-             <span className="text-xl font-mono text-emerald-400 bg-emerald-950/50 border border-emerald-900 px-2 py-1 rounded">
-               {edgeLatency ? `${edgeLatency}ms Avg Edge Execution` : '< 5ms'}
-             </span>
-             {edgeLatency && (
-               <div className="mt-2 w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                 <div
-                   className={`h-full ${parseFloat(edgeLatency) < 3 ? 'bg-emerald-500' : 'bg-amber-500'}`}
-                   style={{ width: `${Math.min((parseFloat(edgeLatency) / 5) * 100, 100)}%` }}
-                 ></div>
-               </div>
-             )}
+            <span className="text-xl font-mono text-emerald-400 bg-emerald-950/50 border border-emerald-900 px-2 py-1 rounded">
+              {edgeLatency ? `${edgeLatency}ms Avg Edge Execution` : "< 5ms"}
+            </span>
+            {edgeLatency && (
+              <div className="mt-2 w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                <div
+                  className={`h-full ${parseFloat(edgeLatency) < 3 ? "bg-emerald-500" : "bg-amber-500"}`}
+                  style={{
+                    width: `${Math.min((parseFloat(edgeLatency) / 5) * 100, 100)}%`,
+                  }}
+                ></div>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-
       {/* Edge Trend Analytics */}
       <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-4 flex flex-col min-h-0">
-        <div className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-4 border-b border-slate-800 pb-2">Edge Trend Analytics</div>
+        <div className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-4 border-b border-slate-800 pb-2">
+          Edge Trend Analytics
+        </div>
 
-          {anomalyQueue.length > 0 && (
-            <div
-              onClick={() => setShowTriageModal(true)}
-              className="mb-6 border border-amber-500/50 bg-amber-500/10 rounded font-mono p-4 text-center text-sm text-amber-500 cursor-pointer hover:bg-amber-500/20 transition-colors animate-pulse"
-            >
-              [ ONYX ANOMALY QUEUE: {anomalyQueue.length} IP(s) STAGED FOR TRIAGE ]
-            </div>
-          )}
-<div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {anomalyQueue.length > 0 && (
+          <div
+            onClick={() => setShowTriageModal(true)}
+            className="mb-6 border border-amber-500/50 bg-amber-500/10 rounded font-mono p-4 text-center text-sm text-amber-500 cursor-pointer hover:bg-amber-500/20 transition-colors animate-pulse"
+          >
+            [ ONYX ANOMALY QUEUE: {anomalyQueue.length} IP(s) STAGED FOR TRIAGE
+            ]
+          </div>
+        )}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Top Datacenters */}
           <div>
-            <div className="text-[10px] text-slate-500 font-mono mb-2">TOP DATACENTERS</div>
+            <div className="text-[10px] text-slate-500 font-mono mb-2">
+              TOP DATACENTERS
+            </div>
             <div className="space-y-2">
               {edgeTrendAnalytics.topColos.map((colo, idx) => (
-                <button key={idx} onClick={() => setSearchQuery(colo.name)} className={`w-full flex items-center justify-between p-2 rounded border hover:bg-slate-800/60 cursor-pointer transition-colors ${colo.isAnomalous ? 'border-amber-500/50 bg-amber-950/20 animate-pulse' : 'border-slate-800 bg-slate-900/40'}`}>
+                <button
+                  key={idx}
+                  onClick={() => setSearchQuery(colo.name)}
+                  className={`w-full flex items-center justify-between p-2 rounded border hover:bg-slate-800/60 cursor-pointer transition-colors ${colo.isAnomalous ? "border-amber-500/50 bg-amber-950/20 animate-pulse" : "border-slate-800 bg-slate-900/40"}`}
+                >
                   <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs font-bold text-slate-300">[{colo.name}]</span>
+                    <span className="font-mono text-xs font-bold text-slate-300">
+                      [{colo.name}]
+                    </span>
                   </div>
                   <div className="flex items-center gap-3">
                     <div className="w-24 h-1.5 bg-slate-800 rounded overflow-hidden">
-                      <div className={`h-full ${colo.isAnomalous ? 'bg-amber-500' : 'bg-indigo-500'}`} style={{ width: `${colo.percentage}%` }}></div>
+                      <div
+                        className={`h-full ${colo.isAnomalous ? "bg-amber-500" : "bg-indigo-500"}`}
+                        style={{ width: `${colo.percentage}%` }}
+                      ></div>
                     </div>
-                    <span className="font-mono text-xs text-slate-400 w-8 text-right">{colo.count}</span>
+                    <span className="font-mono text-xs text-slate-400 w-8 text-right">
+                      {colo.count}
+                    </span>
                   </div>
                 </button>
               ))}
-              {edgeTrendAnalytics.topColos.length === 0 && <div className="text-xs text-slate-600 font-mono italic p-2">Awaiting telemetry...</div>}
+              {edgeTrendAnalytics.topColos.length === 0 && (
+                <div className="text-xs text-slate-600 font-mono italic p-2">
+                  Awaiting telemetry...
+                </div>
+              )}
             </div>
           </div>
           {/* Top Regional Sources */}
           <div>
-            <div className="text-[10px] text-slate-500 font-mono mb-2">TOP REGIONAL SOURCES</div>
+            <div className="text-[10px] text-slate-500 font-mono mb-2">
+              TOP REGIONAL SOURCES
+            </div>
             <div className="space-y-2">
               {edgeTrendAnalytics.topCountries.map((country, idx) => (
-                <button key={idx} onClick={() => setSearchQuery(country.name)} className={`w-full flex items-center justify-between p-2 rounded border hover:bg-slate-800/60 cursor-pointer transition-colors ${country.isAnomalous ? 'border-amber-500/50 bg-amber-950/20 animate-pulse' : 'border-slate-800 bg-slate-900/40'}`}>
+                <button
+                  key={idx}
+                  onClick={() => setSearchQuery(country.name)}
+                  className={`w-full flex items-center justify-between p-2 rounded border hover:bg-slate-800/60 cursor-pointer transition-colors ${country.isAnomalous ? "border-amber-500/50 bg-amber-950/20 animate-pulse" : "border-slate-800 bg-slate-900/40"}`}
+                >
                   <div className="flex items-center gap-2">
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-900/50 text-indigo-300 border border-indigo-700/50">{country.name}</span>
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-900/50 text-indigo-300 border border-indigo-700/50">
+                      {country.name}
+                    </span>
                   </div>
                   <div className="flex items-center gap-3">
                     <div className="w-24 h-1.5 bg-slate-800 rounded overflow-hidden">
-                      <div className={`h-full ${country.isAnomalous ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${country.percentage}%` }}></div>
+                      <div
+                        className={`h-full ${country.isAnomalous ? "bg-amber-500" : "bg-emerald-500"}`}
+                        style={{ width: `${country.percentage}%` }}
+                      ></div>
                     </div>
-                    <span className="font-mono text-xs text-slate-400 w-8 text-right">{country.count}</span>
+                    <span className="font-mono text-xs text-slate-400 w-8 text-right">
+                      {country.count}
+                    </span>
                   </div>
                 </button>
               ))}
-              {edgeTrendAnalytics.topCountries.length === 0 && <div className="text-xs text-slate-600 font-mono italic p-2">Awaiting telemetry...</div>}
+              {edgeTrendAnalytics.topCountries.length === 0 && (
+                <div className="text-xs text-slate-600 font-mono italic p-2">
+                  Awaiting telemetry...
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1820,7 +2244,11 @@ const handlePurgeDlqItem = async (id: string) => {
           <select
             className="bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-500 uppercase tracking-wider font-semibold"
             value={severityFilter}
-            onChange={(e) => setSeverityFilter(e.target.value as 'all' | 'high' | 'medium' | 'low')}
+            onChange={(e) =>
+              setSeverityFilter(
+                e.target.value as "all" | "high" | "medium" | "low",
+              )
+            }
           >
             <option value="all">Severity: ALL</option>
             <option value="high">Severity: HIGH / CRITICAL</option>
@@ -1828,11 +2256,11 @@ const handlePurgeDlqItem = async (id: string) => {
             <option value="low">Severity: LOW</option>
           </select>
           <button
-            onClick={() => setAiUnsafeOnly(prev => !prev)}
+            onClick={() => setAiUnsafeOnly((prev) => !prev)}
             className={`px-3 py-1 rounded-full text-xs font-mono transition-colors border ${
               aiUnsafeOnly
-                ? 'bg-purple-900/60 text-purple-300 border-purple-600'
-                : 'bg-slate-950/50 text-slate-400 border-slate-800 hover:bg-slate-800/80 hover:text-slate-300'
+                ? "bg-purple-900/60 text-purple-300 border-purple-600"
+                : "bg-slate-950/50 text-slate-400 border-slate-800 hover:bg-slate-800/80 hover:text-slate-300"
             }`}
           >
             [ AI-UNSAFE ONLY ]
@@ -1840,33 +2268,73 @@ const handlePurgeDlqItem = async (id: string) => {
         </div>
 
         <div className="flex gap-2 items-center flex-wrap mb-2">
-          <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mr-2">Threat Vector:</div>
-          <button onClick={() => setVectorFilter('all')} className={`px-3 py-1 rounded-full text-xs font-mono transition-colors border ${vectorFilter === 'all' ? 'bg-indigo-900/50 text-indigo-300 border-indigo-700' : 'bg-slate-950/50 text-slate-400 border-slate-800 hover:bg-slate-800/80 hover:text-slate-300'}`}>All Threats</button>
-          <button onClick={() => setVectorFilter('critical')} className={`px-3 py-1 rounded-full text-xs font-mono transition-colors border ${vectorFilter === 'critical' ? 'bg-red-900/50 text-red-300 border-red-700' : 'bg-slate-950/50 text-slate-400 border-slate-800 hover:bg-slate-800/80 hover:text-slate-300'}`}>Critical (P0)</button>
-          <button onClick={() => setVectorFilter('sqli_xss')} className={`px-3 py-1 rounded-full text-xs font-mono transition-colors border ${vectorFilter === 'sqli_xss' ? 'bg-amber-900/50 text-amber-300 border-amber-700' : 'bg-slate-950/50 text-slate-400 border-slate-800 hover:bg-slate-800/80 hover:text-slate-300'}`}>SQLi/XSS</button>
-          <button onClick={() => setVectorFilter('ddos')} className={`px-3 py-1 rounded-full text-xs font-mono transition-colors border ${vectorFilter === 'ddos' ? 'bg-orange-900/50 text-orange-300 border-orange-700' : 'bg-slate-950/50 text-slate-400 border-slate-800 hover:bg-slate-800/80 hover:text-slate-300'}`}>Rate Limited / DDoS</button>
+          <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mr-2">
+            Threat Vector:
+          </div>
+          <button
+            onClick={() => setVectorFilter("all")}
+            className={`px-3 py-1 rounded-full text-xs font-mono transition-colors border ${vectorFilter === "all" ? "bg-indigo-900/50 text-indigo-300 border-indigo-700" : "bg-slate-950/50 text-slate-400 border-slate-800 hover:bg-slate-800/80 hover:text-slate-300"}`}
+          >
+            All Threats
+          </button>
+          <button
+            onClick={() => setVectorFilter("critical")}
+            className={`px-3 py-1 rounded-full text-xs font-mono transition-colors border ${vectorFilter === "critical" ? "bg-red-900/50 text-red-300 border-red-700" : "bg-slate-950/50 text-slate-400 border-slate-800 hover:bg-slate-800/80 hover:text-slate-300"}`}
+          >
+            Critical (P0)
+          </button>
+          <button
+            onClick={() => setVectorFilter("sqli_xss")}
+            className={`px-3 py-1 rounded-full text-xs font-mono transition-colors border ${vectorFilter === "sqli_xss" ? "bg-amber-900/50 text-amber-300 border-amber-700" : "bg-slate-950/50 text-slate-400 border-slate-800 hover:bg-slate-800/80 hover:text-slate-300"}`}
+          >
+            SQLi/XSS
+          </button>
+          <button
+            onClick={() => setVectorFilter("ddos")}
+            className={`px-3 py-1 rounded-full text-xs font-mono transition-colors border ${vectorFilter === "ddos" ? "bg-orange-900/50 text-orange-300 border-orange-700" : "bg-slate-950/50 text-slate-400 border-slate-800 hover:bg-slate-800/80 hover:text-slate-300"}`}
+          >
+            Rate Limited / DDoS
+          </button>
         </div>
 
         {/* App Origin Pill Selectors */}
         <div className="flex gap-2 items-center flex-wrap">
-          <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mr-2">App Origin:</div>
-          {['all', 'AXiM Academy', 'The Green Machine', 'Nexus CRM', 'Web3 Frontend', 'AXiM Macro Core Gateway'].map(origin => {
-            const originMetrics = (telemetrySummary?.appOriginBreakdown as Record<string, { total: number; threats: number }> | undefined)?.[origin];
+          <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mr-2">
+            App Origin:
+          </div>
+          {[
+            "all",
+            "AXiM Academy",
+            "The Green Machine",
+            "Nexus CRM",
+            "Web3 Frontend",
+            "AXiM Macro Core Gateway",
+          ].map((origin) => {
+            const originMetrics = (
+              telemetrySummary?.appOriginBreakdown as
+                | Record<string, { total: number; threats: number }>
+                | undefined
+            )?.[origin];
 
-            let originText = origin === 'all' ? 'ALL ORIGINS' : `${origin} [0/0]`;
-            if (origin !== 'all' && originMetrics) {
+            let originText =
+              origin === "all" ? "ALL ORIGINS" : `${origin} [0/0]`;
+            if (origin !== "all" && originMetrics) {
               originText = `${origin} [${originMetrics.total}/${originMetrics.threats}]`;
             }
-            const hasThreats = originMetrics?.threats ? originMetrics.threats > 0 : false;
+            const hasThreats = originMetrics?.threats
+              ? originMetrics.threats > 0
+              : false;
 
             return (
               <button
                 key={origin}
                 onClick={() => setAppOriginFilter(origin)}
-                className={`flex items-center px-3 py-1 rounded-full text-xs font-mono transition-colors border ${appOriginFilter === origin ? 'bg-indigo-900/50 text-indigo-300 border-indigo-700' : 'bg-slate-950/50 text-slate-400 border-slate-800 hover:bg-slate-800/80 hover:text-slate-300'} ${hasThreats ? 'text-red-400 font-bold border-red-500/50' : ''}`}
+                className={`flex items-center px-3 py-1 rounded-full text-xs font-mono transition-colors border ${appOriginFilter === origin ? "bg-indigo-900/50 text-indigo-300 border-indigo-700" : "bg-slate-950/50 text-slate-400 border-slate-800 hover:bg-slate-800/80 hover:text-slate-300"} ${hasThreats ? "text-red-400 font-bold border-red-500/50" : ""}`}
               >
                 {originText}
-                {hasThreats && <span className="ml-2 w-2 h-2 rounded-full bg-red-500"></span>}
+                {hasThreats && (
+                  <span className="ml-2 w-2 h-2 rounded-full bg-red-500"></span>
+                )}
               </button>
             );
           })}
@@ -1877,7 +2345,12 @@ const handlePurgeDlqItem = async (id: string) => {
       {error && (
         <div className="bg-amber-900/50 border border-amber-700 text-amber-200 px-4 py-3 rounded-lg mb-6 flex justify-between items-center">
           <span className="text-sm">{error}</span>
-          <button onClick={() => setError(null)} className="text-amber-400 hover:text-amber-200 transition-colors">&times;</button>
+          <button
+            onClick={() => setError(null)}
+            className="text-amber-400 hover:text-amber-200 transition-colors"
+          >
+            &times;
+          </button>
         </div>
       )}
 
@@ -1885,484 +2358,707 @@ const handlePurgeDlqItem = async (id: string) => {
       {false ? null : (
         <div className="flex-1 flex flex-col min-h-0 gap-4">
           <div className="flex-1 flex flex-col lg:flex-row gap-4 min-h-0 overflow-hidden">
-
-          {/* Left Pane: Telemetry Grid (2/3) */}
-          <div className="flex-[2] bg-slate-950 border border-slate-800 rounded-lg relative overflow-hidden flex flex-col min-h-0">
-            {hasHighDensityAnomaly.isAnomaly && (
-              <div
-                onClick={() => {
-                  setLocalSearchQuery(hasHighDensityAnomaly.ip);
-                  setSearchQuery(hasHighDensityAnomaly.ip);
-                }}
-                className="bg-amber-500/10 border-b border-amber-500/30 px-4 py-2 text-center text-amber-500 font-mono text-xs font-bold tracking-widest uppercase cursor-pointer hover:bg-amber-500/20 transition-colors"
-              >
-                [ SYSTEM ACCELERATION ALERT: HIGH-DENSITY IP ANOMALY - ONYX COGNITIVE TRIAGE REQ ]
-              </div>
-            )}
-            <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: `linear-gradient(to right, #334155 1px, transparent 1px), linear-gradient(to bottom, #334155 1px, transparent 1px)`, backgroundSize: '40px 40px' }}></div>
-
-            <div className="z-10 bg-slate-900/80 backdrop-blur-sm border-b border-slate-800 p-4 sticky top-0 flex justify-between items-center">
-              {selectedIps.size > 0 && (
-                 <button onClick={() => { selectedIps.forEach(ip => handleBlock(`ip:${ip}`, 86400, "Batch Block via Threat Feed")); setSelectedIps(new Set()); addToast("[ BATCH MITIGATION APPLIED ]", "success"); }} className="absolute right-4 top-2 text-[10px] font-mono bg-red-950/80 text-red-400 border border-red-900 px-3 py-1 rounded hover:bg-red-900/50 transition-colors z-20">
-                   [ BLOCK SELECTED ({selectedIps.size}) ]
-                 </button>
+            {/* Left Pane: Telemetry Grid (2/3) */}
+            <div className="flex-[2] bg-slate-950 border border-slate-800 rounded-lg relative overflow-hidden flex flex-col min-h-0">
+              {hasHighDensityAnomaly.isAnomaly && (
+                <div
+                  onClick={() => {
+                    setLocalSearchQuery(hasHighDensityAnomaly.ip);
+                    setSearchQuery(hasHighDensityAnomaly.ip);
+                  }}
+                  className="bg-amber-500/10 border-b border-amber-500/30 px-4 py-2 text-center text-amber-500 font-mono text-xs font-bold tracking-widest uppercase cursor-pointer hover:bg-amber-500/20 transition-colors"
+                >
+                  [ SYSTEM ACCELERATION ALERT: HIGH-DENSITY IP ANOMALY - ONYX
+                  COGNITIVE TRIAGE REQ ]
+                </div>
               )}
-              <div className="grid grid-cols-[auto_1fr_1fr_1fr_1fr_1fr_1fr] gap-4 text-xs font-semibold text-slate-400 uppercase tracking-wider w-full">
-                 <div>
-                   <input
-                     type="checkbox"
-                     className="cursor-pointer"
-                     checked={paginatedTelemetry.length > 0 && paginatedTelemetry.every(item => selectedIps.has(item.sourceIp))}
-                     onChange={(e) => {
-                       const checked = e.target.checked;
-                       setSelectedIps(prev => {
-                         const next = new Set(prev);
-                         paginatedTelemetry.forEach(item => {
-                           if (checked) {
-                             next.add(item.sourceIp);
-                           } else {
-                             next.delete(item.sourceIp);
-                           }
-                         });
-                         return next;
-                       });
-                     }}
-                   />
-                 </div>
-                 <div>Timestamp</div>
-                 <div>Source IP</div>
-                 <div>Origin</div>
-                 <div>Event Type</div>
-                 <div>Severity</div>
-                 <div>Action</div>
-              </div>
-            </div>
+              <div
+                className="absolute inset-0 opacity-10 pointer-events-none"
+                style={{
+                  backgroundImage: `linear-gradient(to right, #334155 1px, transparent 1px), linear-gradient(to bottom, #334155 1px, transparent 1px)`,
+                  backgroundSize: "40px 40px",
+                }}
+              ></div>
 
-            <div className="z-10 flex-1 overflow-y-auto p-2 space-y-2">
-               {isLoading ? (
+              <div className="z-10 bg-slate-900/80 backdrop-blur-sm border-b border-slate-800 p-4 sticky top-0 flex justify-between items-center">
+                {selectedIps.size > 0 && (
+                  <button
+                    onClick={() => {
+                      selectedIps.forEach((ip) =>
+                        handleBlock(
+                          `ip:${ip}`,
+                          86400,
+                          "Batch Block via Threat Feed",
+                        ),
+                      );
+                      setSelectedIps(new Set());
+                      addToast("[ BATCH MITIGATION APPLIED ]", "success");
+                    }}
+                    className="absolute right-4 top-2 text-[10px] font-mono bg-red-950/80 text-red-400 border border-red-900 px-3 py-1 rounded hover:bg-red-900/50 transition-colors z-20"
+                  >
+                    [ BLOCK SELECTED ({selectedIps.size}) ]
+                  </button>
+                )}
+                <div className="grid grid-cols-[auto_1fr_1fr_1fr_1fr_1fr_1fr] gap-4 text-xs font-semibold text-slate-400 uppercase tracking-wider w-full">
+                  <div>
+                    <input
+                      type="checkbox"
+                      className="cursor-pointer"
+                      checked={
+                        paginatedTelemetry.length > 0 &&
+                        paginatedTelemetry.every((item) =>
+                          selectedIps.has(item.sourceIp),
+                        )
+                      }
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setSelectedIps((prev) => {
+                          const next = new Set(prev);
+                          paginatedTelemetry.forEach((item) => {
+                            if (checked) {
+                              next.add(item.sourceIp);
+                            } else {
+                              next.delete(item.sourceIp);
+                            }
+                          });
+                          return next;
+                        });
+                      }}
+                    />
+                  </div>
+                  <div>Timestamp</div>
+                  <div>Source IP</div>
+                  <div>Origin</div>
+                  <div>Event Type</div>
+                  <div>Severity</div>
+                  <div>Action</div>
+                </div>
+              </div>
+
+              <div className="z-10 flex-1 overflow-y-auto p-2 space-y-2">
+                {isLoading ? (
                   renderTelemetrySkeleton()
-               ) : filteredData.length === 0 ? (
-
+                ) : filteredData.length === 0 ? (
                   <div className="flex-1 flex items-center justify-center p-8">
-                     <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-6 max-w-lg w-full flex items-center gap-4">
-                        <div className="relative flex h-3 w-3">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
-                        </div>
-                        <div className="border border-slate-800/50 bg-slate-950/20 rounded font-mono p-6 text-center text-xs text-slate-500 w-full uppercase">Perimeter Shield Fully Functional: Zero Threat Anomalies Detected</div>
-                     </div>
+                    <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-6 max-w-lg w-full flex items-center gap-4">
+                      <div className="relative flex h-3 w-3">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                      </div>
+                      <div className="border border-slate-800/50 bg-slate-950/20 rounded font-mono p-6 text-center text-xs text-slate-500 w-full uppercase">
+                        Perimeter Shield Fully Functional: Zero Threat Anomalies
+                        Detected
+                      </div>
+                    </div>
                   </div>
-               ) : (
-                 paginatedTelemetry.map((event, idx) => {
-                   const isHighSeverity = event.severity === 'high' || event.severity === 'critical';
-                   const isBlocked = blocklist.some(b => b.name === `ip:${event.sourceIp}`);
-                   const isExpanded = expandedRow === idx;
-                   const isActionLoading = actionLoading[event.sourceIp];
+                ) : (
+                  paginatedTelemetry.map((event, idx) => {
+                    const isHighSeverity =
+                      event.severity === "high" ||
+                      event.severity === "critical";
+                    const isBlocked = blocklist.some(
+                      (b) => b.name === `ip:${event.sourceIp}`,
+                    );
+                    const isExpanded = expandedRow === idx;
+                    const isActionLoading = actionLoading[event.sourceIp];
 
-                   return (
-                     <div key={`${event.sourceIp}-${event.timestamp}-${idx}`} className={`flex flex-col border font-mono tracking-tight transition-all duration-500 ${flash && idx === 0 && telemetryPage === 0 ? 'bg-emerald-950/30 border-l-2 border-l-emerald-500 border-y-slate-800/50 border-r-slate-800/50' : 'border-slate-800/50 bg-slate-950/40 hover:bg-slate-800/50'}`}>
-                     <div
-                       className={`grid grid-cols-[auto_1fr_1fr_1fr_1fr_1fr_1fr] gap-4 items-center p-3 text-sm text-slate-300 font-mono cursor-pointer ${isActionLoading ? 'opacity-50 pointer-events-none' : ''}`}
-                       onClick={() => setExpandedRow(isExpanded ? null : idx)}
-                     >
-                       <div><input type="checkbox" onClick={(e) => e.stopPropagation()} onChange={(e) => { const ip = event.sourceIp; setSelectedIps(prev => { const next = new Set(prev); if (e.target.checked) next.add(ip); else next.delete(ip); return next; }); }} checked={selectedIps.has(event.sourceIp)} className="cursor-pointer" /></div>
-                       <div className="text-slate-500 font-mono">
-                          {new Date(event.timestamp).toLocaleTimeString('en-GB')}
-                       </div>
-                       <div className="text-slate-300 truncate">
-                          {event.sourceIp}
-                       </div>
-                       <div className="flex gap-2 items-center">
-                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-900/50 text-indigo-300 border border-indigo-700/50">
-                             {event.country || 'XX'}
-                          </span>
-                          <span className="text-[10px] text-slate-500 font-mono tracking-tight">
-                             [{event.colo || 'N/A'}]
-                          </span>
-                       </div>
-                       <div className="truncate flex items-center gap-2">
-                          {event.aiThreatFlag && (
-                             <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-950/80 text-purple-400 border border-purple-700/50 uppercase">
-                               [ AI-UNSAFE ]
-                             </span>
-                          )}
-                          {getEventName(event.eventType)}
-                       </div>
-                       <div>
-                          <span className={`px-2 py-1 rounded text-xs border whitespace-nowrap ${getSeverityColor(event.severity)}`}>
-                            {event.severity.toUpperCase()}
-                          </span>
-                       </div>
-                       <div>
-                          {isHighSeverity && !isBlocked && (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleDropIp(event.sourceIp); }}
-                              disabled={actionLoading[event.sourceIp]}
-                              className="text-red-500 hover:text-red-400 underline decoration-red-500/50 hover:decoration-red-400 text-xs transition-colors disabled:opacity-50 bg-transparent border-none p-0 cursor-pointer block"
-                            >
-                              {actionLoading[event.sourceIp] ? '[ COMMITTING... ]' : 'Drop IP'}
-                            </button>
-                          )}
-                          {!isBlocked && (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleQuarantine(event.sourceIp, event.eventType); }}
-                              disabled={actionLoading[event.sourceIp]}
-                              className="text-red-400 hover:text-red-300 transition-colors text-[10px] font-semibold uppercase border border-red-900/50 hover:bg-red-950/30 px-2 py-1 rounded block mt-1"
-                            >
-                              {actionLoading[event.sourceIp] ? '[ QUARANTINING... ]' : '[ QUARANTINE IP ]'}
-                            </button>
-                          )}
-                          {isBlocked && (
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded text-red-500 border border-red-900/50 bg-red-950/20 whitespace-nowrap">
-                              QUARANTINED
+                    return (
+                      <div
+                        key={`${event.sourceIp}-${event.timestamp}-${idx}`}
+                        className={`flex flex-col border font-mono tracking-tight transition-all duration-500 ${flash && idx === 0 && telemetryPage === 0 ? "bg-emerald-950/30 border-l-2 border-l-emerald-500 border-y-slate-800/50 border-r-slate-800/50" : "border-slate-800/50 bg-slate-950/40 hover:bg-slate-800/50"}`}
+                      >
+                        <div
+                          className={`grid grid-cols-[auto_1fr_1fr_1fr_1fr_1fr_1fr] gap-4 items-center p-3 text-sm text-slate-300 font-mono cursor-pointer ${isActionLoading ? "opacity-50 pointer-events-none" : ""}`}
+                          onClick={() =>
+                            setExpandedRow(isExpanded ? null : idx)
+                          }
+                        >
+                          <div>
+                            <input
+                              type="checkbox"
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => {
+                                const ip = event.sourceIp;
+                                setSelectedIps((prev) => {
+                                  const next = new Set(prev);
+                                  if (e.target.checked) next.add(ip);
+                                  else next.delete(ip);
+                                  return next;
+                                });
+                              }}
+                              checked={selectedIps.has(event.sourceIp)}
+                              className="cursor-pointer"
+                            />
+                          </div>
+                          <div className="text-slate-500 font-mono">
+                            {new Date(event.timestamp).toLocaleTimeString(
+                              "en-GB",
+                            )}
+                          </div>
+                          <div className="text-slate-300 truncate">
+                            {event.sourceIp}
+                          </div>
+                          <div className="flex gap-2 items-center">
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-900/50 text-indigo-300 border border-indigo-700/50">
+                              {event.country || "XX"}
                             </span>
-                          )}
-
-                       </div>
-                     </div>
-                     {isExpanded && (
-                       <div className="p-4 bg-slate-950 border-t border-slate-800 m-1 rounded overflow-x-auto relative">
-                         {typeof event.edgeBotScore === 'number' && (
-                           <div className="mb-2">
-                             {event.edgeBotScore < 30 ? (
-                               <span className="inline-block bg-red-950/50 text-red-500 font-bold border border-red-900 px-2 py-1 rounded text-xs">
-                                 [ ANTIBOT TRIAGE &mdash; BOT SCORE: {event.edgeBotScore} ]
-                               </span>
-                             ) : (
-                               <span className="inline-block bg-slate-800 text-slate-400 border border-slate-700 px-2 py-1 rounded text-xs">
-                                 [ BOT SCORE: {event.edgeBotScore} ]
-                               </span>
-                             )}
-                           </div>
-                         )}
-                         <div className="flex justify-between items-center mb-2">
-                           <div className="text-xs text-slate-500 uppercase tracking-wider">Raw Payload Inspector</div>
-
-                           <div className="flex gap-2">
-                             {event.sourceIp && !blocklist.some(b => b.name === `ip:${event.sourceIp}`) && (
-                               <button
-                                 onClick={(e) => {
-                                   e.stopPropagation();
-                                   handleBlock(`ip:${event.sourceIp}`, 86400, "Blocked via Live Threat Inspector");
-                                 }}
-                                 disabled={actionLoading[`ip:${event.sourceIp}`]}
-                                 className="text-[10px] bg-red-950/30 hover:bg-red-900/50 border border-red-900 text-red-400 px-2 py-1 rounded transition-colors font-mono disabled:opacity-50"
-                               >
-                                 {actionLoading[`ip:${event.sourceIp}`] ? '[ COMMITTING... ]' : `[ BLOCK IP: ${event.sourceIp} ]`}
-                               </button>
-                             )}
-                             {!!(event as Record<string, unknown>).web3WalletAddress && !blocklist.some(b => b.name === `wallet:${(event as Record<string, unknown>).web3WalletAddress}`) && (
-                               <button
-                                 onClick={(e) => {
-                                   e.stopPropagation();
-                                   handleBlock(`wallet:${(event as Record<string, unknown>).web3WalletAddress}`, 86400, "Blocked via Live Threat Inspector");
-                                 }}
-                                 disabled={actionLoading[`wallet:${(event as Record<string, unknown>).web3WalletAddress}`]}
-                                 className="text-[10px] bg-red-950/30 hover:bg-red-900/50 border border-red-900 text-red-400 px-2 py-1 rounded transition-colors font-mono disabled:opacity-50"
-                               >
-                                 {actionLoading[`wallet:${(event as Record<string, unknown>).web3WalletAddress}`] ? '[ COMMITTING... ]' : '[ BLOCK WALLET ]'}
-                               </button>
-                             )}
-                           <button
-                             onClick={(e) => {
-                               e.stopPropagation();
-                               const sanitizePayload = (obj: unknown) => {
-                                 const clone = JSON.parse(JSON.stringify(obj));
-                                 const sensitiveKeys = ['authorization', 'cookie', 'token', 'signature', 'secret'];
-
-                                 const traverse = (o: Record<string, unknown> | unknown[]) => {
-                                   if (o && typeof o === 'object') {
-                                     for (const k in o) {
-                                       const obj = o as Record<string, unknown>;
-                                       if (sensitiveKeys.some(sk => k.toLowerCase().includes(sk))) {
-                                         obj[k] = '[ REDACTED_FOR_COMPLIANCE ]';
-                                       } else if (typeof obj[k] === 'object') {
-                                         traverse(obj[k] as Record<string, unknown>);
-                                       }
-                                     }
-                                   }
-                                 };
-                                 traverse(clone);
-                                 return clone;
-                               };
-                               navigator.clipboard.writeText(JSON.stringify(sanitizePayload(event), null, 2));
-                               setCopiedRow(idx);
-                               setTimeout(() => setCopiedRow(null), 1500);
-                             }}
-                             className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-1 rounded transition-colors font-mono"
-                           >
-                             {copiedRow === idx ? '[ COPIED! ]' : 'Copy JSON'}
-                           </button>
-                           </div>
-                         </div>
-                         <pre className="text-xs text-emerald-400 font-mono whitespace-pre-wrap break-all">
-                           {JSON.stringify(event, null, 2)}
-                         </pre>
-                       </div>
-                     )}
-                     </div>
-                   );
-                 })
-               )}
-            </div>
-
-            <div className="border-t border-slate-800 p-2 flex justify-between items-center bg-slate-900/50">
-              <button
-                onClick={() => setTelemetryPage(p => Math.max(0, p - 1))}
-                disabled={telemetryPage === 0}
-                className="text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:hover:text-slate-400 transition-colors px-2 py-1 text-xs"
-              >
-                &larr; Prev
-              </button>
-              <div className="text-xs text-slate-500 font-mono">
-                Page {telemetryPage + 1} of {Math.ceil(filteredData.length / itemsPerPage) || 1}
-              </div>
-              <button
-                onClick={() => setTelemetryPage(p => p + 1)}
-                disabled={(telemetryPage + 1) * itemsPerPage >= filteredData.length}
-                className="text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:hover:text-slate-400 transition-colors px-2 py-1 text-xs"
-              >
-                Next &rarr;
-              </button>
-            </div>
-
-          </div>
-
-          {/* Right Pane: Active Perimeter Blocks (1/3) */}
-          <div className="flex-[1] bg-slate-950 border border-slate-800 rounded-lg relative overflow-hidden flex flex-col min-h-0">
-            <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: `linear-gradient(to right, #334155 1px, transparent 1px), linear-gradient(to bottom, #334155 1px, transparent 1px)`, backgroundSize: '40px 40px' }}></div>
-
-            <div className="z-10 bg-slate-900/80 backdrop-blur-sm border-b border-slate-800 p-4 sticky top-0">
-              <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                 Active Perimeter Blocks
-              </div>
-            </div>
-
-            <div className="z-10 flex-1 overflow-y-auto p-2 space-y-2">
-               {isLoading ? (
-                  renderBlocklistSkeleton()
-               ) : blocklist.length === 0 ? (
-
-                  <div className="flex-1 flex items-center justify-center p-8">
-                     <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-6 max-w-lg w-full flex items-center gap-4">
-                        <div className="relative flex h-3 w-3">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                            <span className="text-[10px] text-slate-500 font-mono tracking-tight">
+                              [{event.colo || "N/A"}]
+                            </span>
+                          </div>
+                          <div className="truncate flex items-center gap-2">
+                            {event.aiThreatFlag && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-950/80 text-purple-400 border border-purple-700/50 uppercase">
+                                [ AI-UNSAFE ]
+                              </span>
+                            )}
+                            {getEventName(event.eventType)}
+                          </div>
+                          <div>
+                            <span
+                              className={`px-2 py-1 rounded text-xs border whitespace-nowrap ${getSeverityColor(event.severity)}`}
+                            >
+                              {event.severity.toUpperCase()}
+                            </span>
+                          </div>
+                          <div>
+                            {isHighSeverity && !isBlocked && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDropIp(event.sourceIp);
+                                }}
+                                disabled={actionLoading[event.sourceIp]}
+                                className="text-red-500 hover:text-red-400 underline decoration-red-500/50 hover:decoration-red-400 text-xs transition-colors disabled:opacity-50 bg-transparent border-none p-0 cursor-pointer block"
+                              >
+                                {actionLoading[event.sourceIp]
+                                  ? "[ COMMITTING... ]"
+                                  : "Drop IP"}
+                              </button>
+                            )}
+                            {!isBlocked && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleQuarantine(
+                                    event.sourceIp,
+                                    event.eventType,
+                                  );
+                                }}
+                                disabled={actionLoading[event.sourceIp]}
+                                className="text-red-400 hover:text-red-300 transition-colors text-[10px] font-semibold uppercase border border-red-900/50 hover:bg-red-950/30 px-2 py-1 rounded block mt-1"
+                              >
+                                {actionLoading[event.sourceIp]
+                                  ? "[ QUARANTINING... ]"
+                                  : "[ QUARANTINE IP ]"}
+                              </button>
+                            )}
+                            {isBlocked && (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded text-red-500 border border-red-900/50 bg-red-950/20 whitespace-nowrap">
+                                QUARANTINED
+                              </span>
+                            )}
+                          </div>
                         </div>
-                        <div className="border border-slate-800/50 bg-slate-950/20 rounded font-mono p-6 text-center text-xs text-slate-500 w-full uppercase">Perimeter Shield Active: Zero Edge Drop Anomalies Detected</div>
-                     </div>
-                  </div>
-               ) : (
-                 blocklist.map((blockItem, idx) => {
-                   const keyName = blockItem.name;
-                   const isLifting = actionLoading[keyName];
-                   return (
-                   <div key={idx} className={`flex flex-col gap-2 p-3 rounded border border-slate-800/50 bg-slate-950/40 font-mono tracking-tight hover:bg-slate-800/50 transition-colors text-sm text-slate-300 ${isLifting ? 'opacity-50 pointer-events-none' : ''}`}>
-                     <div className="flex justify-between items-center">
-                       <div className="flex items-center min-w-0">
-                         {keyName.startsWith('wallet:') && (
-                           <span className="text-[9px] font-bold px-1.5 py-0.5 rounded text-amber-400 border border-amber-900/50 bg-amber-950/20 mr-2">
-                             WALLET
-                           </span>
-                         )}
-                         {(blockItem.note && typeof blockItem.note === 'string' && (blockItem.note.toLowerCase().includes('autonomous') || blockItem.note.toLowerCase().includes('ai'))) && (
-                           <span className="text-[9px] font-bold px-1.5 py-0.5 rounded text-indigo-400 border border-indigo-900/50 bg-indigo-950/30 mr-2">
-                             AUTONOMOUS BLOCK
-                           </span>
-                         )}
-                         <span className="truncate font-mono">{keyName}</span>
-                         {blockItem.expiration && (
-                           <LeaseTimer expiration={blockItem.expiration} />
-                         )}
-                       </div>
-                       <button
-                         onClick={() => handleUnblock(keyName)}
-                         disabled={actionLoading[keyName]}
-                         className="bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-600 px-2 py-1 rounded text-xs transition-colors disabled:opacity-50 ml-2 whitespace-nowrap"
-                       >
-                         {actionLoading[keyName] ? '[ LIFTING... ]' : 'Lift'}
-                       </button>
-                     </div>
-                     <div className="flex">
-                        <input
-                           type="text"
-                           placeholder="Add triage note..."
-                           maxLength={60}
-                           value={annotations[keyName] || ''}
-                           onChange={(e) => handleAnnotationChange(keyName, e.target.value)}
-                           onBlur={() => handleAnnotationBlur(keyName)}
-                           className="w-full bg-slate-950/50 border border-slate-700 rounded px-2 py-1 text-[10px] text-slate-300 focus:outline-none focus:border-slate-500 placeholder-slate-600"
-                        />
-                     </div>
-                   </div>
-                   );
-                 })
-               )}
-            </div>
-          </div>
+                        {isExpanded && (
+                          <div className="p-4 bg-slate-950 border-t border-slate-800 m-1 rounded overflow-x-auto relative">
+                            {typeof event.edgeBotScore === "number" && (
+                              <div className="mb-2">
+                                {event.edgeBotScore < 30 ? (
+                                  <span className="inline-block bg-red-950/50 text-red-500 font-bold border border-red-900 px-2 py-1 rounded text-xs">
+                                    [ ANTIBOT TRIAGE &mdash; BOT SCORE:{" "}
+                                    {event.edgeBotScore} ]
+                                  </span>
+                                ) : (
+                                  <span className="inline-block bg-slate-800 text-slate-400 border border-slate-700 px-2 py-1 rounded text-xs">
+                                    [ BOT SCORE: {event.edgeBotScore} ]
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                            <div className="flex justify-between items-center mb-2">
+                              <div className="text-xs text-slate-500 uppercase tracking-wider">
+                                Raw Payload Inspector
+                              </div>
 
-        </div>
+                              <div className="flex gap-2">
+                                {event.sourceIp &&
+                                  !blocklist.some(
+                                    (b) => b.name === `ip:${event.sourceIp}`,
+                                  ) && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleBlock(
+                                          `ip:${event.sourceIp}`,
+                                          86400,
+                                          "Blocked via Live Threat Inspector",
+                                        );
+                                      }}
+                                      disabled={
+                                        actionLoading[`ip:${event.sourceIp}`]
+                                      }
+                                      className="text-[10px] bg-red-950/30 hover:bg-red-900/50 border border-red-900 text-red-400 px-2 py-1 rounded transition-colors font-mono disabled:opacity-50"
+                                    >
+                                      {actionLoading[`ip:${event.sourceIp}`]
+                                        ? "[ COMMITTING... ]"
+                                        : `[ BLOCK IP: ${event.sourceIp} ]`}
+                                    </button>
+                                  )}
+                                {!!(event as Record<string, unknown>)
+                                  .web3WalletAddress &&
+                                  !blocklist.some(
+                                    (b) =>
+                                      b.name ===
+                                      `wallet:${(event as Record<string, unknown>).web3WalletAddress}`,
+                                  ) && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleBlock(
+                                          `wallet:${(event as Record<string, unknown>).web3WalletAddress}`,
+                                          86400,
+                                          "Blocked via Live Threat Inspector",
+                                        );
+                                      }}
+                                      disabled={
+                                        actionLoading[
+                                          `wallet:${(event as Record<string, unknown>).web3WalletAddress}`
+                                        ]
+                                      }
+                                      className="text-[10px] bg-red-950/30 hover:bg-red-900/50 border border-red-900 text-red-400 px-2 py-1 rounded transition-colors font-mono disabled:opacity-50"
+                                    >
+                                      {actionLoading[
+                                        `wallet:${(event as Record<string, unknown>).web3WalletAddress}`
+                                      ]
+                                        ? "[ COMMITTING... ]"
+                                        : "[ BLOCK WALLET ]"}
+                                    </button>
+                                  )}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const sanitizePayload = (obj: unknown) => {
+                                      const clone = JSON.parse(
+                                        JSON.stringify(obj),
+                                      );
+                                      const sensitiveKeys = [
+                                        "authorization",
+                                        "cookie",
+                                        "token",
+                                        "signature",
+                                        "secret",
+                                      ];
 
-        {/* Audit Trail Row */}
-        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                                      const traverse = (
+                                        o: Record<string, unknown> | unknown[],
+                                      ) => {
+                                        if (o && typeof o === "object") {
+                                          for (const k in o) {
+                                            const obj = o as Record<
+                                              string,
+                                              unknown
+                                            >;
+                                            if (
+                                              sensitiveKeys.some((sk) =>
+                                                k.toLowerCase().includes(sk),
+                                              )
+                                            ) {
+                                              obj[k] =
+                                                "[ REDACTED_FOR_COMPLIANCE ]";
+                                            } else if (
+                                              typeof obj[k] === "object"
+                                            ) {
+                                              traverse(
+                                                obj[k] as Record<
+                                                  string,
+                                                  unknown
+                                                >,
+                                              );
+                                            }
+                                          }
+                                        }
+                                      };
+                                      traverse(clone);
+                                      return clone;
+                                    };
+                                    navigator.clipboard.writeText(
+                                      JSON.stringify(
+                                        sanitizePayload(event),
+                                        null,
+                                        2,
+                                      ),
+                                    );
+                                    setCopiedRow(idx);
+                                    setTimeout(() => setCopiedRow(null), 1500);
+                                  }}
+                                  className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-1 rounded transition-colors font-mono"
+                                >
+                                  {copiedRow === idx
+                                    ? "[ COPIED! ]"
+                                    : "Copy JSON"}
+                                </button>
+                              </div>
+                            </div>
+                            <pre className="text-xs text-emerald-400 font-mono whitespace-pre-wrap break-all">
+                              {JSON.stringify(event, null, 2)}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
 
-          {/* Bottom Pane: Audit Trail */}
-          <div className="flex-1 bg-slate-950 border border-slate-800 rounded-lg relative overflow-hidden flex flex-col min-h-[250px]">
-            <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: `linear-gradient(to right, #334155 1px, transparent 1px), linear-gradient(to bottom, #334155 1px, transparent 1px)`, backgroundSize: '40px 40px' }}></div>
-
-            <div className="z-10 bg-slate-900/80 backdrop-blur-sm border-b border-slate-800 p-4 sticky top-0">
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-4">
-                  <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-4">
-                     <span>Edge Security Audit Trail</span>
-                     <button onClick={handleExportAuditCSV} className="font-mono text-[10px] text-cyan-400 hover:text-cyan-300 border border-cyan-800 hover:border-cyan-600 bg-cyan-950/30 px-2 py-0.5 rounded transition-colors cursor-pointer">
-                       [ EXPORT CSV ]
-                     </button>
-                  </div>
-                  <input
-                    type="text"
-                    placeholder="Search events..."
-                    className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 w-48 focus:outline-none focus:border-slate-500 font-mono"
-                    value={localAuditSearchQuery}
-                    onChange={(e) => setLocalAuditSearchQuery(e.target.value)}
-                  />
-                  <div className="flex items-center gap-2 ml-4">
-                    <button
-                      onClick={() => { setAuditTimeRange("all"); setAuditPage(0); }}
-                      className={`font-mono text-[10px] px-2 py-0.5 rounded transition-colors cursor-pointer border ${auditTimeRange === "all" ? "text-cyan-400 border-cyan-800 bg-cyan-950/30" : "text-slate-500 border-slate-800 hover:text-slate-400 hover:border-slate-700 bg-slate-950/30"}`}
-                    >
-                      [ ALL TIME ]
-                    </button>
-                    <button
-                      onClick={() => { setAuditTimeRange("1h"); setAuditPage(0); }}
-                      className={`font-mono text-[10px] px-2 py-0.5 rounded transition-colors cursor-pointer border ${auditTimeRange === "1h" ? "text-cyan-400 border-cyan-800 bg-cyan-950/30" : "text-slate-500 border-slate-800 hover:text-slate-400 hover:border-slate-700 bg-slate-950/30"}`}
-                    >
-                      [ 1 HOUR ]
-                    </button>
-                    <button
-                      onClick={() => { setAuditTimeRange("24h"); setAuditPage(0); }}
-                      className={`font-mono text-[10px] px-2 py-0.5 rounded transition-colors cursor-pointer border ${auditTimeRange === "24h" ? "text-cyan-400 border-cyan-800 bg-cyan-950/30" : "text-slate-500 border-slate-800 hover:text-slate-400 hover:border-slate-700 bg-slate-950/30"}`}
-                    >
-                      [ 24 HOURS ]
-                    </button>
-                  </div>
+              <div className="border-t border-slate-800 p-2 flex justify-between items-center bg-slate-900/50">
+                <button
+                  onClick={() => setTelemetryPage((p) => Math.max(0, p - 1))}
+                  disabled={telemetryPage === 0}
+                  className="text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:hover:text-slate-400 transition-colors px-2 py-1 text-xs"
+                >
+                  &larr; Prev
+                </button>
+                <div className="text-xs text-slate-500 font-mono">
+                  Page {telemetryPage + 1} of{" "}
+                  {Math.ceil(filteredData.length / itemsPerPage) || 1}
                 </div>
                 <button
-                  onClick={handleExportAuditTrail}
-                  className="bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-600 px-3 py-1.5 rounded text-xs transition-colors flex items-center gap-2"
+                  onClick={() => setTelemetryPage((p) => p + 1)}
+                  disabled={
+                    (telemetryPage + 1) * itemsPerPage >= filteredData.length
+                  }
+                  className="text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:hover:text-slate-400 transition-colors px-2 py-1 text-xs"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                  Export JSON
+                  Next &rarr;
                 </button>
               </div>
-              <div className="grid grid-cols-6 gap-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mt-4">
-                 <div>Timestamp</div>
-                 <div>Action</div>
-                 <div>Target</div>
-                 <div>TTL</div>
-                 <div>Authorized By</div>
-                 <div className="text-right">Actions</div>
-              </div>
             </div>
 
-            <div className="z-10 flex-1 overflow-y-auto p-2 space-y-2">
-               {isLoading ? (
-                  renderTelemetrySkeleton()
-               ) : auditLog.length === 0 ? (
+            {/* Right Pane: Active Perimeter Blocks (1/3) */}
+            <div className="flex-[1] bg-slate-950 border border-slate-800 rounded-lg relative overflow-hidden flex flex-col min-h-0">
+              <div
+                className="absolute inset-0 opacity-10 pointer-events-none"
+                style={{
+                  backgroundImage: `linear-gradient(to right, #334155 1px, transparent 1px), linear-gradient(to bottom, #334155 1px, transparent 1px)`,
+                  backgroundSize: "40px 40px",
+                }}
+              ></div>
+
+              <div className="z-10 bg-slate-900/80 backdrop-blur-sm border-b border-slate-800 p-4 sticky top-0">
+                <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                  Active Perimeter Blocks
+                </div>
+              </div>
+
+              <div className="z-10 flex-1 overflow-y-auto p-2 space-y-2">
+                {isLoading ? (
+                  renderBlocklistSkeleton()
+                ) : blocklist.length === 0 ? (
                   <div className="flex-1 flex items-center justify-center p-8">
-                     <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-6 max-w-lg w-full flex items-center gap-4">
-                        <div className="relative flex h-3 w-3">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
-                        </div>
-                        <div className="border border-slate-800/50 bg-slate-950/20 rounded font-mono p-6 text-center text-xs text-slate-500 w-full uppercase">Perimeter Shield Active: Zero Edge Drop Anomalies Detected</div>
-                     </div>
+                    <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-6 max-w-lg w-full flex items-center gap-4">
+                      <div className="relative flex h-3 w-3">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                      </div>
+                      <div className="border border-slate-800/50 bg-slate-950/20 rounded font-mono p-6 text-center text-xs text-slate-500 w-full uppercase">
+                        Perimeter Shield Active: Zero Edge Drop Anomalies
+                        Detected
+                      </div>
+                    </div>
                   </div>
-               ) : (
-                 paginatedAudit.map((event, idx) => {
-                 const rowId = `${event.target || "target"}-${event.timestamp}-${idx}`;
-                 return (
-                   <div key={rowId} className="grid grid-cols-6 gap-4 items-center p-3 rounded border border-slate-800/50 bg-slate-950/40 font-mono tracking-tight hover:bg-slate-800/50 transition-colors text-sm text-slate-300">
-                     <div className="text-slate-500 font-mono">
-                        {new Date(event.timestamp).toLocaleString('en-GB')}
-                     </div>
-                     <div>
-                        <span className={`px-2 py-1 rounded text-xs border whitespace-nowrap ${event.action === 'block' ? 'text-red-400 bg-red-950/50 border-red-900' : 'text-emerald-400 bg-emerald-950/50 border-emerald-900'}`}>
-                          {event.action.toUpperCase()}
-                        </span>
-                     </div>
-                     <div className="truncate text-slate-300">
-                        {event.target}
-                     </div>
-                     <div className="text-slate-500">
-                        {event.ttl ? `${event.ttl}s` : 'N/A'}
-                     </div>
-                     <div className="text-slate-400 truncate flex items-center gap-2">
-                        {event.authorizedByWallet && event.authorizedByWallet.length > 20
-                            ? `${event.authorizedByWallet.slice(0, 6)}...${event.authorizedByWallet.slice(-4)}`
-                            : (event.authorizedByWallet || 'N/A')}
-                        {event.authorizedByWallet && (
-                            <button
-                               onClick={() => {
-                                   navigator.clipboard.writeText(event.authorizedByWallet || '');
-                                   addToast("[ WALLET ADDRESS COPIED ]", "success");
-                               }}
-                               className="font-mono text-[9px] text-cyan-400 hover:text-cyan-300 border border-cyan-800 hover:border-cyan-600 bg-cyan-950/30 px-1.5 py-0.5 rounded transition-colors cursor-pointer"
-                            >
-                               [ COPY ]
-                            </button>
-                        )}
-                     </div>
-                     <div className="text-right">
-                        <button
-                           onClick={() => handleCopyAuditRow(event, rowId)}
-                           className="font-mono text-[10px] text-slate-400 hover:text-white transition-colors uppercase cursor-pointer"
-                        >
-                           {copiedAuditRow === rowId ? <span className="text-emerald-400 bg-emerald-950/50 border border-emerald-900 px-1 py-0.5 rounded">[ COPIED! ]</span> : "[ COPY ROW ]"}
-                        </button>
-                     </div>
-                   </div>
-                 );
-                 })
-               )}
-            </div>
-            <div className="border-t border-slate-800 p-2 flex justify-between items-center bg-slate-900/50">
-              <button
-                onClick={() => setAuditPage(p => Math.max(0, p - 1))}
-                disabled={auditPage === 0}
-                className="text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:hover:text-slate-400 transition-colors px-2 py-1 text-xs"
-              >
-                &larr; Prev
-              </button>
-              <div className="text-xs text-slate-500 font-mono">
-                Page {auditPage + 1} of {Math.ceil(filteredAuditLog.length / itemsPerPage) || 1}
+                ) : (
+                  blocklist.map((blockItem, idx) => {
+                    const keyName = blockItem.name;
+                    const isLifting = actionLoading[keyName];
+                    return (
+                      <div
+                        key={idx}
+                        className={`flex flex-col gap-2 p-3 rounded border border-slate-800/50 bg-slate-950/40 font-mono tracking-tight hover:bg-slate-800/50 transition-colors text-sm text-slate-300 ${isLifting ? "opacity-50 pointer-events-none" : ""}`}
+                      >
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center min-w-0">
+                            {keyName.startsWith("wallet:") && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded text-amber-400 border border-amber-900/50 bg-amber-950/20 mr-2">
+                                WALLET
+                              </span>
+                            )}
+                            {blockItem.note &&
+                              typeof blockItem.note === "string" &&
+                              (blockItem.note
+                                .toLowerCase()
+                                .includes("autonomous") ||
+                                blockItem.note
+                                  .toLowerCase()
+                                  .includes("ai")) && (
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded text-indigo-400 border border-indigo-900/50 bg-indigo-950/30 mr-2">
+                                  AUTONOMOUS BLOCK
+                                </span>
+                              )}
+                            <span className="truncate font-mono">
+                              {keyName}
+                            </span>
+                            {blockItem.expiration && (
+                              <LeaseTimer expiration={blockItem.expiration} />
+                            )}
+                          </div>
+                          <button
+                            onClick={() => handleUnblock(keyName)}
+                            disabled={actionLoading[keyName]}
+                            className="bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-600 px-2 py-1 rounded text-xs transition-colors disabled:opacity-50 ml-2 whitespace-nowrap"
+                          >
+                            {actionLoading[keyName] ? "[ LIFTING... ]" : "Lift"}
+                          </button>
+                        </div>
+                        <div className="flex">
+                          <input
+                            type="text"
+                            placeholder="Add triage note..."
+                            maxLength={60}
+                            value={annotations[keyName] || ""}
+                            onChange={(e) =>
+                              handleAnnotationChange(keyName, e.target.value)
+                            }
+                            onBlur={() => handleAnnotationBlur(keyName)}
+                            className="w-full bg-slate-950/50 border border-slate-700 rounded px-2 py-1 text-[10px] text-slate-300 focus:outline-none focus:border-slate-500 placeholder-slate-600"
+                          />
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
-              <button
-                onClick={() => setAuditPage(p => p + 1)}
-                disabled={(auditPage + 1) * itemsPerPage >= filteredAuditLog.length}
-                className="text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:hover:text-slate-400 transition-colors px-2 py-1 text-xs"
-              >
-                Next &rarr;
-              </button>
             </div>
-
           </div>
 
-        </div>
+          {/* Audit Trail Row */}
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            {/* Bottom Pane: Audit Trail */}
+            <div className="flex-1 bg-slate-950 border border-slate-800 rounded-lg relative overflow-hidden flex flex-col min-h-[250px]">
+              <div
+                className="absolute inset-0 opacity-10 pointer-events-none"
+                style={{
+                  backgroundImage: `linear-gradient(to right, #334155 1px, transparent 1px), linear-gradient(to bottom, #334155 1px, transparent 1px)`,
+                  backgroundSize: "40px 40px",
+                }}
+              ></div>
+
+              <div className="z-10 bg-slate-900/80 backdrop-blur-sm border-b border-slate-800 p-4 sticky top-0">
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-4">
+                    <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-4">
+                      <span>Edge Security Audit Trail</span>
+                      <button
+                        onClick={handleExportAuditCSV}
+                        className="font-mono text-[10px] text-cyan-400 hover:text-cyan-300 border border-cyan-800 hover:border-cyan-600 bg-cyan-950/30 px-2 py-0.5 rounded transition-colors cursor-pointer"
+                      >
+                        [ EXPORT CSV ]
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Search events..."
+                      className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 w-48 focus:outline-none focus:border-slate-500 font-mono"
+                      value={localAuditSearchQuery}
+                      onChange={(e) => setLocalAuditSearchQuery(e.target.value)}
+                    />
+                    <div className="flex items-center gap-2 ml-4">
+                      <button
+                        onClick={() => {
+                          setAuditTimeRange("all");
+                          setAuditPage(0);
+                        }}
+                        className={`font-mono text-[10px] px-2 py-0.5 rounded transition-colors cursor-pointer border ${auditTimeRange === "all" ? "text-cyan-400 border-cyan-800 bg-cyan-950/30" : "text-slate-500 border-slate-800 hover:text-slate-400 hover:border-slate-700 bg-slate-950/30"}`}
+                      >
+                        [ ALL TIME ]
+                      </button>
+                      <button
+                        onClick={() => {
+                          setAuditTimeRange("1h");
+                          setAuditPage(0);
+                        }}
+                        className={`font-mono text-[10px] px-2 py-0.5 rounded transition-colors cursor-pointer border ${auditTimeRange === "1h" ? "text-cyan-400 border-cyan-800 bg-cyan-950/30" : "text-slate-500 border-slate-800 hover:text-slate-400 hover:border-slate-700 bg-slate-950/30"}`}
+                      >
+                        [ 1 HOUR ]
+                      </button>
+                      <button
+                        onClick={() => {
+                          setAuditTimeRange("24h");
+                          setAuditPage(0);
+                        }}
+                        className={`font-mono text-[10px] px-2 py-0.5 rounded transition-colors cursor-pointer border ${auditTimeRange === "24h" ? "text-cyan-400 border-cyan-800 bg-cyan-950/30" : "text-slate-500 border-slate-800 hover:text-slate-400 hover:border-slate-700 bg-slate-950/30"}`}
+                      >
+                        [ 24 HOURS ]
+                      </button>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleExportAuditTrail}
+                    className="bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-600 px-3 py-1.5 rounded text-xs transition-colors flex items-center gap-2"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="7 10 12 15 17 10"></polyline>
+                      <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    Export JSON
+                  </button>
+                </div>
+                <div className="grid grid-cols-6 gap-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mt-4">
+                  <div>Timestamp</div>
+                  <div>Action</div>
+                  <div>Target</div>
+                  <div>TTL</div>
+                  <div>Authorized By</div>
+                  <div className="text-right">Actions</div>
+                </div>
+              </div>
+
+              <div className="z-10 flex-1 overflow-y-auto p-2 space-y-2">
+                {isLoading ? (
+                  renderTelemetrySkeleton()
+                ) : auditLog.length === 0 ? (
+                  <div className="flex-1 flex items-center justify-center p-8">
+                    <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-6 max-w-lg w-full flex items-center gap-4">
+                      <div className="relative flex h-3 w-3">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                      </div>
+                      <div className="border border-slate-800/50 bg-slate-950/20 rounded font-mono p-6 text-center text-xs text-slate-500 w-full uppercase">
+                        Perimeter Shield Active: Zero Edge Drop Anomalies
+                        Detected
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  paginatedAudit.map((event, idx) => {
+                    const rowId = `${event.target || "target"}-${event.timestamp}-${idx}`;
+                    return (
+                      <div
+                        key={rowId}
+                        className="grid grid-cols-6 gap-4 items-center p-3 rounded border border-slate-800/50 bg-slate-950/40 font-mono tracking-tight hover:bg-slate-800/50 transition-colors text-sm text-slate-300"
+                      >
+                        <div className="text-slate-500 font-mono">
+                          {new Date(event.timestamp).toLocaleString("en-GB")}
+                        </div>
+                        <div>
+                          <span
+                            className={`px-2 py-1 rounded text-xs border whitespace-nowrap ${event.action === "block" ? "text-red-400 bg-red-950/50 border-red-900" : "text-emerald-400 bg-emerald-950/50 border-emerald-900"}`}
+                          >
+                            {event.action.toUpperCase()}
+                          </span>
+                        </div>
+                        <div className="truncate text-slate-300">
+                          {event.target}
+                        </div>
+                        <div className="text-slate-500">
+                          {event.ttl ? `${event.ttl}s` : "N/A"}
+                        </div>
+                        <div className="text-slate-400 truncate flex items-center gap-2">
+                          {event.authorizedByWallet &&
+                          event.authorizedByWallet.length > 20
+                            ? `${event.authorizedByWallet.slice(0, 6)}...${event.authorizedByWallet.slice(-4)}`
+                            : event.authorizedByWallet || "N/A"}
+                          {event.authorizedByWallet && (
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(
+                                  event.authorizedByWallet || "",
+                                );
+                                addToast(
+                                  "[ WALLET ADDRESS COPIED ]",
+                                  "success",
+                                );
+                              }}
+                              className="font-mono text-[9px] text-cyan-400 hover:text-cyan-300 border border-cyan-800 hover:border-cyan-600 bg-cyan-950/30 px-1.5 py-0.5 rounded transition-colors cursor-pointer"
+                            >
+                              [ COPY ]
+                            </button>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <button
+                            onClick={() => handleCopyAuditRow(event, rowId)}
+                            className="font-mono text-[10px] text-slate-400 hover:text-white transition-colors uppercase cursor-pointer"
+                          >
+                            {copiedAuditRow === rowId ? (
+                              <span className="text-emerald-400 bg-emerald-950/50 border border-emerald-900 px-1 py-0.5 rounded">
+                                [ COPIED! ]
+                              </span>
+                            ) : (
+                              "[ COPY ROW ]"
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+              <div className="border-t border-slate-800 p-2 flex justify-between items-center bg-slate-900/50">
+                <button
+                  onClick={() => setAuditPage((p) => Math.max(0, p - 1))}
+                  disabled={auditPage === 0}
+                  className="text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:hover:text-slate-400 transition-colors px-2 py-1 text-xs"
+                >
+                  &larr; Prev
+                </button>
+                <div className="text-xs text-slate-500 font-mono">
+                  Page {auditPage + 1} of{" "}
+                  {Math.ceil(filteredAuditLog.length / itemsPerPage) || 1}
+                </div>
+                <button
+                  onClick={() => setAuditPage((p) => p + 1)}
+                  disabled={
+                    (auditPage + 1) * itemsPerPage >= filteredAuditLog.length
+                  }
+                  className="text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:hover:text-slate-400 transition-colors px-2 py-1 text-xs"
+                >
+                  Next &rarr;
+                </button>
+              </div>
+            </div>
+          </div>
 
           {/* Bottom Pane: Dead Letter Queue (DLQ) */}
           <div className="flex-1 bg-slate-950 border border-slate-800 rounded-lg relative overflow-hidden flex flex-col min-h-[250px] mt-4">
-            <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: `linear-gradient(to right, #334155 1px, transparent 1px), linear-gradient(to bottom, #334155 1px, transparent 1px)`, backgroundSize: '40px 40px' }}></div>
+            <div
+              className="absolute inset-0 opacity-10 pointer-events-none"
+              style={{
+                backgroundImage: `linear-gradient(to right, #334155 1px, transparent 1px), linear-gradient(to bottom, #334155 1px, transparent 1px)`,
+                backgroundSize: "40px 40px",
+              }}
+            ></div>
 
             <div className="z-10 bg-slate-900/80 backdrop-blur-sm border-b border-slate-800 p-4 sticky top-0">
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-4">
                   <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                     Ecosystem Dead Letter Queue (DLQ)
+                    Ecosystem Dead Letter Queue (DLQ)
                   </div>
                   <div className="flex bg-slate-950 border border-slate-700 rounded overflow-hidden">
-                    <button onClick={() => setDlqView('active')} className={`px-3 py-1 text-[10px] font-mono uppercase transition-colors ${dlqView === 'active' ? 'bg-slate-800 text-emerald-400' : 'text-slate-500 hover:text-slate-300'}`}>[ ACTIVE DLQ ]</button>
-                    <button onClick={() => setDlqView('quarantined')} className={`px-3 py-1 text-[10px] font-mono uppercase border-l border-slate-700 transition-colors ${dlqView === 'quarantined' ? 'bg-slate-800 text-amber-400' : 'text-slate-500 hover:text-slate-300'}`}>[ QUARANTINED ]</button>
+                    <button
+                      onClick={() => setDlqView("active")}
+                      className={`px-3 py-1 text-[10px] font-mono uppercase transition-colors ${dlqView === "active" ? "bg-slate-800 text-emerald-400" : "text-slate-500 hover:text-slate-300"}`}
+                    >
+                      [ ACTIVE DLQ ]
+                    </button>
+                    <button
+                      onClick={() => setDlqView("quarantined")}
+                      className={`px-3 py-1 text-[10px] font-mono uppercase border-l border-slate-700 transition-colors ${dlqView === "quarantined" ? "bg-slate-800 text-amber-400" : "text-slate-500 hover:text-slate-300"}`}
+                    >
+                      [ QUARANTINED ]
+                    </button>
                   </div>
                   <input
                     type="text"
@@ -2374,341 +3070,512 @@ const handlePurgeDlqItem = async (id: string) => {
                 </div>
               </div>
               <div className="grid grid-cols-[auto_1fr_1fr_1fr_1fr_auto] gap-4 mb-3 px-3 text-xs font-semibold text-slate-500 uppercase tracking-wider mt-4 font-mono">
-                 <div className="w-8 flex items-center justify-center">
-                    {dlqView === 'quarantined' ? (
-                       <input
-                          type="checkbox"
-                          className="accent-amber-500 bg-slate-900 border-slate-700 cursor-pointer"
-                          checked={selectedDlqIds.length > 0 && selectedDlqIds.length === filteredDlq.filter(r => r.id).length}
-                          onChange={(e) => {
-                             if (e.target.checked) {
-                                setSelectedDlqIds(filteredDlq.map(r => r.id).filter((id): id is string => !!id));
-                             } else {
-                                setSelectedDlqIds([]);
-                             }
-                          }}
-                       />
-                    ) : (
-                       <input
-                          type="checkbox"
-                          className="accent-emerald-500 bg-slate-900 border-slate-700 cursor-pointer"
-                          checked={selectedDlqIds.length > 0 && selectedDlqIds.length === filteredDlq.filter(r => r.id).length}
-                          onChange={(e) => {
-                             if (e.target.checked) {
-                                setSelectedDlqIds(filteredDlq.map(r => r.id).filter((id): id is string => !!id));
-                             } else {
-                                setSelectedDlqIds([]);
-                             }
-                          }}
-                       />
-                    )}
-                 </div>
-                 <div>Timestamp</div>
-                 <div>Origin Node</div>
-                 <div>Dropped Route</div>
-                 <div>Error Reason</div>
-                 <div className="text-right flex items-center justify-end gap-2">
-                    {dlqView === 'quarantined' && selectedDlqIds.length > 0 && (
-                       <button
-                          onClick={handleBulkUnquarantine}
-                          disabled={isBatchProcessing}
-                          className="text-[10px] bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-400 border border-emerald-800 px-2 py-1 rounded transition-colors"
-                       >
-                          {isBatchProcessing ? "[ PROCESSING... ]" : "[ UNQUARANTINE SELECTED ]"}
-                       </button>
-                    )}
-
-                    {selectedDlqIds.length > 0 && (
-                       <button
-                          onClick={handleBulkPurgeDLQ}
-                          disabled={isBatchProcessing}
-                          className="text-[10px] bg-red-950/40 hover:bg-red-900/60 text-red-400 border border-red-800 px-2 py-1 rounded transition-colors font-mono"
-                       >
-                          {isBatchProcessing ? "[ PROCESSING... ]" : `[ PURGE SELECTED (${selectedDlqIds.length}) ]`}
-                       </button>
-                    )}
-{dlqView === 'active' && selectedDlqIds.length > 0 && (
-                       <button
-                          onClick={handleBulkReplayDLQ}
-                          disabled={isBatchProcessing}
-                          className="text-[10px] bg-amber-950/40 hover:bg-amber-900/60 text-amber-400 border border-amber-800 px-2 py-1 rounded transition-colors font-mono"
-                       >
-                          {isBatchProcessing ? "[ PROCESSING... ]" : `[ REPLAY SELECTED (${selectedDlqIds.length}) ]`}
-                       </button>
-                    )}
-                    Actions
-                 </div>
+                <div className="w-8 flex items-center justify-center">
+                  {dlqView === "quarantined" ? (
+                    <input
+                      type="checkbox"
+                      className="accent-amber-500 bg-slate-900 border-slate-700 cursor-pointer"
+                      checked={
+                        selectedDlqIds.length > 0 &&
+                        selectedDlqIds.length ===
+                          filteredDlq.filter((r) => r.id).length
+                      }
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedDlqIds(
+                            filteredDlq
+                              .map((r) => r.id)
+                              .filter((id): id is string => !!id),
+                          );
+                        } else {
+                          setSelectedDlqIds([]);
+                        }
+                      }}
+                    />
+                  ) : (
+                    <input
+                      type="checkbox"
+                      className="accent-emerald-500 bg-slate-900 border-slate-700 cursor-pointer"
+                      checked={
+                        selectedDlqIds.length > 0 &&
+                        selectedDlqIds.length ===
+                          filteredDlq.filter((r) => r.id).length
+                      }
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedDlqIds(
+                            filteredDlq
+                              .map((r) => r.id)
+                              .filter((id): id is string => !!id),
+                          );
+                        } else {
+                          setSelectedDlqIds([]);
+                        }
+                      }}
+                    />
+                  )}
+                </div>
+                <div>Timestamp</div>
+                <div>Origin Node</div>
+                <div>Dropped Route</div>
+                <div>Error Reason</div>
+                <div className="text-right flex items-center justify-end gap-2">
+                  {dlqView === "quarantined" && selectedDlqIds.length > 0 && (
+                    <button
+                      onClick={handleBulkUnquarantine}
+                      disabled={isBatchProcessing}
+                      className="text-[10px] bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-400 border border-emerald-800 px-2 py-1 rounded transition-colors"
+                    >
+                      {isBatchProcessing
+                        ? "[ PROCESSING... ]"
+                        : "[ UNQUARANTINE SELECTED ]"}
+                    </button>
+                  )}
+                  {selectedDlqIds.length > 0 && (
+                    <button
+                      onClick={handleBulkPurgeDLQ}
+                      disabled={isBatchProcessing}
+                      className="text-[10px] bg-red-950/40 hover:bg-red-900/60 text-red-400 border border-red-800 px-2 py-1 rounded transition-colors font-mono"
+                    >
+                      {isBatchProcessing
+                        ? "[ PROCESSING... ]"
+                        : `[ PURGE SELECTED (${selectedDlqIds.length}) ]`}
+                    </button>
+                  )}
+                  {dlqView === "active" && selectedDlqIds.length > 0 && (
+                    <button
+                      onClick={handleBulkReplayDLQ}
+                      disabled={isBatchProcessing}
+                      className="text-[10px] bg-amber-950/40 hover:bg-amber-900/60 text-amber-400 border border-amber-800 px-2 py-1 rounded transition-colors font-mono"
+                    >
+                      {isBatchProcessing
+                        ? "[ PROCESSING... ]"
+                        : `[ REPLAY SELECTED (${selectedDlqIds.length}) ]`}
+                    </button>
+                  )}
+                  Actions
+                </div>
               </div>
             </div>
 
             <div className="z-10 flex-1 overflow-y-auto p-2 space-y-2">
-               {isLoading ? (
-                  renderTelemetrySkeleton()
-               ) : filteredDlq.length === 0 ? (
-                  <div className="flex-1 flex items-center justify-center p-8">
-                     <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-6 max-w-lg w-full flex items-center gap-4">
-                        <div className="relative flex h-3 w-3">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
-                        </div>
-                        <div className="border border-slate-800/50 bg-slate-950/20 rounded font-mono p-6 text-center text-xs text-slate-500 w-full uppercase">[ SYSTEM INTEGRITY EXCELLENT: DEAD LETTER QUEUE VACANT ]</div>
-                     </div>
+              {isLoading ? (
+                renderTelemetrySkeleton()
+              ) : filteredDlq.length === 0 ? (
+                <div className="flex-1 flex items-center justify-center p-8">
+                  <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-6 max-w-lg w-full flex items-center gap-4">
+                    <div className="relative flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                    </div>
+                    <div className="border border-slate-800/50 bg-slate-950/20 rounded font-mono p-6 text-center text-xs text-slate-500 w-full uppercase">
+                      [ SYSTEM INTEGRITY EXCELLENT: DEAD LETTER QUEUE VACANT ]
+                    </div>
                   </div>
-               ) : (
-                 filteredDlq.map((event, idx) => (
-                   <div key={`${event.originNode || "origin"}-${event.timestamp}-${idx}`} className="grid grid-cols-[auto_1fr_1fr_1fr_1fr_auto] gap-4 items-center p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono">
-                     <div className="w-8 flex items-center justify-center">
-                        {(dlqView === 'quarantined' || dlqView === 'active') && event.id && (
-                           <input
-                              type="checkbox"
-                              className={`${dlqView === 'quarantined' ? 'accent-amber-500' : 'accent-emerald-500'} bg-slate-900 border-slate-700`}
-                              checked={selectedDlqIds.includes(event.id)}
-                              onChange={(e) => {
-                                 if (e.target.checked && event.id) {
-                                    setSelectedDlqIds(prev => [...prev, event.id!]);
-                                 } else {
-                                    setSelectedDlqIds(prev => prev.filter(id => id !== event.id));
-                                 }
-                              }}
-                           />
+                </div>
+              ) : (
+                filteredDlq.map((event, idx) => (
+                  <div
+                    key={`${event.originNode || "origin"}-${event.timestamp}-${idx}`}
+                    className="grid grid-cols-[auto_1fr_1fr_1fr_1fr_auto] gap-4 items-center p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono"
+                  >
+                    <div className="w-8 flex items-center justify-center">
+                      {(dlqView === "quarantined" || dlqView === "active") &&
+                        event.id && (
+                          <input
+                            type="checkbox"
+                            className={`${dlqView === "quarantined" ? "accent-amber-500" : "accent-emerald-500"} bg-slate-900 border-slate-700`}
+                            checked={selectedDlqIds.includes(event.id)}
+                            onChange={(e) => {
+                              if (e.target.checked && event.id) {
+                                setSelectedDlqIds((prev) => [
+                                  ...prev,
+                                  event.id!,
+                                ]);
+                              } else {
+                                setSelectedDlqIds((prev) =>
+                                  prev.filter((id) => id !== event.id),
+                                );
+                              }
+                            }}
+                          />
                         )}
-                     </div>
-                     <div className="text-slate-500 font-mono">
-                        {new Date(event.timestamp).toLocaleString('en-GB')}
-                     </div>
-                     <div className="flex items-center gap-2">
-                        <span className="px-2 py-1 rounded text-xs border whitespace-nowrap text-amber-400 bg-amber-950/50 border-amber-900">
-                          {event.originNode}
+                    </div>
+                    <div className="text-slate-500 font-mono">
+                      {new Date(event.timestamp).toLocaleString("en-GB")}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-1 rounded text-xs border whitespace-nowrap text-amber-400 bg-amber-950/50 border-amber-900">
+                        {event.originNode}
+                      </span>
+                      {event.status === "quarantined" && (
+                        <span className="px-2 py-1 rounded text-xs border whitespace-nowrap text-amber-500 bg-amber-900/50 border-amber-500/50 font-bold">
+                          [ QUARANTINED ]
                         </span>
-                        {event.status === "quarantined" && (
-                           <span className="px-2 py-1 rounded text-xs border whitespace-nowrap text-amber-500 bg-amber-900/50 border-amber-500/50 font-bold">
-                              [ QUARANTINED ]
-                           </span>
-                        )}
-                     </div>
-                     <div className="truncate text-slate-300">
-                        {event.droppedRoute}
-                     </div>
-                     <div className="text-slate-400 truncate">
-                        {event.errorReason}
-                     </div>
-                     <div className="text-right flex items-center justify-end gap-3">
+                      )}
+                    </div>
+                    <div className="truncate text-slate-300">
+                      {event.droppedRoute}
+                    </div>
+                    <div className="text-slate-400 truncate">
+                      {event.errorReason}
+                    </div>
+                    <div className="text-right flex items-center justify-end gap-3">
+                      <button
+                        onClick={() =>
+                          event.id && handleReplayPayload(event.id, event)
+                        }
+                        disabled={event.id ? replayingState[event.id] : false}
+                        className="text-amber-400 hover:text-amber-300 disabled:text-amber-700 disabled:cursor-not-allowed transition-colors text-[10px] font-semibold uppercase border border-transparent hover:border-amber-900 px-2 py-1 rounded"
+                      >
+                        {event.id && replayingState[event.id]
+                          ? "[ REPLAYING... ]"
+                          : "Replay"}
+                      </button>
+                      {event.status === "quarantined" && (
                         <button
-                           onClick={() => event.id && handleReplayPayload(event.id, event)}
-                           disabled={event.id ? replayingState[event.id] : false}
-                           className="text-amber-400 hover:text-amber-300 disabled:text-amber-700 disabled:cursor-not-allowed transition-colors text-[10px] font-semibold uppercase border border-transparent hover:border-amber-900 px-2 py-1 rounded">
-                           {event.id && replayingState[event.id] ? "[ REPLAYING... ]" : "Replay"}
+                          onClick={() =>
+                            event.id && handleUnquarantine(event.id)
+                          }
+                          className="text-emerald-400 hover:text-emerald-300 transition-colors text-[10px] font-semibold uppercase border border-emerald-900/50 hover:bg-emerald-950/30 px-2 py-1 rounded"
+                        >
+                          [ UNQUARANTINE ]
                         </button>
-                        {event.status === "quarantined" && (
-                          <button
-                             onClick={() => event.id && handleUnquarantine(event.id)}
-                             className="text-emerald-400 hover:text-emerald-300 transition-colors text-[10px] font-semibold uppercase border border-emerald-900/50 hover:bg-emerald-950/30 px-2 py-1 rounded">
-                             [ UNQUARANTINE ]
-                          </button>
-                        )}
-                        <button
-                           onClick={() => event.id && handlePurgeDlqItem(event.id)}
-                           className="text-red-400 hover:text-red-300 transition-colors text-[10px] font-semibold uppercase border border-red-900/50 hover:bg-red-950/30 px-2 py-1 rounded">
-                           [ PURGE ]
-                        </button>
-                     </div>
-                   </div>
-                 ))
-               )}
+                      )}
+                      <button
+                        onClick={() => event.id && handlePurgeDlqItem(event.id)}
+                        className="text-red-400 hover:text-red-300 transition-colors text-[10px] font-semibold uppercase border border-red-900/50 hover:bg-red-950/30 px-2 py-1 rounded"
+                      >
+                        [ PURGE ]
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
-
         </div>
       )}
 
-        {/* Threat Inspection Drawer */}
-        {isInspectionDrawerOpen && selectedThreat && (
-          <div className="fixed inset-0 z-50 flex justify-end">
-            <div className="absolute inset-0 bg-black/60" onClick={() => setIsInspectionDrawerOpen(false)}></div>
-            <div className="relative w-full max-w-md bg-slate-950 border-l border-slate-800 h-full overflow-y-auto shadow-2xl flex flex-col font-mono text-sm text-slate-300">
-              <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-900/50">
-                <h3 className="text-amber-500 font-bold tracking-widest">[ DEEP PACKET INSPECTION ]</h3>
-                <button onClick={() => setIsInspectionDrawerOpen(false)} className="text-slate-500 hover:text-white">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                </button>
+      {/* Threat Inspection Drawer */}
+      {isInspectionDrawerOpen && selectedThreat && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <div
+            className="absolute inset-0 bg-black/60"
+            onClick={() => setIsInspectionDrawerOpen(false)}
+          ></div>
+          <div className="relative w-full max-w-md bg-slate-950 border-l border-slate-800 h-full overflow-y-auto shadow-2xl flex flex-col font-mono text-sm text-slate-300">
+            <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-900/50">
+              <h3 className="text-amber-500 font-bold tracking-widest">
+                [ DEEP PACKET INSPECTION ]
+              </h3>
+              <button
+                onClick={() => setIsInspectionDrawerOpen(false)}
+                className="text-slate-500 hover:text-white"
+              >
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6 flex-1">
+              {/* Metadata */}
+              <div className="space-y-3">
+                <div className="flex justify-between border-b border-slate-800 pb-1">
+                  <span className="text-slate-500">Client IP</span>
+                  <span className="text-red-400 font-bold">
+                    {selectedThreat.sourceIp}
+                  </span>
+                </div>
+                <div className="flex justify-between border-b border-slate-800 pb-1">
+                  <span className="text-slate-500">Reverse DNS</span>
+                  <span className="text-slate-400 truncate ml-4 max-w-[200px]">
+                    {selectedThreat.details?.reverseDns || "NXDOMAIN"}
+                  </span>
+                </div>
+                <div className="flex justify-between border-b border-slate-800 pb-1">
+                  <span className="text-slate-500">Geo-IP Country</span>
+                  <span>
+                    {selectedThreat.country || "UNKNOWN"}{" "}
+                    {selectedThreat.country && (
+                      <span className="ml-1 text-lg leading-none">
+                        {String.fromCodePoint(
+                          selectedThreat.country.toUpperCase().charCodeAt(0) +
+                            127397,
+                        ) +
+                          String.fromCodePoint(
+                            selectedThreat.country.toUpperCase().charCodeAt(1) +
+                              127397,
+                          )}
+                      </span>
+                    )}
+                  </span>
+                </div>
+                <div className="flex justify-between border-b border-slate-800 pb-1">
+                  <span className="text-slate-500">Cloudflare Bot Score</span>
+                  <span
+                    className={
+                      selectedThreat.botScore < 0.3
+                        ? "text-red-400"
+                        : "text-emerald-400"
+                    }
+                  >
+                    {selectedThreat.botScore !== undefined
+                      ? selectedThreat.botScore.toFixed(2)
+                      : "N/A"}
+                  </span>
+                </div>
+                <div className="flex justify-between border-b border-slate-800 pb-1">
+                  <span className="text-slate-500">Attack Vector</span>
+                  <span className="text-amber-500 font-bold">
+                    {selectedThreat.details?.attackVector ||
+                      selectedThreat.eventType.toUpperCase()}
+                  </span>
+                </div>
               </div>
 
-              <div className="p-6 space-y-6 flex-1">
-                {/* Metadata */}
-                <div className="space-y-3">
-                  <div className="flex justify-between border-b border-slate-800 pb-1">
-                    <span className="text-slate-500">Client IP</span>
-                    <span className="text-red-400 font-bold">{selectedThreat.sourceIp}</span>
-                  </div>
-                  <div className="flex justify-between border-b border-slate-800 pb-1">
-                    <span className="text-slate-500">Reverse DNS</span>
-                    <span className="text-slate-400 truncate ml-4 max-w-[200px]">{selectedThreat.details?.reverseDns || 'NXDOMAIN'}</span>
-                  </div>
-                  <div className="flex justify-between border-b border-slate-800 pb-1">
-                    <span className="text-slate-500">Geo-IP Country</span>
-                    <span>{selectedThreat.country || 'UNKNOWN'} {selectedThreat.country && <span className="ml-1 text-lg leading-none">{String.fromCodePoint(selectedThreat.country.toUpperCase().charCodeAt(0) + 127397) + String.fromCodePoint(selectedThreat.country.toUpperCase().charCodeAt(1) + 127397)}</span>}</span>
-                  </div>
-                  <div className="flex justify-between border-b border-slate-800 pb-1">
-                    <span className="text-slate-500">Cloudflare Bot Score</span>
-                    <span className={selectedThreat.botScore < 0.3 ? 'text-red-400' : 'text-emerald-400'}>{selectedThreat.botScore !== undefined ? selectedThreat.botScore.toFixed(2) : 'N/A'}</span>
-                  </div>
-                  <div className="flex justify-between border-b border-slate-800 pb-1">
-                    <span className="text-slate-500">Attack Vector</span>
-                    <span className="text-amber-500 font-bold">{selectedThreat.details?.attackVector || selectedThreat.eventType.toUpperCase()}</span>
-                  </div>
+              {/* HTTP Details */}
+              <div className="space-y-2">
+                <h4 className="text-slate-500 uppercase text-xs tracking-widest border-b border-slate-800 pb-1 mb-2">
+                  HTTP Context
+                </h4>
+                <div className="break-all bg-slate-900/50 p-2 rounded border border-slate-800/50">
+                  <span className="text-blue-400 mr-2">
+                    {selectedThreat.requestMethod || "GET"}
+                  </span>
+                  <span className="text-slate-300">
+                    {selectedThreat.targetResource || "/"}
+                  </span>
                 </div>
-
-                {/* HTTP Details */}
-                <div className="space-y-2">
-                  <h4 className="text-slate-500 uppercase text-xs tracking-widest border-b border-slate-800 pb-1 mb-2">HTTP Context</h4>
+                <div className="text-xs text-slate-400 mt-2">
+                  <span className="block text-slate-500 mb-1">User-Agent:</span>
                   <div className="break-all bg-slate-900/50 p-2 rounded border border-slate-800/50">
-                    <span className="text-blue-400 mr-2">{selectedThreat.requestMethod || 'GET'}</span>
-                    <span className="text-slate-300">{selectedThreat.targetResource || '/'}</span>
-                  </div>
-                  <div className="text-xs text-slate-400 mt-2">
-                    <span className="block text-slate-500 mb-1">User-Agent:</span>
-                    <div className="break-all bg-slate-900/50 p-2 rounded border border-slate-800/50">{selectedThreat.details?.userAgent || 'Unknown'}</div>
-                  </div>
-                  <div className="text-xs text-slate-400 mt-2">
-                    <span className="block text-slate-500 mb-1">Referer:</span>
-                    <div className="break-all bg-slate-900/50 p-2 rounded border border-slate-800/50">{selectedThreat.details?.referer || 'None'}</div>
+                    {selectedThreat.details?.userAgent || "Unknown"}
                   </div>
                 </div>
-
-                {/* Header Payload Snippet */}
-                {selectedThreat.details?.headers && (
-                  <div className="space-y-2 mt-4">
-                    <h4 className="text-slate-500 uppercase text-xs tracking-widest border-b border-slate-800 pb-1 mb-2">Header Snippet</h4>
-                    <pre className="text-[10px] text-slate-400 bg-slate-900 p-3 rounded border border-slate-800 overflow-x-auto">
-                      {JSON.stringify(selectedThreat.details.headers, null, 2)}
-                    </pre>
+                <div className="text-xs text-slate-400 mt-2">
+                  <span className="block text-slate-500 mb-1">Referer:</span>
+                  <div className="break-all bg-slate-900/50 p-2 rounded border border-slate-800/50">
+                    {selectedThreat.details?.referer || "None"}
                   </div>
-                )}
+                </div>
               </div>
 
-              {/* Action Buttons */}
-              <div className="p-4 border-t border-slate-800 bg-slate-900/50 flex flex-col gap-2 shrink-0">
-                <button
-                  onClick={() => {
-                    handleBlock(selectedThreat.sourceIp, 3600, 'quarantine_subnet');
-                    setIsInspectionDrawerOpen(false);
-                  }}
-                  className="w-full bg-amber-950/40 hover:bg-amber-900/60 border border-amber-900/50 text-amber-500 py-2 rounded transition-colors text-xs font-bold tracking-widest"
-                >
-                  [ QUARANTINE /24 SUBNET ]
-                </button>
-                <button
-                  onClick={() => {
-                    handleBlock(selectedThreat.sourceIp, -1, 'permanent_ban');
-                    setIsInspectionDrawerOpen(false);
-                  }}
-                  className="w-full bg-red-950/40 hover:bg-red-900/60 border border-red-900/50 text-red-500 py-2 rounded transition-colors text-xs font-bold tracking-widest"
-                >
-                  [ PERMANENT BAN ]
-                </button>
-                <button
-                  onClick={() => {
-                    // Requires whitelist API endpoint or passing a specific type, for now using blocklist mock
-                    handleBlock(selectedThreat.sourceIp, 0, 'whitelist');
-                    setIsInspectionDrawerOpen(false);
-                  }}
-                  className="w-full bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-900/50 text-emerald-500 py-2 rounded transition-colors text-xs font-bold tracking-widest"
-                >
-                  [ WHITELIST IP ]
-                </button>
-                <button
-                  onClick={async () => {
-                    const ip = selectedThreat.sourceIp;
-                    const reqId = selectedThreat.id || selectedThreat.details?.requestId || 'unknown_req_id';
-                    const originalPayload = selectedThreat.details?.originalPayload || {};
-                    setIsInspectionDrawerOpen(false);
+              {/* Header Payload Snippet */}
+              {selectedThreat.details?.headers && (
+                <div className="space-y-2 mt-4">
+                  <h4 className="text-slate-500 uppercase text-xs tracking-widest border-b border-slate-800 pb-1 mb-2">
+                    Header Snippet
+                  </h4>
+                  <pre className="text-[10px] text-slate-400 bg-slate-900 p-3 rounded border border-slate-800 overflow-x-auto">
+                    {JSON.stringify(selectedThreat.details.headers, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </div>
 
-                    // 1. Whitelist the IP
-                    try {
-                      await fetch(`${process.env.NEXT_PUBLIC_INTERCEPTOR_URL}/api/v1/blocklist/add`, {
-                        method: 'POST',
+            {/* Action Buttons */}
+            <div className="p-4 border-t border-slate-800 bg-slate-900/50 flex flex-col gap-2 shrink-0">
+              <button
+                onClick={() => {
+                  handleBlock(
+                    selectedThreat.sourceIp,
+                    3600,
+                    "quarantine_subnet",
+                  );
+                  setIsInspectionDrawerOpen(false);
+                }}
+                className="w-full bg-amber-950/40 hover:bg-amber-900/60 border border-amber-900/50 text-amber-500 py-2 rounded transition-colors text-xs font-bold tracking-widest"
+              >
+                [ QUARANTINE /24 SUBNET ]
+              </button>
+              <button
+                onClick={() => {
+                  handleBlock(selectedThreat.sourceIp, -1, "permanent_ban");
+                  setIsInspectionDrawerOpen(false);
+                }}
+                className="w-full bg-red-950/40 hover:bg-red-900/60 border border-red-900/50 text-red-500 py-2 rounded transition-colors text-xs font-bold tracking-widest"
+              >
+                [ PERMANENT BAN ]
+              </button>
+              <button
+                onClick={() => {
+                  // Requires whitelist API endpoint or passing a specific type, for now using blocklist mock
+                  handleBlock(selectedThreat.sourceIp, 0, "whitelist");
+                  setIsInspectionDrawerOpen(false);
+                }}
+                className="w-full bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-900/50 text-emerald-500 py-2 rounded transition-colors text-xs font-bold tracking-widest"
+              >
+                [ WHITELIST IP ]
+              </button>
+              <button
+                onClick={async () => {
+                  const ip = selectedThreat.sourceIp;
+                  const reqId =
+                    selectedThreat.id ||
+                    selectedThreat.details?.requestId ||
+                    "unknown_req_id";
+                  const originalPayload =
+                    selectedThreat.details?.originalPayload || {};
+                  setIsInspectionDrawerOpen(false);
+
+                  // 1. Whitelist the IP
+                  try {
+                    await fetch(
+                      `${process.env.NEXT_PUBLIC_INTERCEPTOR_URL}/api/v1/blocklist/add`,
+                      {
+                        method: "POST",
                         headers: {
-                          'Content-Type': 'application/json',
-                          'X-Asguard-Auth': process.env.NEXT_PUBLIC_ASGUARD_API_KEY || ''
+                          "Content-Type": "application/json",
+                          "X-Asguard-Auth":
+                            process.env.NEXT_PUBLIC_ASGUARD_API_KEY || "",
                         },
-                        body: JSON.stringify({ ip, reason: "False positive replay whitelist", type: "whitelist" })
-                      });
-                    } catch (e) { console.error('Whitelist failed', e); }
+                        body: JSON.stringify({
+                          ip,
+                          reason: "False positive replay whitelist",
+                          type: "whitelist",
+                        }),
+                      },
+                    );
+                  } catch (e) {
+                    console.error("Whitelist failed", e);
+                  }
 
-                    // 2. Dispatch webhook to Echo Recovery Manager
-                    try {
-                      const recoveryUrl = process.env.NEXT_PUBLIC_ECHO_RECOVERY_URL || 'http://localhost:3000';
-                      await fetch(`${recoveryUrl}/api/v1/recovery/replay-disputed`, {
-                        method: 'POST',
+                  // 2. Dispatch webhook to Echo Recovery Manager
+                  try {
+                    const recoveryUrl =
+                      process.env.NEXT_PUBLIC_ECHO_RECOVERY_URL ||
+                      "http://localhost:3000";
+                    await fetch(
+                      `${recoveryUrl}/api/v1/recovery/replay-disputed`,
+                      {
+                        method: "POST",
                         headers: {
-                          'Content-Type': 'application/json',
-                          'X-Axim-Signature': process.env.NEXT_PUBLIC_AXIM_INTERNAL_KEY || 'test-key'
+                          "Content-Type": "application/json",
+                          "X-Axim-Signature":
+                            process.env.NEXT_PUBLIC_AXIM_INTERNAL_KEY ||
+                            "test-key",
                         },
                         body: JSON.stringify({
                           original_payload: originalPayload,
-                          request_id: reqId
-                        })
-                      });
-                      // Assuming success, toast would be nice but not available natively without context
-                    } catch (e) { console.error('Echo replay failed', e); }
-                  }}
-                  className="w-full bg-blue-950/40 hover:bg-blue-900/60 border border-blue-900/50 text-blue-500 py-2 rounded transition-colors text-xs font-bold tracking-widest mt-2"
-                >
-                  [ MARK AS FALSE POSITIVE & REPLAY ]
-                </button>
-
-              </div>
-            </div>
-          </div>
-        )}
-
-        {showTriageModal && anomalyQueue.length > 0 && (
-          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-            <div className="border border-slate-800 bg-slate-950 p-6 rounded-lg max-w-lg w-full font-mono shadow-xl relative max-h-[90vh] flex flex-col">
-              <button onClick={() => setShowTriageModal(false)} className="absolute top-4 right-4 text-slate-500 hover:text-white transition-colors">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                          request_id: reqId,
+                        }),
+                      },
+                    );
+                    // Assuming success, toast would be nice but not available natively without context
+                  } catch (e) {
+                    console.error("Echo replay failed", e);
+                  }
+                }}
+                className="w-full bg-blue-950/40 hover:bg-blue-900/60 border border-blue-900/50 text-blue-500 py-2 rounded transition-colors text-xs font-bold tracking-widest mt-2"
+              >
+                [ MARK AS FALSE POSITIVE & REPLAY ]
               </button>
-              <h2 className="text-xl text-amber-500 mb-6 flex items-center gap-2 shrink-0">
-                <svg className="w-5 h-5 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                ONYX AI TRIAGE REQUIRED
-              </h2>
-
-              <div className="overflow-y-auto pr-2 mb-8 space-y-4">
-                {anomalyQueue.map((item, idx) => (
-                  <div key={idx} className="bg-slate-900/50 border border-slate-800 p-4 rounded space-y-2">
-                    <div className="flex justify-between border-b border-slate-800 pb-1">
-                      <span className="text-slate-500 text-xs">Target IP Address</span>
-                      <span className="text-slate-300 text-sm">{item.anomalyIp}</span>
-                    </div>
-                    <div className="flex justify-between border-b border-slate-800 pb-1">
-                      <span className="text-slate-500 text-xs">1-Hour Request Velocity</span>
-                      <span className="text-red-400 font-bold text-sm">{item.requestCount1h} req/hr</span>
-                    </div>
-                    <div className="flex justify-between pb-1">
-                      <span className="text-slate-500 text-xs">Staged Timestamp</span>
-                      <span className="text-slate-300 text-xs">{new Date(item.timestamp).toLocaleString()}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="flex gap-4 shrink-0">
-                <button
-                  onClick={() => handleTriageAnomaly('block')}
-                  className="flex-1 bg-red-950 hover:bg-red-900 border border-red-500/50 text-red-500 py-3 rounded text-sm transition-colors font-bold"
-                >
-                  [ AUTO-BLOCK ALL ({anomalyQueue.length}) ]
-                </button>
-                <button
-                  onClick={() => handleTriageAnomaly('dismiss')}
-                  className="flex-1 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 py-3 rounded text-sm transition-colors font-bold"
-                >
-                  [ DISMISS ALL ]
-                </button>
-              </div>
             </div>
           </div>
-        )}
+        </div>
+      )}
+
+      {showTriageModal && anomalyQueue.length > 0 && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+          <div className="border border-slate-800 bg-slate-950 p-6 rounded-lg max-w-lg w-full font-mono shadow-xl relative max-h-[90vh] flex flex-col">
+            <button
+              onClick={() => setShowTriageModal(false)}
+              className="absolute top-4 right-4 text-slate-500 hover:text-white transition-colors"
+            >
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+            <h2 className="text-xl text-amber-500 mb-6 flex items-center gap-2 shrink-0">
+              <svg
+                className="w-5 h-5 animate-pulse"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                />
+              </svg>
+              ONYX AI TRIAGE REQUIRED
+            </h2>
+
+            <div className="overflow-y-auto pr-2 mb-8 space-y-4">
+              {anomalyQueue.map((item, idx) => (
+                <div
+                  key={idx}
+                  className="bg-slate-900/50 border border-slate-800 p-4 rounded space-y-2"
+                >
+                  <div className="flex justify-between border-b border-slate-800 pb-1">
+                    <span className="text-slate-500 text-xs">
+                      Target IP Address
+                    </span>
+                    <span className="text-slate-300 text-sm">
+                      {item.anomalyIp}
+                    </span>
+                  </div>
+                  <div className="flex justify-between border-b border-slate-800 pb-1">
+                    <span className="text-slate-500 text-xs">
+                      1-Hour Request Velocity
+                    </span>
+                    <span className="text-red-400 font-bold text-sm">
+                      {item.requestCount1h} req/hr
+                    </span>
+                  </div>
+                  <div className="flex justify-between pb-1">
+                    <span className="text-slate-500 text-xs">
+                      Staged Timestamp
+                    </span>
+                    <span className="text-slate-300 text-xs">
+                      {new Date(item.timestamp).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex gap-4 shrink-0">
+              <button
+                onClick={() => handleTriageAnomaly("block")}
+                className="flex-1 bg-red-950 hover:bg-red-900 border border-red-500/50 text-red-500 py-3 rounded text-sm transition-colors font-bold"
+              >
+                [ AUTO-BLOCK ALL ({anomalyQueue.length}) ]
+              </button>
+              <button
+                onClick={() => handleTriageAnomaly("dismiss")}
+                className="flex-1 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 py-3 rounded text-sm transition-colors font-bold"
+              >
+                [ DISMISS ALL ]
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

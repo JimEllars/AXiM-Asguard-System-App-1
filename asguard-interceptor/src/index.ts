@@ -1161,6 +1161,7 @@ export default {
           telemetry: "ok",
           rateLimitSize: rateLimitMap.size,
           penaltyLedgerSize: penaltyLedger.size,
+          memoryUsage: typeof process !== "undefined" && process.memoryUsage ? process.memoryUsage() : { rss: 0, heapTotal: 0, heapUsed: 0, external: 0, arrayBuffers: 0 },
           lastHeartbeat,
           heartbeatDetails: fullHeartbeat,
           telemetrySummary,
@@ -1175,7 +1176,8 @@ export default {
         return new Response(JSON.stringify({
           status: "degraded",
           error: err.message,
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          memoryUsage: typeof process !== "undefined" && process.memoryUsage ? process.memoryUsage() : { rss: 0, heapTotal: 0, heapUsed: 0, external: 0, arrayBuffers: 0 }
         }), {
           status: 500,
           headers: { ...getCorsHeaders(request, env, isMutation), "Content-Type": "application/json", "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" }
