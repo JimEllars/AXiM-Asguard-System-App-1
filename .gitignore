@@ -12,3 +12,7 @@ scripts/
 video/
 dist/
 .next/
+
+.venv/
+*.pyc
+__pycache__/
