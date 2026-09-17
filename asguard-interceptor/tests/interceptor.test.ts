@@ -1410,10 +1410,10 @@ describe("Autonomous Blocklist Endpoint", () => {
       expect(body.heartbeat.status).toBe("ok");
 
       const putCalls = mockTelemetryKV.put.mock.calls;
-      const heartbeatCall = putCalls.find(c => c[0] === "system_health_heartbeat");
+      const heartbeatCall = putCalls.find((c: any) => c[0] === "system_health_heartbeat");
       expect(heartbeatCall).toBeDefined();
 
-      const summaryCall = putCalls.find(c => c[0] === "telemetry:summary:24h");
+      const summaryCall = putCalls.find((c: any) => c[0] === "telemetry:summary:24h");
       expect(summaryCall).toBeDefined();
       const summaryPayload = JSON.parse(summaryCall[1]);
       expect(summaryPayload.totalIntercepted24h).toBeDefined();
@@ -1446,7 +1446,7 @@ describe("Autonomous Blocklist Endpoint", () => {
           })
         });
         const res = await worker.fetch(req, env as any, ctx as any);
-        await Promise.all(ctx.waitUntil.mock.calls.map(c => c[0]).flat());
+        await Promise.all(ctx.waitUntil.mock.calls.map((c: any) => c[0]).flat());
       }
 
       mockTelemetryKV.put.mockResolvedValue(undefined); // Reset
@@ -1484,7 +1484,7 @@ describe("Autonomous Blocklist Endpoint", () => {
       expect(mockKV.delete).toHaveBeenCalledWith("expired-key");
 
       const putCalls = mockTelemetryKV.put.mock.calls;
-      const heartbeatCall = putCalls.find(c => c[0] === "system_health_heartbeat");
+      const heartbeatCall = putCalls.find((c: any) => c[0] === "system_health_heartbeat");
       expect(heartbeatCall).toBeDefined();
       const heartbeatPayload = JSON.parse(heartbeatCall[1]);
       expect(heartbeatPayload.eventType).toBe("cron_hourly_heartbeat");
@@ -1521,7 +1521,7 @@ describe("Autonomous Blocklist Endpoint", () => {
       await promiseToWait;
 
       const putCalls = mockTelemetryKV.put.mock.calls;
-      const anomalyCall = putCalls.find(c => c[0] === "anomaly_queue");
+      const anomalyCall = putCalls.find((c: any) => c[0] === "anomaly_queue");
       expect(anomalyCall).toBeDefined();
       const anomalyPayloadArray = JSON.parse(anomalyCall[1]);
       expect(Array.isArray(anomalyPayloadArray)).toBe(true);
@@ -1565,7 +1565,7 @@ describe("Autonomous Blocklist Endpoint", () => {
       expect(mockTelemetryKV.delete).toHaveBeenCalledWith("dlq:123");
 
       const putCalls = mockTelemetryKV.put.mock.calls;
-      const heartbeatCall = putCalls.find(c => c[0] === "system_health_heartbeat");
+      const heartbeatCall = putCalls.find((c: any) => c[0] === "system_health_heartbeat");
       expect(heartbeatCall).toBeDefined();
       const heartbeatPayload = JSON.parse(heartbeatCall[1]);
       expect(heartbeatPayload.eventType).toBe("cron_daily_heartbeat");
@@ -1573,7 +1573,7 @@ describe("Autonomous Blocklist Endpoint", () => {
       expect(heartbeatPayload.cronSchedule).toBe("DAILY");
       expect(heartbeatPayload.aiThreatCount24h).toBe(5);
 
-      const summaryCall = putCalls.find(c => c[0] === "telemetry:summary:24h");
+      const summaryCall = putCalls.find((c: any) => c[0] === "telemetry:summary:24h");
       expect(summaryCall).toBeDefined();
       const summaryPayload = JSON.parse(summaryCall[1]);
 
@@ -1585,7 +1585,45 @@ describe("Autonomous Blocklist Endpoint", () => {
   });
 });
 
+
+describe("Telemetry Fail-Open Verification", () => {
+  let env: any;
+  let ctx: any;
+
+  beforeEach(() => {
+    env = {
+      ASGUARD_KV: { put: vi.fn(), get: vi.fn() },
+      ASGUARD_BLACKLIST: { list: vi.fn().mockResolvedValue({ keys: [] }) },
+      ASGUARD_TELEMETRY: { put: vi.fn().mockRejectedValue(new Error("Simulated KV Error")), get: vi.fn() },
+      SUPABASE_URL: "https://invalid.supabase.co",
+      SUPABASE_ANON_KEY: "invalid",
+      EMAILIT_API_KEY: "test",
+      ASGUARD_API_KEY: "test",
+      ALLOWED_ORIGIN: "*"
+    };
+    ctx = { waitUntil: vi.fn() };
+  });
+
+  it("handles telemetry failures gracefully and continues processing", async () => {
+    const request = new Request("http://localhost/telemetry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sourceIp: "127.0.0.1",
+        timestamp: Date.now(),
+        eventType: "suspicious_activity",
+        severity: "low"
+      })
+    });
+
+    // We mock fetch inside logToSupabase to fail, or just trust the KV mock rejection
+    const response = await worker.fetch(request, env, ctx);
+    expect(response.status).toBe(202); // Should still return 202 accepted
+  });
+});
+
 describe("Pipeline Ingestion Endpoint", () => {
+
   let ingestEnv: any;
   let ingestCtx: any;
 
@@ -1651,10 +1689,10 @@ describe("Pipeline Ingestion Endpoint", () => {
     await worker.fetch(request1, ingestEnv, ingestCtx);
 
     // Wait for the waitUntils to resolve
-    await Promise.all(ingestCtx.waitUntil.mock.calls.map(c => c[0]).flat());
+    await Promise.all(ingestCtx.waitUntil.mock.calls.map((c: any) => c[0]).flat());
 
     const putCalls1 = ingestEnv.ASGUARD_TELEMETRY.put.mock.calls;
-    const recentEventsCall1 = putCalls1.find(c => c[0] === "recent_events");
+    const recentEventsCall1 = putCalls1.find((c: any) => c[0] === "recent_events");
     if (recentEventsCall1) {
        const payloadArray = JSON.parse(recentEventsCall1[1]);
        console.log("PAYLOAD:", payloadArray[0]);
@@ -1678,10 +1716,10 @@ describe("Pipeline Ingestion Endpoint", () => {
     });
 
     await worker.fetch(request2, ingestEnv, ingestCtx);
-    await Promise.all(ingestCtx.waitUntil.mock.calls.map(c => c[0]).flat());
+    await Promise.all(ingestCtx.waitUntil.mock.calls.map((c: any) => c[0]).flat());
 
     const putCalls2 = ingestEnv.ASGUARD_TELEMETRY.put.mock.calls;
-    const recentEventsCall2 = [...putCalls2].reverse().find(c => c[0] === "recent_events");
+    const recentEventsCall2 = [...putCalls2].reverse().find((c: any) => c[0] === "recent_events");
     if (recentEventsCall2) {
        const payloadArray = JSON.parse(recentEventsCall2[1]);
        // The first item is the most recent

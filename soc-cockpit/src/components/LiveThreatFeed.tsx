@@ -112,6 +112,7 @@ function LeaseTimer({ expiration }: { expiration: number }) {
 
 export default function LiveThreatFeed() {
   const [aximUser, setAximUser] = useState<string | null>(null);
+  const [streamConnected, setStreamConnected] = useState<boolean>(true);
   useEffect(() => {
     if (typeof document !== "undefined") {
       const match = document.cookie.match(new RegExp("(^| )axim_user=([^;]+)"));
@@ -122,49 +123,71 @@ export default function LiveThreatFeed() {
   }, []);
 
   useEffect(() => {
-    let source = null;
+    let source: EventSource | null = null;
+    let reconnectTimeout: NodeJS.Timeout;
+    let retryCount = 0;
     const sseUrl = `${process.env.NEXT_PUBLIC_AXIM_CORE_API_URL || "https://api.axim.us.com"}/api/v1/onyx/stream`;
-    try {
-      source = new EventSource(sseUrl);
-      source.onmessage = (event) => {
-        try {
-          const parsed = JSON.parse(event.data);
-          // Assuming the event matches our telemetry types or something similar
-          if (
-            [
-              "threat.blocked",
-              "rate_limit.exceeded",
-              "suspicious_activity",
-              "bot_challenge.failed",
-              "ip.quarantined",
-            ].includes(parsed.event_type || parsed.eventType)
-          ) {
-            setAuditLog((prev: any) => {
-              const newFeed = [
-                {
-                  ...parsed,
-                  id: `sse-${Date.now()}-${Math.random()}`,
-                  timestamp: parsed.timestamp || Date.now(),
-                  isNewStreamEvent: true, // mark to trigger flashing animation
-                },
-                ...prev,
-              ].slice(0, 100);
-              return newFeed;
-            });
-            setLastSynced(new Date());
+
+    const connectStream = () => {
+      try {
+        source = new EventSource(sseUrl);
+
+        source.onopen = () => {
+           setStreamConnected(true);
+           retryCount = 0;
+        };
+
+        source.onmessage = (event) => {
+          try {
+            const parsed = JSON.parse(event.data);
+            if (
+              [
+                "threat.blocked",
+                "rate_limit.exceeded",
+                "suspicious_activity",
+                "bot_challenge.failed",
+                "ip.quarantined",
+              ].includes(parsed.event_type || parsed.eventType)
+            ) {
+              setAuditLog((prev: any) => {
+                const newFeed = [
+                  {
+                    ...parsed,
+                    id: `sse-${Date.now()}-${Math.random()}`,
+                    timestamp: parsed.timestamp || Date.now(),
+                    isNewStreamEvent: true,
+                  },
+                  ...prev,
+                ].slice(0, 100);
+                return newFeed;
+              });
+              setLastSynced(new Date());
+            }
+          } catch (e) {
+            // ignore parse errors
           }
-        } catch (e) {
-          // ignore parse errors
-        }
-      };
-      source.onerror = (e) => {
-        console.error("SSE connection error", e);
-      };
-    } catch (e) {
-      console.error("Failed to establish SSE", e);
-    }
+        };
+        source.onerror = (e) => {
+          console.error("SSE connection error", e);
+          if (source) {
+            source.close();
+          }
+          setStreamConnected(false);
+          // Exponential backoff reconnection
+          const delay = Math.min(1000 * Math.pow(2, retryCount), 30000);
+          retryCount++;
+          reconnectTimeout = setTimeout(connectStream, delay);
+        };
+      } catch (e) {
+        console.error("Failed to establish SSE", e);
+        setStreamConnected(false);
+      }
+    };
+
+    connectStream();
 
     return () => {
+      clearTimeout(reconnectTimeout);
       if (source) {
         source.close();
       }

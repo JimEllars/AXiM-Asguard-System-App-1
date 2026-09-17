@@ -73,8 +73,8 @@ export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: a
   };
 
   if (ctx && ctx.waitUntil) {
-    ctx.waitUntil(executeLog());
+    ctx.waitUntil(executeLog().catch(e => console.error("Unhandled error in logToSupabase background task", e)));
   } else {
-    await executeLog();
+    await executeLog().catch(e => console.error("Unhandled error in logToSupabase execution", e));
   }
 }

@@ -71,6 +71,7 @@ export async function middleware(request: NextRequest) {
       // In case passport is down or edge is restarting, do not immediately drop session.
       // Layout.tsx will fall back to local cryptographic check using 'asguard_auth_token'.
       // We'll let this pass to avoid disrupting active dashboards.
+      console.error("Failed to verify token upstream, falling back to local verification:", e);
     }
 
     const response = NextResponse.next();
