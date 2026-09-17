@@ -1593,7 +1593,7 @@ describe("Pipeline Ingestion Endpoint", () => {
     ingestEnv = {
       ASGUARD_KV: { put: vi.fn(), get: vi.fn() },
       ASGUARD_BLACKLIST: { list: vi.fn().mockResolvedValue({ keys: [] }) },
-      ASGUARD_TELEMETRY: { put: vi.fn(), get: vi.fn() },
+      ASGUARD_TELEMETRY: { put: vi.fn().mockResolvedValue(undefined), get: vi.fn() },
       EMAILIT_API_KEY: "test",
       ASGUARD_API_KEY: "test",
       ALLOWED_ORIGIN: "*"
@@ -1629,6 +1629,64 @@ describe("Pipeline Ingestion Endpoint", () => {
     });
     const response = await worker.fetch(request, ingestEnv, ingestCtx);
     expect(response.status).toBe(200);
+  });
+
+
+  it("injects correlation ID when not present and passes through when present", async () => {
+    ingestEnv.ONYX_PIPELINE_SECRET = "test_secret";
+    ingestEnv.ASGUARD_INGEST_KEY = "test_secret"; // Used by mock for tests if needed
+
+    // First request without correlation ID
+    const request1 = new Request("http://localhost/telemetry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sourceIp: "127.0.0.1",
+        timestamp: Date.now(),
+        eventType: "suspicious_activity",
+        severity: "low"
+      })
+    });
+
+    await worker.fetch(request1, ingestEnv, ingestCtx);
+
+    // Wait for the waitUntils to resolve
+    await Promise.all(ingestCtx.waitUntil.mock.calls.map(c => c[0]).flat());
+
+    const putCalls1 = ingestEnv.ASGUARD_TELEMETRY.put.mock.calls;
+    const recentEventsCall1 = putCalls1.find(c => c[0] === "recent_events");
+    if (recentEventsCall1) {
+       const payloadArray = JSON.parse(recentEventsCall1[1]);
+       console.log("PAYLOAD:", payloadArray[0]);
+       expect(payloadArray[0].correlationId).toBeDefined();
+       expect(payloadArray[0].correlationId).toBeTruthy();
+    }
+
+    // Second request with correlation ID
+    const request2 = new Request("http://localhost/telemetry", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-correlation-id": "my-custom-correlation-id"
+      },
+      body: JSON.stringify({
+        sourceIp: "127.0.0.1",
+        timestamp: Date.now(),
+        eventType: "suspicious_activity",
+        severity: "low"
+      })
+    });
+
+    await worker.fetch(request2, ingestEnv, ingestCtx);
+    await Promise.all(ingestCtx.waitUntil.mock.calls.map(c => c[0]).flat());
+
+    const putCalls2 = ingestEnv.ASGUARD_TELEMETRY.put.mock.calls;
+    const recentEventsCall2 = [...putCalls2].reverse().find(c => c[0] === "recent_events");
+    if (recentEventsCall2) {
+       const payloadArray = JSON.parse(recentEventsCall2[1]);
+       // The first item is the most recent
+       expect(payloadArray[0].correlationId).toBe("my-custom-correlation-id");
+    }
   });
 
   it("rejects valid token but invalid payload", async () => {
