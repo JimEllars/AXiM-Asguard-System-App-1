@@ -36,6 +36,16 @@ export const TelemetryPayloadSchema = z.object({
 
 export type TelemetryPayload = z.infer<typeof TelemetryPayloadSchema>;
 
+export interface ThreatEventPayload {
+  id: string;
+  timestamp: number;
+  sourceIp: string;
+  threatScore: number;
+  classification: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "BENIGN";
+  metadata: Record<string, unknown>;
+  signature: string;
+}
+
 export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: any) {
   const executeLog = async () => {
     try {
