@@ -26,40 +26,72 @@ export default function GlobalThreatMap() {
   // Keep real-time stream of attacks
   const [streamedAttacks, setStreamedAttacks] = useState<ThreatEvent[]>([]);
   const [pulses, setPulses] = useState<{id: string, lat: number, lng: number, severity: string, timestamp: number}[]>([]);
+  const [streamConnected, setStreamConnected] = useState<boolean>(true);
 
   useEffect(() => {
-    const eventSource = new EventSource('/api/ingest/stream');
+    let eventSource: EventSource | null = null;
+    let reconnectTimeout: NodeJS.Timeout;
+    let retryCount = 0;
 
-    eventSource.onmessage = (event) => {
+    const connectStream = () => {
       try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'ping' || data.type === 'connected') return;
+        eventSource = new EventSource('/api/ingest/stream');
 
-        // Ensure bounded memory (last 100 events)
-        setStreamedAttacks(prev => {
-          const updated = [data, ...prev].slice(0, 100);
-          return updated;
-        });
+        eventSource.onopen = () => {
+          setStreamConnected(true);
+          retryCount = 0;
+        };
 
-        // Add a pulse for the new event
-        setPulses(prev => {
-          const now = Date.now();
-          const active = prev.filter(p => now - p.timestamp < 2000); // 2 seconds TTL
-          return [...active, {
-            id: data.id || Math.random().toString(36).substr(2, 9),
-            lat: data.lat || 0,
-            lng: data.lng || 0,
-            severity: data.severity || 'low',
-            timestamp: now
-          }];
-        });
-      } catch (err) {
-        console.error("Error parsing stream event", err);
+        eventSource.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'ping' || data.type === 'connected') return;
+
+            // Ensure bounded memory (last 100 events)
+            setStreamedAttacks(prev => {
+              const updated = [data, ...prev].slice(0, 100);
+              return updated;
+            });
+
+            // Add a pulse for the new event
+            setPulses(prev => {
+              const now = Date.now();
+              const active = prev.filter(p => now - p.timestamp < 2000); // 2 seconds TTL
+              return [...active, {
+                id: data.id || Math.random().toString(36).substr(2, 9),
+                lat: data.lat || 0,
+                lng: data.lng || 0,
+                severity: data.severity || 'low',
+                timestamp: now
+              }];
+            });
+          } catch (err) {
+            console.error("Error parsing stream event", err);
+          }
+        };
+
+        eventSource.onerror = (e) => {
+          console.error("Stream map connection error", e);
+          if (eventSource) {
+            eventSource.close();
+          }
+          setStreamConnected(false);
+          const delay = Math.min(1000 * Math.pow(2, retryCount), 30000);
+          retryCount++;
+          reconnectTimeout = setTimeout(connectStream, delay);
+        };
+      } catch (e) {
+        setStreamConnected(false);
       }
     };
 
+    connectStream();
+
     return () => {
-      eventSource.close();
+      clearTimeout(reconnectTimeout);
+      if (eventSource) {
+        eventSource.close();
+      }
     };
   }, []);
 
@@ -208,9 +240,14 @@ export default function GlobalThreatMap() {
     <div ref={containerRef} className="w-full h-full relative bg-slate-950 rounded-xl border border-slate-800 overflow-hidden flex items-center justify-center p-4">
       <div className="absolute top-4 left-4 z-10 pointer-events-none">
         <h3 className="text-sm font-bold text-slate-300 uppercase tracking-widest flex items-center gap-2">
-          <svg className="w-4 h-4 text-amber-500 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21.128 12A10.01 10.01 0 0012 2.012A10.01 10.01 0 002.872 12A10.01 10.01 0 0012 21.988 10.01 10.01 0 0021.128 12z"></path></svg>
+          <svg className={`w-4 h-4 ${streamConnected ? 'text-amber-500 animate-pulse' : 'text-slate-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21.128 12A10.01 10.01 0 0012 2.012A10.01 10.01 0 002.872 12A10.01 10.01 0 0012 21.988 10.01 10.01 0 0021.128 12z"></path></svg>
           Global Attack Map Visualizer
         </h3>
+        {!streamConnected && (
+          <div className="mt-1 text-[10px] text-red-400 font-mono bg-red-950/50 px-2 py-0.5 rounded border border-red-900/50 inline-block">
+            [ CONNECTION LOST ]
+          </div>
+        )}
         <p className="text-xs text-slate-500 font-mono mt-1">Live threat burst vectors</p>
         <div className="flex gap-3 mt-2 font-mono text-[10px]">
            <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-cyan-400"></span> <span className="text-slate-400">Blocked Edge Probes</span></div>

@@ -5,7 +5,7 @@ export async function GET(request: NextRequest) {
   const token = request.nextUrl.searchParams?.get('token');
 
   if (!token) {
-    return NextResponse.redirect(new URL('/', request.url));
+    return NextResponse.redirect(new URL('https://passport.axim.us.com/login?redirect_to=https://asguard.axim.us.com', request.url));
   }
 
   try {
