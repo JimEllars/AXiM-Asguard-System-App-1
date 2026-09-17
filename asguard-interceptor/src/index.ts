@@ -2441,6 +2441,11 @@ if (request.method === "POST" && url.pathname === "/api/v1/blocklist/add") {
             payload.details.edgeBotScore = payload.botScore; // Inject into details block as per instructions
         }
 
+
+        payload.correlationId = request.headers.get("x-correlation-id") || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : "generated-uuid");
+        payload.clientIp = request.headers.get("cf-connecting-ip") || payload.sourceIp;
+        payload.rayId = request.headers.get("cf-ray") || "UNKNOWN";
+        payload.processingDuration = Date.now() - (request as any).startTime || 0;
         payload.requestMethod = request.method;
         payload.targetResource = url.pathname;
         payload.signatureMetadata = request.headers.get("X-Asguard-Signature") || "UNKNOWN";
@@ -2585,19 +2590,19 @@ async function logTelemetry(data: any, env: Env, ctx?: ExecutionContext) {
       let toSave = [data, ...telemetryEvents, ...existing];
 
       const pruned = toSave.slice(0, 50);
-      env.ASGUARD_TELEMETRY.put("recent_events", JSON.stringify(pruned)).catch((err: any) => { localEdgeLoggingBuffer.push({ ts: Date.now(), level: "error", msg: "KV Error", error: err ? String(err) : "Unknown Error" }) });
+      Promise.resolve(env.ASGUARD_TELEMETRY.put("recent_events", JSON.stringify(pruned))).catch((err: any) => { localEdgeLoggingBuffer.push({ ts: Date.now(), level: "error", msg: "KV Error", error: err ? String(err) : "Unknown Error" }) });
 
       // Divert mutation error frames to a secondary background queue handler (DLQ pattern)
       if (mutationErrors.length > 0) {
         await Promise.all(mutationErrors.map(async (errFrame) => {
-           env.ASGUARD_TELEMETRY.put(`dlq:${Date.now()}-${Math.random()}`, JSON.stringify({
+           Promise.resolve(env.ASGUARD_TELEMETRY.put(`dlq:${Date.now()}-${Math.random()}`, JSON.stringify({
               id: `dlq-${Date.now()}-${Math.random()}`,
               timestamp: Date.now(),
               originNode: "UNKNOWN", // Could be enriched if available
               droppedRoute: "worker_buffer",
               errorReason: "Mutation Error Diverted from Buffer",
               payload: errFrame
-           })).catch((err: any) => { localEdgeLoggingBuffer.push({ ts: Date.now(), level: "error", msg: "KV Error", error: err ? String(err) : "Unknown Error" }) });
+           }))).catch((err: any) => { localEdgeLoggingBuffer.push({ ts: Date.now(), level: "error", msg: "KV Error", error: err ? String(err) : "Unknown Error" }) });
         }));
       }
     };
