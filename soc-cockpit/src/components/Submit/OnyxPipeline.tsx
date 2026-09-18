@@ -18,6 +18,7 @@ export default function OnyxPipeline() {
   const [stage, setStage] = useState<PipelineStage>('idle');
   const [location, setLocation] = useState<LocationData | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
+  const [edgeTraceId, setEdgeTraceId] = useState<string | null>(null);
 
   const [quarantineIp, setQuarantineIp] = useState('');
   const [isQuarantining, setIsQuarantining] = useState(false);
@@ -141,6 +142,7 @@ export default function OnyxPipeline() {
       setStage('analyzing');
 
       // Payload construction
+      if (file.size > 50 * 1024 * 1024) throw new Error("File size exceeds 50MB limit");
       const payload = {
         file: file.name,
         type: file.type,
@@ -167,6 +169,9 @@ export default function OnyxPipeline() {
 if (!onyxRes.ok) {
          throw new Error("Pipeline rejected payload");
       }
+      const data = await onyxRes.json().catch(() => ({}));
+      const traceId = data.traceId || data.id || `edge-${Date.now()}`;
+      setEdgeTraceId(traceId);
 
       setStage('mitigated');
 
@@ -176,7 +181,7 @@ if (!onyxRes.ok) {
         fileInputRef.current.value = '';
       }
 
-      setToast({ type: 'success', message: '[ MEDIA SUBMITTED TO ONYX PIPELINE ]' });
+      setToast({ type: 'success', message: `[ MEDIA SUBMITTED TO ONYX PIPELINE ] - Trace: ${traceId}` });
       setTimeout(() => {
           setToast(null);
           setStage('idle');
@@ -292,8 +297,9 @@ if (!onyxRes.ok) {
         )}
 
         {stage === 'mitigated' && (
-          <div className="bg-emerald-950/50 border border-emerald-900 text-emerald-400 px-4 py-3 rounded text-sm font-mono flex justify-between items-center">
+          <div className="bg-emerald-950/50 border border-emerald-900 text-emerald-400 px-4 py-3 rounded text-sm font-mono flex flex-col justify-center items-start">
             <span>[SUCCESS] File successfully analyzed and mitigated.</span>
+            {edgeTraceId && <span className="text-xs text-emerald-600 mt-1">Edge Trace ID: {edgeTraceId}</span>}
           </div>
         )}
 

@@ -112,7 +112,7 @@ function LeaseTimer({ expiration }: { expiration: number }) {
 
 export default function LiveThreatFeed() {
   const [aximUser, setAximUser] = useState<string | null>(null);
-  const [streamConnected, setStreamConnected] = useState<boolean>(true);
+
   useEffect(() => {
     if (typeof document !== "undefined") {
       const match = document.cookie.match(new RegExp("(^| )axim_user=([^;]+)"));
@@ -133,7 +133,7 @@ export default function LiveThreatFeed() {
         source = new EventSource(sseUrl);
 
         source.onopen = () => {
-           setStreamConnected(true);
+           setRealtimeStatus("CONNECTED");
            retryCount = 0;
         };
 
@@ -172,7 +172,7 @@ export default function LiveThreatFeed() {
           if (source) {
             source.close();
           }
-          setStreamConnected(false);
+          setRealtimeStatus("RECONNECTING");
           // Exponential backoff reconnection
           const delay = Math.min(1000 * Math.pow(2, retryCount), 30000);
           retryCount++;
@@ -180,7 +180,7 @@ export default function LiveThreatFeed() {
         };
       } catch (e) {
         console.error("Failed to establish SSE", e);
-        setStreamConnected(false);
+        setRealtimeStatus("RECONNECTING");
       }
     };
 
@@ -1111,7 +1111,7 @@ export default function LiveThreatFeed() {
     switch (severity) {
       case "critical":
       case "high":
-        return "animate-pulse text-red-400 bg-red-950/80 border-red-900";
+        return "animate-pulse text-rose-400 bg-rose-950/80 border-rose-900";
       case "medium":
         return "text-amber-400 bg-transparent border-amber-500";
       case "low":
@@ -1727,8 +1727,8 @@ export default function LiveThreatFeed() {
   if (activeAccount?.address && !isSbtLoading && !hasAdminSbt) {
     return (
       <div className="flex items-center justify-center h-full w-full bg-slate-950">
-        <div className="bg-slate-900 border border-red-900 p-8 rounded-lg max-w-2xl w-full text-center">
-          <p className="text-red-500 font-mono text-lg font-bold tracking-widest uppercase">
+        <div className="bg-slate-900 border border-rose-900 p-8 rounded-lg max-w-2xl w-full text-center">
+          <p className="text-rose-500 font-mono text-lg font-bold tracking-widest uppercase">
             [ CRYPTOGRAPHIC AUTHORIZATION FAILURE: AXIM SECURITY ADMIN SOULBOUND
             TOKEN REQUIRED ]
           </p>
@@ -1737,7 +1737,7 @@ export default function LiveThreatFeed() {
               onClick={() => {
                 if (activeWallet) disconnect(activeWallet);
               }}
-              className="px-6 py-3 bg-red-950 hover:bg-red-900 border border-red-500 text-red-500 font-mono text-sm font-bold tracking-wider uppercase transition-colors"
+              className="px-6 py-3 bg-rose-950 hover:bg-rose-900 border border-rose-500 text-rose-500 font-mono text-sm font-bold tracking-wider uppercase transition-colors"
             >
               [ DISCONNECT WALLET ]
             </button>
@@ -1757,7 +1757,7 @@ export default function LiveThreatFeed() {
             className={`px-4 py-3 rounded shadow-lg font-mono text-sm border pointer-events-auto transition-all transform slide-in-right ${
               toast.type === "success" || toast.type === "emerald"
                 ? "bg-emerald-950/90 border-emerald-500 text-emerald-200"
-                : "bg-red-950/90 border-red-500 text-red-200"
+                : "bg-rose-950/90 border-rose-500 text-rose-200"
             }`}
           >
             {toast.message}
@@ -1772,7 +1772,7 @@ export default function LiveThreatFeed() {
             setLocalSearchQuery(hasHighDensityAnomaly.ip);
             setSearchQuery(hasHighDensityAnomaly.ip);
           }}
-          className="bg-red-950/80 border-b border-red-500 text-red-200 px-4 py-2 text-center font-mono text-sm font-bold tracking-wider uppercase mb-2 cursor-pointer hover:bg-red-900/80 transition-colors"
+          className="bg-rose-950/80 border-b border-rose-500 text-rose-200 px-4 py-2 text-center font-mono text-sm font-bold tracking-wider uppercase mb-2 cursor-pointer hover:bg-rose-900/80 transition-colors"
         >
           [ CRITICAL ANOMALY DETECTED: IP {hasHighDensityAnomaly.ip} REPRESENTS{" "}
           {hasHighDensityAnomaly.percentage}% OF ACTIVE EDGE BLOCKS ]
@@ -1788,7 +1788,7 @@ export default function LiveThreatFeed() {
               ? "bg-emerald-950/50 border-emerald-900 text-emerald-400"
               : realtimeStatus === "RECONNECTING"
                 ? "bg-amber-950/50 border-amber-900 text-amber-400 animate-pulse"
-                : "bg-red-950/50 border-red-900 text-red-400"
+                : "bg-rose-950/50 border-rose-900 text-rose-400"
           }`}
         >
           <span
@@ -1797,7 +1797,7 @@ export default function LiveThreatFeed() {
                 ? "bg-emerald-500"
                 : realtimeStatus === "RECONNECTING"
                   ? "bg-amber-500 animate-bounce"
-                  : "bg-red-500"
+                  : "bg-rose-500"
             }`}
           ></span>
           {realtimeStatus === "CONNECTED"
@@ -1940,7 +1940,7 @@ export default function LiveThreatFeed() {
               ? "STATUS: PERIMETER DEGRADED"
               : "STATUS: UNKNOWN"}
           <span
-            className={`h-2 w-2 rounded-full ${healthStatus === "ok" ? "bg-emerald-500 animate-pulse" : healthStatus === "degraded" ? "bg-amber-500 animate-pulse" : "bg-red-500"}`}
+            className={`h-2 w-2 rounded-full ${healthStatus === "ok" ? "bg-emerald-500 animate-pulse" : healthStatus === "degraded" ? "bg-amber-500 animate-pulse" : "bg-rose-500"}`}
           ></span>
         </div>
 
@@ -1948,7 +1948,7 @@ export default function LiveThreatFeed() {
         <div
           className={`text-xs font-mono border px-2 py-1.5 md:px-3 md:py-2 rounded flex items-center gap-2 ${
             globalThreatLevel === "CRITICAL"
-              ? "bg-red-950/80 border-red-500 text-red-300"
+              ? "bg-rose-950/80 border-rose-500 text-rose-300"
               : globalThreatLevel === "HIGH"
                 ? "bg-amber-950/80 border-amber-500 text-amber-300"
                 : globalThreatLevel === "ELEVATED"
@@ -1960,7 +1960,7 @@ export default function LiveThreatFeed() {
           <span
             className={`h-2 w-2 rounded-full ${
               globalThreatLevel === "CRITICAL"
-                ? "bg-red-500 animate-pulse"
+                ? "bg-rose-500 animate-pulse"
                 : globalThreatLevel === "HIGH"
                   ? "bg-amber-500"
                   : globalThreatLevel === "ELEVATED"
@@ -2008,7 +2008,7 @@ export default function LiveThreatFeed() {
             realtimeStatus === "CONNECTED"
               ? "bg-emerald-950/80 border-emerald-500 text-emerald-300"
               : realtimeStatus === "ERROR"
-                ? "bg-red-950/80 border-red-500 text-red-300"
+                ? "bg-rose-950/80 border-rose-500 text-rose-300"
                 : "bg-amber-950/80 border-amber-500 text-amber-300"
           }`}
         >
@@ -2020,10 +2020,10 @@ export default function LiveThreatFeed() {
               </span>
               <span>CONNECTED</span>
             </>
-          ) : realtimeStatus === "ERROR" ? (
+          ) : realtimeStatus === "ERROR" || realtimeStatus === "DISCONNECTED" ? (
             <>
               <span className="relative flex h-2 w-2">
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
               </span>
               <span>OFFLINE</span>
             </>
@@ -2109,7 +2109,7 @@ export default function LiveThreatFeed() {
           <div className="text-2xl font-mono text-slate-200 flex items-center gap-2">
             {isLoading ? "-" : data.length}
             {velocityShift === "up" && (
-              <span className="text-xs text-red-400 bg-red-950/50 px-1.5 py-0.5 rounded border border-red-900 flex items-center gap-1 transition-all">
+              <span className="text-xs text-rose-400 bg-rose-950/50 px-1.5 py-0.5 rounded border border-rose-900 flex items-center gap-1 transition-all">
                 ↑{" "}
                 <span className="text-[10px] uppercase tracking-wider">
                   Expanding
@@ -2130,7 +2130,7 @@ export default function LiveThreatFeed() {
           <div className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2 flex justify-between items-center">
             <span>Active Edge Drops</span>
             {floodMitigationCount > 0 && (
-              <span className="text-[10px] bg-red-950/50 text-red-400 border border-red-900 px-1.5 py-0.5 rounded font-mono">
+              <span className="text-[10px] bg-rose-950/50 text-rose-400 border border-rose-900 px-1.5 py-0.5 rounded font-mono">
                 {floodMitigationCount} FLOOD BLOCKS
               </span>
             )}
@@ -2302,7 +2302,7 @@ export default function LiveThreatFeed() {
           </button>
           <button
             onClick={() => setVectorFilter("critical")}
-            className={`px-3 py-1 rounded-full text-xs font-mono transition-colors border ${vectorFilter === "critical" ? "bg-red-900/50 text-red-300 border-red-700" : "bg-slate-950/50 text-slate-400 border-slate-800 hover:bg-slate-800/80 hover:text-slate-300"}`}
+            className={`px-3 py-1 rounded-full text-xs font-mono transition-colors border ${vectorFilter === "critical" ? "bg-rose-900/50 text-rose-300 border-rose-700" : "bg-slate-950/50 text-slate-400 border-slate-800 hover:bg-slate-800/80 hover:text-slate-300"}`}
           >
             Critical (P0)
           </button>
@@ -2352,11 +2352,11 @@ export default function LiveThreatFeed() {
               <button
                 key={origin}
                 onClick={() => setAppOriginFilter(origin)}
-                className={`flex items-center px-3 py-1 rounded-full text-xs font-mono transition-colors border ${appOriginFilter === origin ? "bg-indigo-900/50 text-indigo-300 border-indigo-700" : "bg-slate-950/50 text-slate-400 border-slate-800 hover:bg-slate-800/80 hover:text-slate-300"} ${hasThreats ? "text-red-400 font-bold border-red-500/50" : ""}`}
+                className={`flex items-center px-3 py-1 rounded-full text-xs font-mono transition-colors border ${appOriginFilter === origin ? "bg-indigo-900/50 text-indigo-300 border-indigo-700" : "bg-slate-950/50 text-slate-400 border-slate-800 hover:bg-slate-800/80 hover:text-slate-300"} ${hasThreats ? "text-rose-400 font-bold border-rose-500/50" : ""}`}
               >
                 {originText}
                 {hasThreats && (
-                  <span className="ml-2 w-2 h-2 rounded-full bg-red-500"></span>
+                  <span className="ml-2 w-2 h-2 rounded-full bg-rose-500"></span>
                 )}
               </button>
             );
@@ -2417,7 +2417,7 @@ export default function LiveThreatFeed() {
                       setSelectedIps(new Set());
                       addToast("[ BATCH MITIGATION APPLIED ]", "success");
                     }}
-                    className="absolute right-4 top-2 text-[10px] font-mono bg-red-950/80 text-red-400 border border-red-900 px-3 py-1 rounded hover:bg-red-900/50 transition-colors z-20"
+                    className="absolute right-4 top-2 text-[10px] font-mono bg-rose-950/80 text-rose-400 border border-rose-900 px-3 py-1 rounded hover:bg-rose-900/50 transition-colors z-20"
                   >
                     [ BLOCK SELECTED ({selectedIps.size}) ]
                   </button>
@@ -2552,7 +2552,7 @@ export default function LiveThreatFeed() {
                                   handleDropIp(event.sourceIp);
                                 }}
                                 disabled={actionLoading[event.sourceIp]}
-                                className="text-red-500 hover:text-red-400 underline decoration-red-500/50 hover:decoration-red-400 text-xs transition-colors disabled:opacity-50 bg-transparent border-none p-0 cursor-pointer block"
+                                className="text-rose-500 hover:text-rose-400 underline decoration-red-500/50 hover:decoration-red-400 text-xs transition-colors disabled:opacity-50 bg-transparent border-none p-0 cursor-pointer block"
                               >
                                 {actionLoading[event.sourceIp]
                                   ? "[ COMMITTING... ]"
@@ -2569,7 +2569,7 @@ export default function LiveThreatFeed() {
                                   );
                                 }}
                                 disabled={actionLoading[event.sourceIp]}
-                                className="text-red-400 hover:text-red-300 transition-colors text-[10px] font-semibold uppercase border border-red-900/50 hover:bg-red-950/30 px-2 py-1 rounded block mt-1"
+                                className="text-rose-400 hover:text-rose-300 transition-colors text-[10px] font-semibold uppercase border border-rose-900/50 hover:bg-rose-950/30 px-2 py-1 rounded block mt-1"
                               >
                                 {actionLoading[event.sourceIp]
                                   ? "[ QUARANTINING... ]"
@@ -2577,7 +2577,7 @@ export default function LiveThreatFeed() {
                               </button>
                             )}
                             {isBlocked && (
-                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded text-red-500 border border-red-900/50 bg-red-950/20 whitespace-nowrap">
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded text-rose-500 border border-rose-900/50 bg-rose-950/20 whitespace-nowrap">
                                 QUARANTINED
                               </span>
                             )}
@@ -2588,7 +2588,7 @@ export default function LiveThreatFeed() {
                             {typeof event.edgeBotScore === "number" && (
                               <div className="mb-2">
                                 {event.edgeBotScore < 30 ? (
-                                  <span className="inline-block bg-red-950/50 text-red-500 font-bold border border-red-900 px-2 py-1 rounded text-xs">
+                                  <span className="inline-block bg-rose-950/50 text-rose-500 font-bold border border-rose-900 px-2 py-1 rounded text-xs">
                                     [ ANTIBOT TRIAGE &mdash; BOT SCORE:{" "}
                                     {event.edgeBotScore} ]
                                   </span>
@@ -2621,7 +2621,7 @@ export default function LiveThreatFeed() {
                                       disabled={
                                         actionLoading[`ip:${event.sourceIp}`]
                                       }
-                                      className="text-[10px] bg-red-950/30 hover:bg-red-900/50 border border-red-900 text-red-400 px-2 py-1 rounded transition-colors font-mono disabled:opacity-50"
+                                      className="text-[10px] bg-rose-950/30 hover:bg-rose-900/50 border border-rose-900 text-rose-400 px-2 py-1 rounded transition-colors font-mono disabled:opacity-50"
                                     >
                                       {actionLoading[`ip:${event.sourceIp}`]
                                         ? "[ COMMITTING... ]"
@@ -2649,7 +2649,7 @@ export default function LiveThreatFeed() {
                                           `wallet:${(event as Record<string, unknown>).web3WalletAddress}`
                                         ]
                                       }
-                                      className="text-[10px] bg-red-950/30 hover:bg-red-900/50 border border-red-900 text-red-400 px-2 py-1 rounded transition-colors font-mono disabled:opacity-50"
+                                      className="text-[10px] bg-rose-950/30 hover:bg-rose-900/50 border border-rose-900 text-rose-400 px-2 py-1 rounded transition-colors font-mono disabled:opacity-50"
                                     >
                                       {actionLoading[
                                         `wallet:${(event as Record<string, unknown>).web3WalletAddress}`
@@ -2976,7 +2976,7 @@ export default function LiveThreatFeed() {
                         </div>
                         <div>
                           <span
-                            className={`px-2 py-1 rounded text-xs border whitespace-nowrap ${event.action === "block" ? "text-red-400 bg-red-950/50 border-red-900" : "text-emerald-400 bg-emerald-950/50 border-emerald-900"}`}
+                            className={`px-2 py-1 rounded text-xs border whitespace-nowrap ${event.action === "block" ? "text-rose-400 bg-rose-950/50 border-rose-900" : "text-emerald-400 bg-emerald-950/50 border-emerald-900"}`}
                           >
                             {event.action.toUpperCase()}
                           </span>
@@ -3158,7 +3158,7 @@ export default function LiveThreatFeed() {
                     <button
                       onClick={handleBulkPurgeDLQ}
                       disabled={isBatchProcessing}
-                      className="text-[10px] bg-red-950/40 hover:bg-red-900/60 text-red-400 border border-red-800 px-2 py-1 rounded transition-colors font-mono"
+                      className="text-[10px] bg-rose-950/40 hover:bg-rose-900/60 text-rose-400 border border-rose-800 px-2 py-1 rounded transition-colors font-mono"
                     >
                       {isBatchProcessing
                         ? "[ PROCESSING... ]"
@@ -3267,7 +3267,7 @@ export default function LiveThreatFeed() {
                       )}
                       <button
                         onClick={() => event.id && handlePurgeDlqItem(event.id)}
-                        className="text-red-400 hover:text-red-300 transition-colors text-[10px] font-semibold uppercase border border-red-900/50 hover:bg-red-950/30 px-2 py-1 rounded"
+                        className="text-rose-400 hover:text-rose-300 transition-colors text-[10px] font-semibold uppercase border border-rose-900/50 hover:bg-rose-950/30 px-2 py-1 rounded"
                       >
                         [ PURGE ]
                       </button>
@@ -3317,7 +3317,7 @@ export default function LiveThreatFeed() {
               <div className="space-y-3">
                 <div className="flex justify-between border-b border-slate-800 pb-1">
                   <span className="text-slate-500">Client IP</span>
-                  <span className="text-red-400 font-bold">
+                  <span className="text-rose-400 font-bold">
                     {selectedThreat.sourceIp}
                   </span>
                 </div>
@@ -3350,7 +3350,7 @@ export default function LiveThreatFeed() {
                   <span
                     className={
                       selectedThreat.botScore < 0.3
-                        ? "text-red-400"
+                        ? "text-rose-400"
                         : "text-emerald-400"
                     }
                   >
@@ -3428,7 +3428,7 @@ export default function LiveThreatFeed() {
                   handleBlock(selectedThreat.sourceIp, -1, "permanent_ban");
                   setIsInspectionDrawerOpen(false);
                 }}
-                className="w-full bg-red-950/40 hover:bg-red-900/60 border border-red-900/50 text-red-500 py-2 rounded transition-colors text-xs font-bold tracking-widest"
+                className="w-full bg-rose-950/40 hover:bg-rose-900/60 border border-rose-900/50 text-rose-500 py-2 rounded transition-colors text-xs font-bold tracking-widest"
               >
                 [ PERMANENT BAN ]
               </button>
@@ -3566,7 +3566,7 @@ export default function LiveThreatFeed() {
                     <span className="text-slate-500 text-xs">
                       1-Hour Request Velocity
                     </span>
-                    <span className="text-red-400 font-bold text-sm">
+                    <span className="text-rose-400 font-bold text-sm">
                       {item.requestCount1h} req/hr
                     </span>
                   </div>
@@ -3585,7 +3585,7 @@ export default function LiveThreatFeed() {
             <div className="flex gap-4 shrink-0">
               <button
                 onClick={() => handleTriageAnomaly("block")}
-                className="flex-1 bg-red-950 hover:bg-red-900 border border-red-500/50 text-red-500 py-3 rounded text-sm transition-colors font-bold"
+                className="flex-1 bg-rose-950 hover:bg-rose-900 border border-rose-500/50 text-rose-500 py-3 rounded text-sm transition-colors font-bold"
               >
                 [ AUTO-BLOCK ALL ({anomalyQueue.length}) ]
               </button>

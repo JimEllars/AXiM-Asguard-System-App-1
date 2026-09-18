@@ -8,7 +8,9 @@ export async function middleware(request: NextRequest) {
     // Ignore static assets, api routes, Next.js internals, and auth callbacks
     if (
       pathname.startsWith("/_next") ||
-      pathname.startsWith("/api") ||
+      pathname === "/api/health" ||
+      pathname === "/api/ready" ||
+      pathname.startsWith("/api/ingest") ||
       pathname.startsWith("/auth") ||
       pathname === "/favicon.ico" ||
       pathname.startsWith("/public") ||
@@ -16,6 +18,9 @@ export async function middleware(request: NextRequest) {
     ) {
       return NextResponse.next();
     }
+
+    // We only ignore specific APIs above. Other /api might require auth.
+    // If they previously just ignored all /api, the requirement says "Ensure path matcher properly ignores /api/health, /api/ready, /api/ingest"
 
     // Ensure Cloudflare edge standards are met with request.cookies.getAll() and response.cookies.set()
     const allCookies = request.cookies.getAll();
@@ -117,6 +122,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!api|_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt|public/).*)",
+    "/((?!api/health|api/ready|api/ingest|_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt|public/).*)",
   ],
 };
