@@ -2,7 +2,10 @@ import { z } from 'zod';
 
 export const TelemetryPayloadSchema = z.object({
   sourceIp: z.string().ip(),
-  timestamp: z.number(),
+  originCountry: z.string().optional(),
+  timestamp: z.union([z.number(), z.string()]),
+  threatLevel: z.enum(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO', 'BENIGN']).optional(),
+  targetVector: z.enum(['Email', 'API', 'Auth', 'Pipeline']).optional(),
   eventType: z.enum(['authentication_failure', 'signature_tampering', 'suspicious_activity', 'client_error', 'threat.blocked', 'rate_limit.exceeded', 'bot_challenge.failed', 'ip.quarantined', 'onyx_pipeline_job_executed', 'telephony.threat_evaluated']),
   requestId: z.string().optional(),
   correlationId: z.string().optional(),
@@ -10,7 +13,7 @@ export const TelemetryPayloadSchema = z.object({
   rayId: z.string().optional(),
   processingDuration: z.number().optional(),
   executionDuration: z.number().optional(),
-  actionTaken: z.string().optional(),
+  actionTaken: z.enum(['QUARANTINED', 'DROPPED', 'FLAGGED', 'INSPECTED', 'logged']).optional(),
   threatScore: z.number().optional(),
   severity: z.enum(['low', 'medium', 'high', 'critical']),
   requestMethod: z.string().optional(),
@@ -38,10 +41,14 @@ export type TelemetryPayload = z.infer<typeof TelemetryPayloadSchema>;
 
 export interface ThreatEventPayload {
   id: string;
-  timestamp: number;
+  timestamp: number | string;
   sourceIp: string;
+  originCountry?: string;
+  targetVector?: string;
+  actionTaken?: string;
+  threatLevel?: string;
   threatScore: number;
-  classification: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "BENIGN";
+  classification: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "BENIGN" | "INFO";
   metadata: Record<string, unknown>;
   signature: string;
 }
@@ -51,6 +58,8 @@ export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: a
     try {
       const supabaseUrl = env.SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL || 'https://mock.supabase.co';
       const supabaseKey = env.SUPABASE_ANON_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'mock-key';
+
+      const ts = typeof payload.timestamp === 'number' ? new Date(payload.timestamp).toISOString() : new Date(payload.timestamp).toISOString();
 
       const res = await fetch(`${supabaseUrl}/rest/v1/telemetry_events`, {
         method: 'POST',
@@ -62,15 +71,19 @@ export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: a
         },
         body: JSON.stringify({
           source_ip: payload.sourceIp,
-          timestamp: new Date(payload.timestamp).toISOString(),
+          timestamp: ts,
           event_type: payload.eventType,
           severity: payload.severity,
-          country: payload.country,
+          country: payload.originCountry || payload.country,
           action_taken: payload.actionTaken || (payload.details?.action_taken as string) || 'logged',
           threat_score: payload.threatScore || payload.edgeBotScore || payload.botScore || 0,
           request_id: payload.requestId,
           execution_duration: payload.executionDuration,
-          payload_details: payload.details || {}
+          payload_details: {
+            ...payload.details,
+            threatLevel: payload.threatLevel,
+            targetVector: payload.targetVector
+          }
         })
       });
 

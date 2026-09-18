@@ -42,20 +42,28 @@ async function proxy(request: Request, context: { params: Promise<{ path: string
   }
 
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+
     const response = await env.ASGUARD.fetch(
       new Request(`https://asguard.internal/${targetPath}`, {
         method: request.method,
         headers,
         body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer(),
+        signal: controller.signal as any,
       }),
     );
+    clearTimeout(timeout);
     return new NextResponse(response.body, {
       status: response.status,
       headers: { "Content-Type": response.headers.get("Content-Type") || "text/plain" },
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Asguard service request failed", error);
-    return new NextResponse("Asguard service is unavailable", { status: 503 });
+    if (error.name === 'AbortError' || error.message?.includes('timeout')) {
+      return NextResponse.json({ error: "Gateway Timeout" }, { status: 504 });
+    }
+    return NextResponse.json({ error: "Bad Gateway" }, { status: 502 });
   }
 }
 

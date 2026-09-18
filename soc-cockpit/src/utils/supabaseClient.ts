@@ -15,7 +15,12 @@ try {
     }
   });
 } catch (e) {
-  console.error("Failed to initialize Supabase client gracefully:", e);
+  console.warn(JSON.stringify({
+    level: "warn",
+    message: "Supabase client initialization failed; network latency or configuration issue. Falling back to dummy client.",
+    error: e instanceof Error ? e.message : String(e),
+    timestamp: new Date().toISOString()
+  }));
   // Fallback dummy client to prevent unhandled top-level exceptions
   client = {
      channel: () => ({
