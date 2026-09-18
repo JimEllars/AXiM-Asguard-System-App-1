@@ -3,6 +3,8 @@ main = ".open-next/worker.js"
 compatibility_date = "2026-07-09"
 compatibility_flags = ["nodejs_compat"]
 
+services = [{ binding = "ASGUARD", service = "asguard-interceptor" }]
+
 [assets]
 directory = ".open-next/assets"
 binding = "ASSETS"

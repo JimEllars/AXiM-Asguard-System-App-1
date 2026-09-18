@@ -4,12 +4,19 @@
 
 echo "Setting up encrypted secrets for Asguard Interceptor..."
 
-# Example token, replace with actual prompt input in a real environment
-if [ -z "$UPSTREAM_API_TOKEN" ]; then
-    echo "Warning: UPSTREAM_API_TOKEN is not set. Using a placeholder for demonstration."
-    UPSTREAM_API_TOKEN="dummy_token_123"
-fi
+for secret_name in ASGUARD_API_KEY ASGUARD_SERVICE_TOKEN TELEMETRY_INGEST_KEY DEEPSEEK_API_KEY ANTHROPIC_API_KEY; do
+    printf "Enter %s: " "$secret_name"
+    stty -echo
+    read secret_value
+    stty echo
+    printf "\n"
 
-echo "$UPSTREAM_API_TOKEN" | npx wrangler secret put UPSTREAM_API_TOKEN --name asguard-interceptor
+    if [ -z "$secret_value" ]; then
+        echo "$secret_name is required; no secret was changed."
+        exit 1
+    fi
 
-echo "Secrets setup completed securely."
+    printf "%s" "$secret_value" | npx wrangler secret put "$secret_name" --name asguard-interceptor
+done
+
+echo "Asguard Interceptor secrets configured."

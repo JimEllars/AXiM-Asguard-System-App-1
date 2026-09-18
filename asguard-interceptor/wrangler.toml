@@ -1,17 +1,13 @@
 name = "asguard-interceptor"
 main = "src/index.ts"
-compatibility_date = "2023-10-01"
+compatibility_date = "2026-09-17"
 
 # Bind a KV Namespace for the Global Blocklist
 kv_namespaces = [
   { binding = "ASGUARD_BLACKLIST", id = "53ed082bcd0f465c94f08626c97160ca" },
-  { binding = "ASGUARD_TELEMETRY", id = "9141c0fd3eb44d3c84375f418c716495" },
-  { binding = "IP_REPUTATION_KV", id = "ip_rep_id" },
-  { binding = "TELEMETRY_DLQ_KV", id = "tel_dlq_id" }
+  { binding = "ASGUARD_TELEMETRY", id = "9141c0fd3eb44d3c84375f418c716495" }
 ]
 
-[ai]
-binding = "AI"
-
-[triggers]
-crons = ["0 13 * * *"]
+[observability]
+enabled = true
+head_sampling_rate = 1
