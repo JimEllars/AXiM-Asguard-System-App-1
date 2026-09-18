@@ -158,7 +158,12 @@ export default function OnyxPipeline() {
 
 
       // Dispatch the payload to the Onyx Mk3 triage endpoint
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
       const onyxRes = await fetch('https://edge-bridge.axim.us.com/api/v1/onyx/summon', {
+        signal: controller.signal as any,
+
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -166,7 +171,8 @@ export default function OnyxPipeline() {
         },
         body: JSON.stringify(payload)
       });
-if (!onyxRes.ok) {
+clearTimeout(timeoutId);
+      if (!onyxRes.ok) {
          throw new Error("Pipeline rejected payload");
       }
       const data = await onyxRes.json().catch(() => ({}));

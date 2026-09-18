@@ -66,7 +66,7 @@ export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: a
           event_type: payload.eventType,
           severity: payload.severity,
           country: payload.country,
-          action_taken: payload.actionTaken || payload.details?.action_taken || 'logged',
+          action_taken: payload.actionTaken || (payload.details?.action_taken as string) || 'logged',
           threat_score: payload.threatScore || payload.edgeBotScore || payload.botScore || 0,
           request_id: payload.requestId,
           execution_duration: payload.executionDuration,
@@ -75,16 +75,37 @@ export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: a
       });
 
       if (!res.ok) {
-         console.error(`Supabase write failed: ${res.status} ${res.statusText}`);
+         console.error(JSON.stringify({
+             level: "error",
+             message: `Supabase write failed`,
+             status: res.status,
+             statusText: res.statusText,
+             timestamp: new Date().toISOString()
+         }));
       }
-    } catch (error) {
-       console.error("Failed to write to Supabase security_events:", error);
+    } catch (error: any) {
+       console.error(JSON.stringify({
+           level: "error",
+           message: "Failed to write to Supabase telemetry_events",
+           error: error.message,
+           timestamp: new Date().toISOString()
+       }));
     }
   };
 
   if (ctx && ctx.waitUntil) {
-    ctx.waitUntil(executeLog().catch(e => console.error("Unhandled error in logToSupabase background task", e)));
+    ctx.waitUntil(executeLog().catch(e => console.error(JSON.stringify({
+       level: "error",
+       message: "Unhandled error in logToSupabase background task",
+       error: e.message,
+       timestamp: new Date().toISOString()
+    }))));
   } else {
-    await executeLog().catch(e => console.error("Unhandled error in logToSupabase execution", e));
+    await executeLog().catch(e => console.error(JSON.stringify({
+       level: "error",
+       message: "Unhandled error in logToSupabase execution",
+       error: e.message,
+       timestamp: new Date().toISOString()
+    })));
   }
 }

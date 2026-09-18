@@ -11,8 +11,13 @@ export async function GET(request: NextRequest) {
       const sendEvent = (data: any) => {
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
-        } catch (err) {
-          console.error("Stream write error", err);
+        } catch (err: any) {
+          console.error(JSON.stringify({
+             level: "error",
+             message: "Stream write error",
+             error: err.message,
+             timestamp: new Date().toISOString()
+          }));
         }
       };
 
@@ -35,6 +40,18 @@ export async function GET(request: NextRequest) {
       'Cache-Control': 'no-cache, no-transform',
       'Connection': 'keep-alive',
       'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    }
+  });
+}
+
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     }
   });
 }
