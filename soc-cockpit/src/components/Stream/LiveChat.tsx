@@ -48,6 +48,25 @@ export default function LiveChat({ isAuthenticated = false }: LiveChatProps) {
     scrollToBottom();
   }, [messages]);
 
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsReconnecting(false);
+      setMessages(prev => [...prev, { id: Date.now(), text: 'Connection restored.', time: new Date().toISOString().substring(11,16) + ' UTC', isSystem: true }]);
+    };
+    const handleOffline = () => {
+      setIsReconnecting(true);
+      setMessages(prev => [...prev, { id: Date.now(), text: 'Connection lost. Reconnecting...', time: new Date().toISOString().substring(11,16) + ' UTC', isSystem: true }]);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   // Basic sanitization to prevent XSS in chat
   const sanitizeInput = (str: string) => {
     return str.replace(/[<>]/g, (match) => {
@@ -65,7 +84,7 @@ export default function LiveChat({ isAuthenticated = false }: LiveChatProps) {
       id: Date.now(),
       user: 'You',
       text: sanitizedText,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      time: new Date().toISOString().substring(11, 16) + ' UTC',
       isSystem: false
     }]);
     setInputValue('');

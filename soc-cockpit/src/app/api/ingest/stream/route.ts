@@ -3,14 +3,20 @@ import { NextRequest, NextResponse } from 'next/server';
 export async function GET(request: NextRequest) {
   const encoder = new TextEncoder();
 
-  const customReadable = new ReadableStream({
-    async start(controller) {
-      // Send an initial connected message
-      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'connected' })}\n\n`));
+  // Create a TransformStream to handle backpressure and proper piping
+  const { readable, writable } = new TransformStream();
+  const writer = writable.getWriter();
 
-      const sendEvent = (data: any) => {
+  let interval: NodeJS.Timeout;
+
+  const startStream = async () => {
+    try {
+      // Send an initial connected message
+      await writer.write(encoder.encode(`data: ${JSON.stringify({ type: 'connected' })}\n\n`));
+
+      const sendEvent = async (data: any) => {
         try {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+          await writer.write(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
         } catch (err: any) {
           console.error(JSON.stringify({
              level: "error",
@@ -22,19 +28,26 @@ export async function GET(request: NextRequest) {
       };
 
       // Mock interval for streaming real-time events based on database polling or redis pubsub
-      const interval = setInterval(() => {
-        sendEvent({ type: 'ping', timestamp: Date.now() });
-      }, 5000);
+      interval = setInterval(() => {
+        // Heartbeat ping to prevent Cloudflare edge gateway timeouts
+        writer.write(encoder.encode(`: ping\n\n`)).catch(() => {});
+        sendEvent({ type: 'ping', timestamp: new Date().toISOString() });
+      }, 15000);
 
       // Handle stream disconnect
       request.signal.addEventListener('abort', () => {
         clearInterval(interval);
-        controller.close();
+        writer.close().catch(() => {});
       });
-    }
-  });
 
-  return new NextResponse(customReadable, {
+    } catch (err) {
+      console.error('Stream initialization error:', err);
+    }
+  };
+
+  startStream();
+
+  return new NextResponse(readable, {
     headers: {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache, no-transform',

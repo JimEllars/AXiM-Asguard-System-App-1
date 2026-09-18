@@ -68,11 +68,16 @@ export async function middleware(request: NextRequest) {
           isSuperUser = true;
         }
       }
-    } catch (e) {
+    } catch (e: any) {
       // In case passport is down or edge is restarting, do not immediately drop session.
       // Layout.tsx will fall back to local cryptographic check using 'asguard_auth_token'.
       // We'll let this pass to avoid disrupting active dashboards.
-      console.error("Failed to verify token upstream, falling back to local verification:", e);
+      console.warn(JSON.stringify({
+        level: "warn",
+        message: "SSO upstream timeout or network latency; falling back to local cryptographic verification.",
+        error: e.message || String(e),
+        timestamp: new Date().toISOString()
+      }));
       // We don't fail here. We rely on layout.tsx for local token verification when SSO fails or timeouts
     }
 

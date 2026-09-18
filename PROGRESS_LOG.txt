@@ -1,0 +1,7 @@
+soc-cockpit/src/components/LiveThreatFeed.tsx: modified lines for date hydration and layout constraints
+soc-cockpit/src/components/Stream/LiveChat.tsx: modified lines to include online/offline listeners for reconnect
+soc-cockpit/src/app/api/ingest/stream/route.ts: TransformStream implementation added with 15s ping interval
+asguard-interceptor/src/telemetry.ts: standardize schema and properties
+soc-cockpit/src/middleware.ts & soc-cockpit/src/utils/supabaseClient.ts: added proper JSON warn fallbacks for edge SSO/network latency cases
+soc-cockpit/src/components/Submit/OnyxPipeline.tsx: inline validation of size and json
+soc-cockpit/src/app/api/asguard/[...path]/route.ts: Added AbortController timeout to proxy fetch
