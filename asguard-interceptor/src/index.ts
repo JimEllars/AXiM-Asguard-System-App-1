@@ -36,6 +36,10 @@ export interface Env {
   ASGUARD_BLACKLIST: KVNamespace;
   ASGUARD_TELEMETRY: KVNamespace;
   ASGUARD_API_KEY: string;
+  ASGUARD_SERVICE_TOKEN?: string;
+  TELEMETRY_INGEST_KEY?: string;
+  DEEPSEEK_API_KEY?: string;
+  ANTHROPIC_API_KEY?: string;
 }
 
 const corsHeaders = {
@@ -44,6 +48,114 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Asguard-Auth",
   "Access-Control-Expose-Headers": "Server-Timing",
 };
+
+function hasSecret(request: Request, header: string, expected: string | undefined) {
+  const received = request.headers.get(header);
+  if (!received || !expected || received.length !== expected.length) {
+    return false;
+  }
+
+  let difference = 0;
+  for (let index = 0; index < received.length; index++) {
+    difference |= received.charCodeAt(index) ^ expected.charCodeAt(index);
+  }
+  return difference === 0;
+}
+
+function isAdminRequest(request: Request, env: Env) {
+  return (
+    hasSecret(request, "X-Asguard-Auth", env.ASGUARD_API_KEY) ||
+    hasSecret(request, "X-Asguard-Service-Token", env.ASGUARD_SERVICE_TOKEN)
+  );
+}
+
+async function analyzeThreat(payload: unknown, env: Env): Promise<Response> {
+  const parsedPayload = TelemetryPayloadSchema.safeParse(payload);
+  if (!parsedPayload.success) {
+    return new Response("Invalid analysis payload", { status: 400, headers: corsHeaders });
+  }
+
+  const prompt = [
+    "You are AXiM Asguard, a security operations analyst.",
+    "Assess the following security event. Return concise JSON with exactly these fields:",
+    "risk (low|medium|high|critical), summary, recommendedActions (array of strings), and rationale.",
+    "Do not include markdown fences or any text outside the JSON object.",
+    JSON.stringify(parsedPayload.data),
+  ].join("\n");
+
+  const providers = [
+    {
+      name: "deepseek",
+      key: env.DEEPSEEK_API_KEY,
+      request: () =>
+        fetch("https://api.deepseek.com/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${env.DEEPSEEK_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "deepseek-chat",
+            messages: [{ role: "user", content: prompt }],
+            response_format: { type: "json_object" },
+            temperature: 0,
+          }),
+        }),
+      extract: (body: { choices?: Array<{ message?: { content?: string } }> }) =>
+        body.choices?.[0]?.message?.content,
+    },
+    {
+      name: "anthropic",
+      key: env.ANTHROPIC_API_KEY,
+      request: () =>
+        fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "x-api-key": env.ANTHROPIC_API_KEY || "",
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "claude-sonnet-4-20250514",
+            max_tokens: 512,
+            temperature: 0,
+            messages: [{ role: "user", content: prompt }],
+          }),
+        }),
+      extract: (body: { content?: Array<{ type?: string; text?: string }> }) =>
+        body.content?.find((part) => part.type === "text")?.text,
+    },
+  ];
+
+  for (const provider of providers) {
+    if (!provider.key) {
+      continue;
+    }
+
+    try {
+      const response = await provider.request();
+      if (!response.ok) {
+        console.error(`Asguard ${provider.name} analysis provider returned ${response.status}`);
+        continue;
+      }
+
+      const content = provider.extract(await response.json());
+      if (!content) {
+        console.error(`Asguard ${provider.name} analysis provider returned no content`);
+        continue;
+      }
+
+      return new Response(content, {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json", "X-Asguard-Analysis-Provider": provider.name },
+      });
+    } catch (error) {
+      console.error(`Asguard ${provider.name} analysis provider failed`, error);
+    }
+  }
+
+  return new Response("Threat analysis is unavailable", { status: 503, headers: corsHeaders });
+}
 
 export default {
   async fetch(
@@ -134,8 +246,7 @@ export default {
     const url = new URL(request.url);
 
     if (request.method === "GET" && url.pathname === "/telemetry") {
-      const customAuthHeader = request.headers.get("X-Asguard-Auth");
-      if (!env.ASGUARD_API_KEY || customAuthHeader !== env.ASGUARD_API_KEY) {
+      if (!isAdminRequest(request, env)) {
         return new Response("Unauthorized", {
           status: 401,
           headers: corsHeaders,
@@ -159,8 +270,7 @@ export default {
     }
 
     if (request.method === "GET" && url.pathname === "/audit") {
-      const customAuthHeader = request.headers.get("X-Asguard-Auth");
-      if (!env.ASGUARD_API_KEY || customAuthHeader !== env.ASGUARD_API_KEY) {
+      if (!isAdminRequest(request, env)) {
         return new Response("Unauthorized", {
           status: 401,
           headers: corsHeaders,
@@ -191,8 +301,7 @@ export default {
     }
 
     if (request.method === "GET" && url.pathname === "/blocklist") {
-      const customAuthHeader = request.headers.get("X-Asguard-Auth");
-      if (!env.ASGUARD_API_KEY || customAuthHeader !== env.ASGUARD_API_KEY) {
+      if (!isAdminRequest(request, env)) {
         return new Response("Unauthorized", {
           status: 401,
           headers: corsHeaders,
@@ -236,8 +345,7 @@ export default {
     }
 
     if ((request.method === "POST" || request.method === "DELETE") && url.pathname === "/blocklist") {
-      const customAuthHeader = request.headers.get("X-Asguard-Auth");
-      if (!env.ASGUARD_API_KEY || customAuthHeader !== env.ASGUARD_API_KEY) {
+      if (!isAdminRequest(request, env)) {
         return new Response("Unauthorized", {
           status: 401,
           headers: corsHeaders,
@@ -307,6 +415,9 @@ export default {
 
 
     if (request.method === "POST" && url.pathname === "/telemetry/client-error") {
+      if (!hasSecret(request, "X-Asguard-Ingest-Key", env.TELEMETRY_INGEST_KEY)) {
+        return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+      }
       const now = Date.now();
       const ipKey = clientIp;
 
@@ -367,6 +478,9 @@ export default {
     }
 
     if (request.method === "POST" && url.pathname === "/telemetry") {
+      if (!hasSecret(request, "X-Asguard-Ingest-Key", env.TELEMETRY_INGEST_KEY)) {
+        return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+      }
       try {
         let payload = await request.json() as any;
 
@@ -399,6 +513,18 @@ export default {
           status: 400,
           headers: corsHeaders,
         });
+      }
+    }
+
+    if (request.method === "POST" && url.pathname === "/analysis") {
+      if (!isAdminRequest(request, env)) {
+        return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+      }
+
+      try {
+        return await analyzeThreat(await request.json(), env);
+      } catch {
+        return new Response("Bad Request", { status: 400, headers: corsHeaders });
       }
     }
 

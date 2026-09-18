@@ -93,15 +93,10 @@ export default function LiveThreatFeed() {
   };
 
   const handleAnnotationBlur = async (key: string) => {
-    const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
-    const apiKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY;
-    if (!workerUrl || !apiKey) return;
-
     try {
-      await fetch(`${workerUrl}/blocklist`, {
+      await fetch("/api/asguard/blocklist", {
         method: 'POST',
         headers: {
-          'X-Asguard-Auth': apiKey,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ key, action: 'update_note', note: annotations[key] || '' })
@@ -241,31 +236,11 @@ export default function LiveThreatFeed() {
 
   useEffect(() => {
     const fetchTelemetry = async () => {
-      const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
-      const apiKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY;
-
-      if (!workerUrl) {
-        setError("NEXT_PUBLIC_INTERCEPTOR_URL is not set.");
-        setIsLoading(false);
-        return;
-      }
-      if (!apiKey) {
-        setError("NEXT_PUBLIC_ASGUARD_API_KEY is not set.");
-        setIsLoading(false);
-        return;
-      }
-
       try {
         const [telemetryRes, blocklistRes, auditRes] = await Promise.all([
-          fetch(`${workerUrl}/telemetry`, {
-            headers: { 'X-Asguard-Auth': apiKey },
-          }),
-          fetch(`${workerUrl}/blocklist`, {
-            headers: { 'X-Asguard-Auth': apiKey },
-          }),
-          fetch(`${workerUrl}/audit`, {
-            headers: { 'X-Asguard-Auth': apiKey },
-          })
+          fetch("/api/asguard/telemetry"),
+          fetch("/api/asguard/blocklist"),
+          fetch("/api/asguard/audit")
         ]);
 
         if (!telemetryRes.ok) {
@@ -438,10 +413,7 @@ export default function LiveThreatFeed() {
   }, []);
 
 
-  // Instead of an effect, we could reset pages when handling filter changes or just allow the effect, but the linter complains.
-  // Since we don't have setSeverityFilter wrapped, we'll disable the linter here for this specific necessity.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTelemetryPage(0);
   }, [severityFilter, searchQuery, appOriginFilter]);
 
@@ -530,20 +502,10 @@ export default function LiveThreatFeed() {
 
   const handleUnblock = async (key: string) => {
     setActionLoading(prev => ({ ...prev, [key]: true }));
-    const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
-    const apiKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY;
-
-    if (!workerUrl || !apiKey) {
-      console.error("Missing credentials for action");
-      setActionLoading(prev => ({ ...prev, [key]: false }));
-      return;
-    }
-
     try {
-      const res = await fetch(`${workerUrl}/blocklist`, {
+      const res = await fetch("/api/asguard/blocklist", {
         method: 'POST',
         headers: {
-          'X-Asguard-Auth': apiKey,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ key, action: 'unblock' })
@@ -566,20 +528,10 @@ export default function LiveThreatFeed() {
 
   const handleDropIp = async (ip: string) => {
     setActionLoading(prev => ({ ...prev, [ip]: true }));
-    const workerUrl = process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
-    const apiKey = process.env.NEXT_PUBLIC_ASGUARD_API_KEY;
-
-    if (!workerUrl || !apiKey) {
-      console.error("Missing credentials for action");
-      setActionLoading(prev => ({ ...prev, [ip]: false }));
-      return;
-    }
-
     try {
-      const res = await fetch(`${workerUrl}/blocklist`, {
+      const res = await fetch("/api/asguard/blocklist", {
         method: 'POST',
         headers: {
-          'X-Asguard-Auth': apiKey,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ key: `ip:${ip}`, action: 'block' })

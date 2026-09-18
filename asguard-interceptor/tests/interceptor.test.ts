@@ -30,6 +30,7 @@ describe("Asguard Interceptor", () => {
   it("should trigger client-error throttle circuit breaker returning 429", async () => {
     const env = {
       ASGUARD_API_KEY: "secret-key",
+      TELEMETRY_INGEST_KEY: "ingest-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -37,7 +38,7 @@ describe("Asguard Interceptor", () => {
     // Simulate 6 client-error requests
     const createReq = () => new Request("https://example.com/telemetry/client-error", {
       method: "POST",
-      headers: { "cf-connecting-ip": "9.9.9.9" },
+      headers: { "cf-connecting-ip": "9.9.9.9", "X-Asguard-Ingest-Key": "ingest-key" },
       body: JSON.stringify({ message: "test" })
     });
     const ctx = { waitUntil: vi.fn() } as any;
@@ -58,11 +59,12 @@ describe("Asguard Interceptor", () => {
   it("blocks request instantly via KV ledger short-circuiting and returns 403", async () => {
     mockKV.get.mockResolvedValue("1");
     const request = new Request("https://example.com/", {
-      headers: { "cf-connecting-ip": "1.2.3.4" },
+      headers: { "cf-connecting-ip": "1.2.3.4", "X-Asguard-Ingest-Key": "ingest-key" },
     });
 
     const env = {
       ASGUARD_API_KEY: "secret-key",
+      TELEMETRY_INGEST_KEY: "ingest-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -84,6 +86,7 @@ describe("Asguard Interceptor", () => {
 
     const env = {
       ASGUARD_API_KEY: "secret-key",
+      TELEMETRY_INGEST_KEY: "ingest-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -100,11 +103,12 @@ describe("Asguard Interceptor", () => {
   it("blocks request if IP is in blocklist and returns CORS headers", async () => {
     mockKV.get.mockResolvedValue("blocked");
     const request = new Request("https://example.com/", {
-      headers: { "cf-connecting-ip": "1.2.3.4" },
+      headers: { "cf-connecting-ip": "1.2.3.4", "X-Asguard-Ingest-Key": "ingest-key" },
     });
 
     const env = {
       ASGUARD_API_KEY: "secret-key",
+      TELEMETRY_INGEST_KEY: "ingest-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -119,11 +123,12 @@ describe("Asguard Interceptor", () => {
   it("allows request if IP is not in blocklist and returns CORS headers", async () => {
     mockKV.get.mockResolvedValue(null);
     const request = new Request("https://example.com/", {
-      headers: { "cf-connecting-ip": "1.2.3.4" },
+      headers: { "cf-connecting-ip": "1.2.3.4", "X-Asguard-Ingest-Key": "ingest-key" },
     });
 
     const env = {
       ASGUARD_API_KEY: "secret-key",
+      TELEMETRY_INGEST_KEY: "ingest-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -146,13 +151,14 @@ describe("Asguard Interceptor", () => {
     const request = new Request("https://example.com/telemetry", {
       method: "POST",
       body: JSON.stringify(payload),
-      headers: { "cf-connecting-ip": "1.2.3.4" },
+      headers: { "cf-connecting-ip": "1.2.3.4", "X-Asguard-Ingest-Key": "ingest-key" },
     });
     // @ts-ignore
     request.cf = { country: "US", colo: "DFW" };
 
     const env = {
       ASGUARD_API_KEY: "secret-key",
+      TELEMETRY_INGEST_KEY: "ingest-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -175,7 +181,7 @@ describe("Asguard Interceptor", () => {
     const request = new Request("https://example.com/telemetry", {
       method: "POST",
       body: JSON.stringify(payload),
-      headers: { "cf-connecting-ip": "1.2.3.4" },
+      headers: { "cf-connecting-ip": "1.2.3.4", "X-Asguard-Ingest-Key": "ingest-key" },
     });
 
     const mockSlowTelemetryKV = {
@@ -186,6 +192,7 @@ describe("Asguard Interceptor", () => {
 
     const env = {
       ASGUARD_API_KEY: "secret-key",
+      TELEMETRY_INGEST_KEY: "ingest-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockSlowTelemetryKV as any,
     };
@@ -208,11 +215,12 @@ describe("Asguard Interceptor", () => {
     const request = new Request("https://example.com/telemetry", {
       method: "POST",
       body: JSON.stringify(payload),
-      headers: { "cf-connecting-ip": "1.2.3.4" },
+      headers: { "cf-connecting-ip": "1.2.3.4", "X-Asguard-Ingest-Key": "ingest-key" },
     });
 
     const env = {
       ASGUARD_API_KEY: "secret-key",
+      TELEMETRY_INGEST_KEY: "ingest-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -226,6 +234,7 @@ describe("Asguard Interceptor", () => {
     const request = new Request("https://example.com/telemetry");
     const env = {
       ASGUARD_API_KEY: "secret-key",
+      TELEMETRY_INGEST_KEY: "ingest-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -242,6 +251,7 @@ describe("Asguard Interceptor", () => {
     });
     const env = {
       ASGUARD_API_KEY: "secret-key",
+      TELEMETRY_INGEST_KEY: "ingest-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -255,6 +265,7 @@ describe("Asguard Interceptor", () => {
     const request = new Request("https://example.com/blocklist");
     const env = {
       ASGUARD_API_KEY: "secret-key",
+      TELEMETRY_INGEST_KEY: "ingest-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -275,6 +286,7 @@ describe("Asguard Interceptor", () => {
     });
     const env = {
       ASGUARD_API_KEY: "secret-key",
+      TELEMETRY_INGEST_KEY: "ingest-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -297,6 +309,7 @@ describe("Asguard Interceptor", () => {
     });
     const env = {
       ASGUARD_API_KEY: "secret-key",
+      TELEMETRY_INGEST_KEY: "ingest-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -320,6 +333,7 @@ describe("Asguard Interceptor", () => {
     });
     const env = {
       ASGUARD_API_KEY: "secret-key",
+      TELEMETRY_INGEST_KEY: "ingest-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -341,6 +355,7 @@ describe("Asguard Interceptor", () => {
     });
     const env = {
       ASGUARD_API_KEY: "secret-key",
+      TELEMETRY_INGEST_KEY: "ingest-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -374,6 +389,7 @@ describe("Asguard Interceptor", () => {
     });
     const env = {
       ASGUARD_API_KEY: "secret-key",
+      TELEMETRY_INGEST_KEY: "ingest-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -397,6 +413,7 @@ describe("Asguard Interceptor", () => {
     });
     const env = {
       ASGUARD_API_KEY: "secret-key",
+      TELEMETRY_INGEST_KEY: "ingest-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };
@@ -418,7 +435,7 @@ describe("Asguard Interceptor", () => {
     const requestPost = new Request("https://example.com/telemetry", {
       method: "POST",
       body: JSON.stringify(payload),
-      headers: { "cf-connecting-ip": "1.2.3.4" },
+      headers: { "cf-connecting-ip": "1.2.3.4", "X-Asguard-Ingest-Key": "ingest-key" },
     });
     // @ts-ignore
     requestPost.cf = { country: "US", colo: "DFW" };
@@ -441,13 +458,14 @@ describe("Asguard Interceptor", () => {
     const request = new Request("https://example.com/telemetry/client-error", {
       method: "POST",
       body: JSON.stringify(payload),
-      headers: { "cf-connecting-ip": "1.2.3.4" },
+      headers: { "cf-connecting-ip": "1.2.3.4", "X-Asguard-Ingest-Key": "ingest-key" },
     });
     // @ts-ignore
     request.cf = { country: "US", colo: "DFW" };
 
     const env = {
       ASGUARD_API_KEY: "secret-key",
+      TELEMETRY_INGEST_KEY: "ingest-key",
       ASGUARD_BLACKLIST: mockKV as any,
       ASGUARD_TELEMETRY: mockTelemetryKV as any,
     };

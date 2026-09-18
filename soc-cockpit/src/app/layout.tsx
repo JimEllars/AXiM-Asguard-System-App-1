@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import jwt from "jsonwebtoken";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -18,9 +19,10 @@ export default async function RootLayout({
 
   let hasAccess = false;
 
-  if (token) {
+  const jwtSecret = getCloudflareContext().env.ASGUARD_JWT_SECRET;
+  if (token && jwtSecret) {
     try {
-      const decoded = jwt.decode(token) as { axim_internal_admin?: boolean } | null;
+      const decoded = jwt.verify(token, jwtSecret, { algorithms: ["HS256"] }) as { axim_internal_admin?: boolean };
       if (decoded && decoded.axim_internal_admin === true) {
         hasAccess = true;
       }
