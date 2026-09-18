@@ -6,7 +6,14 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'mock-anon-
 // Defensive initialization wrapper
 let client;
 try {
-  client = createClient(supabaseUrl, supabaseAnonKey);
+  // Use options suitable for Edge environment
+  client = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false
+    }
+  });
 } catch (e) {
   console.error("Failed to initialize Supabase client gracefully:", e);
   // Fallback dummy client to prevent unhandled top-level exceptions
