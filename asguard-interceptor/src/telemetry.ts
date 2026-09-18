@@ -53,6 +53,15 @@ export interface ThreatEventPayload {
   signature: string;
 }
 
+
+async function hashClientIp(ip: string): Promise<string> {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(ip + "AXiM-Salt-2024");
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
+}
+
 export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: any) {
   const executeLog = async () => {
     try {
@@ -60,6 +69,44 @@ export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: a
       const supabaseKey = env.SUPABASE_ANON_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'mock-key';
 
       const ts = typeof payload.timestamp === 'number' ? new Date(payload.timestamp).toISOString() : new Date(payload.timestamp).toISOString();
+      const hashedIp = payload.sourceIp ? await hashClientIp(payload.sourceIp) : 'unknown';
+
+      // Structured Payload logic:
+      const structuredPayload = {
+          timestamp: ts,
+          clientIpHash: hashedIp,
+          geo: payload.originCountry || payload.country || 'XX',
+          colo: payload.colo || 'UNKNOWN',
+          threatScore: payload.threatScore || payload.edgeBotScore || payload.botScore || 0,
+          ruleMatches: payload.details?.ruleMatches || [],
+          executionLatencyMs: payload.executionDuration || payload.processingDuration || 0,
+          eventType: payload.eventType,
+          severity: payload.severity,
+          actionTaken: payload.actionTaken || (payload.details?.action_taken as string) || 'logged',
+          requestId: payload.requestId,
+      };
+
+      // Fallback Dispatch to central AXiM Core backend ingest
+      if (env.AXIM_CORE_INGEST_URL) {
+          const fallbackRes = fetch(env.AXIM_CORE_INGEST_URL, {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${env.AXIM_CORE_INGEST_KEY || ''}`
+              },
+              body: JSON.stringify(structuredPayload)
+          }).catch(e => {
+               console.error(JSON.stringify({
+                   level: "warn",
+                   message: "Central ingest fallback failed",
+                   error: e.message,
+                   timestamp: ts
+               }));
+          });
+          if (ctx && ctx.waitUntil) {
+              ctx.waitUntil(fallbackRes);
+          }
+      }
 
       const res = await fetch(`${supabaseUrl}/rest/v1/telemetry_events`, {
         method: 'POST',

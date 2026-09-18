@@ -131,7 +131,7 @@ export default function LiveThreatFeed() {
   });
 
   const velocityShift = velocityHistory.length > 0 ? velocityHistory[velocityHistory.length - 1] : 'none';
-  const [realtimeStatus, setRealtimeStatus] = useState<'CONNECTED' | 'DISCONNECTED' | 'ERROR'>('DISCONNECTED');
+  const [realtimeStatus, setRealtimeStatus] = useState<'CONNECTED' | 'RECONNECTING' | 'OFFLINE'>('OFFLINE');
 
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState(false);
@@ -363,6 +363,10 @@ export default function LiveThreatFeed() {
                    const parsed = TelemetryPayloadSchema.safeParse(newLog);
                    if (parsed.success) {
                        setData(prev => {
+                           // Deduplicate incoming events by timestamp and sourceIp to prevent blips
+                           if (prev.some(p => p.timestamp === parsed.data.timestamp && p.sourceIp === parsed.data.sourceIp)) {
+                               return prev;
+                           }
                            const newData = [...prev];
                            newData.unshift(parsed.data);
                            return newData.slice(0, 50);
@@ -387,13 +391,15 @@ export default function LiveThreatFeed() {
 
                 currentRetry = 0;
             } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
-                setRealtimeStatus(status === 'CLOSED' ? 'DISCONNECTED' : 'ERROR');
-                // Auto-Heal backoff
-                const backoffIntervals = [2000, 5000, 10000];
+                setRealtimeStatus('RECONNECTING');
+                // Auto-Heal backoff: 1s, 2s, 5s, max 10s
+                const backoffIntervals = [1000, 2000, 5000, 10000];
                 const delay = backoffIntervals[Math.min(currentRetry, backoffIntervals.length - 1)];
 
                 timeoutId = setTimeout(() => {
-
+                    if (currentRetry >= backoffIntervals.length - 1) {
+                        setRealtimeStatus('OFFLINE');
+                    }
                     currentRetry++;
                     setupRealtime();
                 }, delay);
@@ -714,18 +720,35 @@ export default function LiveThreatFeed() {
         <div className={`text-xs font-mono border px-3 py-1.5 rounded transition-colors duration-300 flex items-center gap-2 ${
           realtimeStatus === 'CONNECTED'
             ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300'
-            : 'bg-amber-950/80 border-amber-500 text-amber-300'
+            : realtimeStatus === 'RECONNECTING'
+            ? 'bg-amber-950/80 border-amber-500 text-amber-300'
+            : 'bg-red-950/80 border-red-500 text-red-300'
         }`}>
-          {realtimeStatus === 'CONNECTED' ? (
+          {realtimeStatus === 'CONNECTED' && (
             <>
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
               </span>
-              <span>LIVE SYNC</span>
+              <span>CONNECTED</span>
             </>
-          ) : (
-            <span>Realtime Sync Interrupted — Re-establishing Edge Uplink...</span>
+          )}
+          {realtimeStatus === 'RECONNECTING' && (
+            <>
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+              </span>
+              <span>RECONNECTING...</span>
+            </>
+          )}
+          {realtimeStatus === 'OFFLINE' && (
+            <>
+              <span className="relative flex h-2 w-2">
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+              </span>
+              <span>OFFLINE</span>
+            </>
           )}
         </div>
         <div className={`text-xs font-mono border px-3 py-1.5 rounded transition-colors duration-300 ${flash ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300' : 'bg-slate-900 border-slate-700 text-slate-400'}`}>

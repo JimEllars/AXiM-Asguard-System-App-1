@@ -31,9 +31,21 @@ export default function Loading() {
           </div>
         </div>
 
+        {/* Radar Telemetry Loader */}
+        <div className="z-10 flex-1 flex flex-col items-center justify-center p-8 relative overflow-hidden">
+            {/* Radar Sweep Animation Base */}
+            <div className="absolute w-[400px] h-[400px] border border-slate-700/50 rounded-full animate-ping opacity-20"></div>
+            <div className="absolute w-[250px] h-[250px] border border-emerald-900/40 rounded-full flex items-center justify-center">
+                 <div className="w-1 h-1/2 bg-gradient-to-t from-emerald-500/0 to-emerald-500/50 absolute top-0 origin-bottom animate-spin" style={{ animationDuration: '2s' }}></div>
+            </div>
+            <div className="absolute w-[100px] h-[100px] border border-slate-600/50 rounded-full"></div>
+
+            <div className="mt-[200px] font-mono text-emerald-500 text-sm tracking-widest uppercase animate-pulse">Establishing Secure Uplink...</div>
+        </div>
+
         {/* Loading Skeletons */}
-        <div className="z-10 flex-1 overflow-y-auto p-2 space-y-2">
-           {[...Array(5)].map((_, i) => (
+        <div className="z-10 bg-slate-950/80 p-2 space-y-2 opacity-60">
+           {[...Array(3)].map((_, i) => (
              <div key={i} className="grid grid-cols-4 gap-4 items-center p-3 rounded bg-slate-900/40 border border-slate-800 animate-pulse">
                <div className="h-4 bg-slate-800 rounded w-24"></div>
                <div className="h-4 bg-slate-800 rounded w-32"></div>
