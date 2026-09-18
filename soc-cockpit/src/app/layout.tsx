@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import jwt from "jsonwebtoken";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import "./globals.css";
+import { ThirdwebProvider } from "thirdweb/react";
 
 export const metadata: Metadata = {
   title: "AXiM Asguard SOC Cockpit",
@@ -22,8 +23,10 @@ export default async function RootLayout({
   const jwtSecret = getCloudflareContext().env.ASGUARD_JWT_SECRET;
   if (token && jwtSecret) {
     try {
-      const decoded = jwt.verify(token, jwtSecret, { algorithms: ["HS256"] }) as { axim_internal_admin?: boolean };
-      if (decoded && decoded.axim_internal_admin === true) {
+      const decoded = jwt.verify(token, jwtSecret, { algorithms: ["HS256"] }) as {
+        axim_internal_admin?: boolean;
+      };
+      if (decoded.axim_internal_admin === true) {
         hasAccess = true;
       }
     } catch {
@@ -34,13 +37,16 @@ export default async function RootLayout({
   if (!hasAccess) {
     return (
       <html lang="en">
+        <head>
+          <meta httpEquiv="refresh" content="0; url=https://passport.axim.us.com?redirect=http%3A%2F%2Flocalhost%3A3000%2Fauth%2Fcallback" />
+        </head>
         <body className="min-h-screen bg-slate-900 text-slate-50 flex items-center justify-center">
-          <div className="bg-slate-950 border border-slate-800 p-8 rounded-lg max-w-md w-full text-center">
-             <div className="text-red-500 mb-4">
-                <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+          <div className="bg-black border-2 border-red-600 p-8 rounded-none max-w-2xl w-full text-center">
+             <div className="font-mono text-red-500 text-lg md:text-xl font-bold tracking-widest whitespace-pre-wrap">
+                [ REDIRECTING TO PASSPORT SSO... ]
              </div>
-             <h1 className="text-xl font-bold tracking-tight text-slate-200 mb-2">ACCESS DENIED</h1>
-             <p className="text-slate-400 text-sm">Valid axim_internal_admin claim required.</p>
+             <p className="mt-4 text-slate-400 font-mono text-sm">Validating AXiM internal whitelist...</p>
+             <p className="mt-2 text-slate-500 font-mono text-xs">If you are not redirected automatically, <a href="https://passport.axim.us.com?redirect=http%3A%2F%2Flocalhost%3A3000%2Fauth%2Fcallback" className="text-blue-400 hover:underline">click here</a>.</p>
           </div>
         </body>
       </html>
@@ -50,7 +56,8 @@ export default async function RootLayout({
   return (
     <html lang="en">
       <body className="min-h-screen bg-slate-900 text-slate-50">
-        <div className="flex flex-col h-screen">
+        <ThirdwebProvider>
+          <div className="flex flex-col h-screen">
           <header className="border-b border-slate-800 bg-slate-950 p-4 flex justify-between items-center">
             <h1 className="text-xl font-bold tracking-tight text-blue-400">AXiM Asguard</h1>
             <nav className="flex gap-4">
@@ -67,6 +74,7 @@ export default async function RootLayout({
             {children}
           </main>
         </div>
+        </ThirdwebProvider>
       </body>
     </html>
   );
