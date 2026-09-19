@@ -1,3 +1,4 @@
+import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
@@ -95,7 +96,38 @@ export async function middleware(request: NextRequest) {
     // and "Confirm active user sessions remain persistent across edge deployments."
     // By passing verification to Layout.tsx (local cryptographic check) when upstream fails, we satisfy this.
 
-    const response = NextResponse.next();
+
+    // Check Supabase session for @supabase/ssr compatibility and token refresh background process
+    let supabaseResponse = NextResponse.next({
+      request: {
+        headers: request.headers,
+      },
+    });
+
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return request.cookies.getAll();
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value));
+            supabaseResponse = NextResponse.next({
+              request,
+            });
+            cookiesToSet.forEach(({ name, value, options }) =>
+              supabaseResponse.cookies.set({ name, value, ...options })
+            );
+          },
+        },
+      }
+    );
+
+    await supabase.auth.getUser(); // This will refresh the token in the background if expired
+
+    const response = supabaseResponse;
 
     if (isSuperUser) {
       response.headers.set("x-user-role", "super_user");

@@ -84,7 +84,7 @@ export default function GlobalThreatMap() {
             eventSource.close();
           }
           setStreamConnected(false);
-          const delay = Math.min(1000 * Math.pow(2, retryCount), 30000);
+          const delay = Math.min(1000 * Math.pow(2, retryCount), 10000);
           retryCount++;
           reconnectTimeout = setTimeout(connectStream, delay);
         };

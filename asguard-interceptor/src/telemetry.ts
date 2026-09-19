@@ -237,3 +237,39 @@ export function logAIInference(usage: any, provider: string, ttft: number, failo
 
   return logEntry;
 }
+
+
+export function logAIFailure(errorMsg: string, env?: any, ctx?: any) {
+  const logEntry = {
+    level: "error",
+    message: "AI Inference Failed",
+    error: errorMsg,
+    timestamp: new Date().toISOString()
+  };
+
+  console.error(JSON.stringify(logEntry));
+
+  if (env) {
+      const payload: TelemetryPayload = {
+          sourceIp: '127.0.0.1', // Background system task
+          timestamp: Date.now(),
+          threatLevel: 'HIGH',
+          eventType: 'ai_inference_executed',
+          severity: 'high',
+          appOrigin: 'axim-asguard',
+          details: {
+              error: errorMsg,
+              status: "unverified_flagged"
+          }
+      };
+
+      // non-blockingly dispatch
+      if (ctx && ctx.waitUntil) {
+          ctx.waitUntil(logToSupabase(payload, env, ctx));
+      } else {
+          logToSupabase(payload, env, ctx).catch(e => console.error("Failed to log inference fallback error telemetry"));
+      }
+  }
+
+  return logEntry;
+}

@@ -10,6 +10,7 @@ export interface AIClientOptions {
   apiKey?: string;
   anthropicApiKey?: string;
   onTelemetry?: (usage: any, provider: string, ttft: number, failover: boolean) => void;
+  onError?: (errorMsg: string) => void;
 }
 
 export class AIClient {
@@ -32,7 +33,7 @@ export class AIClient {
     const startTime = Date.now();
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 8000);
+      const timeout = setTimeout(() => controller.abort(), 4500);
 
       try {
         response = await fetch(this.deepseekEndpoint, {
@@ -86,7 +87,7 @@ export class AIClient {
         };
 
         const anthropicController = new AbortController();
-        const anthropicTimeout = setTimeout(() => anthropicController.abort(), 8000);
+        const anthropicTimeout = setTimeout(() => anthropicController.abort(), 4500);
 
         try {
           try {
@@ -121,10 +122,11 @@ export class AIClient {
           return { response, provider: "anthropic", ttft: Date.now() - fallbackStartTime };
         } catch (fallbackError: any) {
           console.warn(`Fallback also failed: ${fallbackError.message}`);
+          if (this.options.onError) this.options.onError(fallbackError.message);
           return {
             response: new Response(
               JSON.stringify({
-                status: "flagged_for_manual_review",
+                status: "unverified_flagged",
                 confidence: 0.0,
                 error: fallbackError.message
               }),
@@ -136,10 +138,11 @@ export class AIClient {
         }
       }
 
+      if (this.options.onError) this.options.onError(e.message);
       return {
         response: new Response(
           JSON.stringify({
-            status: "flagged_for_manual_review",
+            status: "unverified_flagged",
             confidence: 0.0,
             error: e.message
           }),

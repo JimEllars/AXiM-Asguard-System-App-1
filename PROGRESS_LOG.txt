@@ -56,3 +56,10 @@ Sprint 3.1 completed:
 - Updated soc-cockpit/src/components/LiveThreatFeed.tsx to convert the anomaly banner into a Cognitive Triage interactive trigger, and implemented individual per-row triage execution alongside an inline panel rendering AI outputs (risk, rationale, recommended actions).
 - Added comprehensive unit tests inside asguard-interceptor/tests/interceptor.test.ts to verify the successful POST /analysis pipeline and the graceful fallback to Anthropic (HTTP 200 via fallback instead of dropping).
 - Verified everything with vitest run in interceptor and next build in cockpit.
+- Replaced : keep-alive\\n\\n with : ping\\n\\n in stream heartbeat interval in soc-cockpit/src/app/api/ingest/stream/route.ts.
+- Upgraded LiveThreatFeed.tsx with purely client-side rendering for log items to eliminate React SSR hydration mismatches, and fixed the backoff logic.
+- Implemented maximum 10s reconnection exponential backoff in GlobalThreatMap.tsx.
+- Hardened Edge Auth Session in Next.js middleware by utilizing @supabase/ssr background refresh mechanisms on tokens, while maintaining non-intercept paths. Verified api/health and api/ready functions perform locally.
+- Tightened AI execution timeouts from 8000ms to 4500ms within asguard-interceptor/src/aiService.ts and implemented fail-open design returning unverified_flagged to allow message continuation alongside telemetry updates.
+- Integrated AI inference error fallbacks in telemetry.ts.
+- Updated main page UI to include explicit status chips for Ingest, Stream, and AI Engine.
