@@ -27,6 +27,7 @@ export default function GlobalThreatMap() {
   const [streamedAttacks, setStreamedAttacks] = useState<ThreatEvent[]>([]);
   const [pulses, setPulses] = useState<{id: string, lat: number, lng: number, severity: string, timestamp: number}[]>([]);
   const [streamConnected, setStreamConnected] = useState<boolean>(true);
+  const [packetLatency, setPacketLatency] = useState<number>(0);
 
   useEffect(() => {
     let eventSource: EventSource | null = null;
@@ -45,7 +46,14 @@ export default function GlobalThreatMap() {
         eventSource.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
-            if (data.type === 'ping' || data.type === 'connected') return;
+
+            if (data.type === 'ping') {
+               const latency = Date.now() - new Date(data.timestamp).getTime();
+               setPacketLatency(latency);
+               return;
+            }
+            if (data.type === 'connected') return;
+
 
             // Ensure bounded memory (last 100 events)
             setStreamedAttacks(prev => {
@@ -250,8 +258,12 @@ export default function GlobalThreatMap() {
         )}
         <p className="text-xs text-slate-500 font-mono mt-1">Live threat burst vectors</p>
         <div className="flex gap-3 mt-2 font-mono text-[10px]">
-           <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-cyan-400"></span> <span className="text-slate-400">Blocked Edge Probes</span></div>
+           <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(0,240,255,0.8)]"></span> <span className="text-slate-400">Blocked Edge Probes</span></div>
            <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]"></span> <span className="text-slate-400">Quarantined Attacks</span></div>
+        </div>
+        <div className="mt-2 text-[10px] text-slate-500 font-mono flex items-center gap-2">
+            <span>PACKET LATENCY:</span>
+            <span className={packetLatency > 500 ? 'text-amber-400' : 'text-emerald-400'}>{packetLatency}ms</span>
         </div>
       </div>
 

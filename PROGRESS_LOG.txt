@@ -23,3 +23,12 @@ soc-cockpit/src/app/api/asguard/[...path]/route.ts: Added AbortController timeou
   - Parsed API `usage` blocks in `logAIInference` to capture `prompt_cache_hit_tokens` and `prompt_cache_miss_tokens`.
   - Computed Context Cache Hit Ratio automatically.
   - Added event `ai_inference_executed` to `TelemetryPayloadSchema`.
+
+
+### Task 1.4: Hardening SSE Streaming, Interceptor Fallbacks, and UI Polishing
+- [x] Hardened SSE Streaming & Ingest (`soc-cockpit/src/app/api/ingest/stream/route.ts`) with a 15s keep-alive ping heartbeat and disconnect cleanup.
+- [x] Hardened `LiveThreatFeed.tsx` by implementing the SSE stream connection, auto-reconnection with exponential backoff, and a visual telemetry ping indicator.
+- [x] Upgraded `aiService.ts` with explicit timeout handling (max 8s) and a deterministic fallback classification payload.
+- [x] Non-blocking telemetry event emission applied to `telemetry.ts` using `Promise.allSettled` and `ctx.waitUntil()`.
+- [x] Edge Binding Safety completed for `/api/asguard` and `/api/health` proxies by conditionally supporting both Node local emulations and Cloudflare Worker environments.
+- [x] UI & Telemetry Polishing complete on `OnyxPipeline.tsx` and `GlobalThreatMap.tsx` (actual packet latency, triage status, glowing pulse indicators, cleaner responsive dark-mode elements).

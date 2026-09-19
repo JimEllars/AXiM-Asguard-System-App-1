@@ -1,4 +1,4 @@
-import { TelemetryPayloadSchema } from "./telemetry";
+import { TelemetryPayloadSchema, logToSupabase } from "./telemetry";
 
 const rateLimitMap = new Map<string, { count: number; timestamp: number }>();
 const penaltyLedger = new Map<string, { consecutive: number; timestamp: number }>();
@@ -463,7 +463,7 @@ export default {
           });
         }
 
-        ctx.waitUntil(logTelemetry(parseResult.data, env));
+        ctx.waitUntil(logTelemetry(parseResult.data, env, ctx));
 
         return new Response("OK", {
           status: 202,
@@ -502,7 +502,7 @@ export default {
         }
 
         // Securely log telemetry asynchronously
-        ctx.waitUntil(logTelemetry(parseResult.data, env));
+        ctx.waitUntil(logTelemetry(parseResult.data, env, ctx));
 
         return new Response("Telemetry accepted", {
           status: 202,
@@ -560,7 +560,7 @@ export default {
 
 const localEdgeLoggingBuffer: any[] = [];
 
-async function logTelemetry(data: any, env: Env) {
+async function logTelemetry(data: any, env: Env, ctx?: ExecutionContext) {
   try {
     // Capture a snapshot of the current buffer
     const bufferSnapshot = [...localEdgeLoggingBuffer];
@@ -587,6 +587,11 @@ async function logTelemetry(data: any, env: Env) {
     if (bufferSnapshot.length > 0) {
       // immediately flush and append them into the underlying storage block concurrently, clearing out the localized memory stack cleanly
       localEdgeLoggingBuffer.splice(0, bufferSnapshot.length);
+    }
+
+    // Bridge to Supabase
+    if (ctx && ctx.waitUntil) {
+        ctx.waitUntil(logToSupabase(data, env, ctx));
     }
   } catch (err) {
     console.error("Failed to log telemetry, buffering locally:", err);
