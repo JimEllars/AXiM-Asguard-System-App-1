@@ -8,7 +8,7 @@ export async function GET() {
   const startTime = Date.now();
   try {
     const coreApiUrl =
-      process.env.NEXT_PUBLIC_AXIM_CORE_API_URL || "https://api.axim.us.com";
+      (typeof process !== 'undefined' ? process.env : {} as Record<string, string>).NEXT_PUBLIC_AXIM_CORE_API_URL || "https://api.axim.us.com";
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3000);
     const res = await fetch(`${coreApiUrl}/ping`, {
@@ -21,14 +21,14 @@ export async function GET() {
     aximCoreReachability = false;
   }
 
-  const memoryUsage = process.memoryUsage();
+    const memoryUsage = typeof process !== 'undefined' && process.memoryUsage ? process.memoryUsage() : { rss: 0, heapUsed: 0 };
 
   // Route structured logs into the primary AXiM ecosystem logger without introducing extraneous database read/writes.
   try {
     const aximCoreUrl =
-      process.env.NEXT_PUBLIC_AXIM_CORE_API_URL || "https://api.axim.us.com";
+      (typeof process !== 'undefined' ? process.env : {} as Record<string, string>).NEXT_PUBLIC_AXIM_CORE_API_URL || "https://api.axim.us.com";
     const asguardInternalKey =
-      process.env.AXIM_INTERNAL_KEY || "development_mock_key";
+      (typeof process !== 'undefined' ? process.env : {} as Record<string, string>).AXIM_INTERNAL_KEY || "development_mock_key";
     const payload = {
       app_id: "axim-asguard",
       event_type: "system_health_check",

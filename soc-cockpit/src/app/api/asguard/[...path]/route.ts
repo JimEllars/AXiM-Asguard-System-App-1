@@ -12,14 +12,24 @@ async function proxy(request: Request, context: { params: Promise<{ path: string
     return new NextResponse("Not Found", { status: 404 });
   }
 
-  const { env } = getCloudflareContext();
+  let env: any = {};
+  try {
+    const cf = getCloudflareContext();
+    env = cf.env || {};
+  } catch (e) {
+    // Fallback to process.env in local Node environment
+    env = process?.env || {};
+  }
   const token = (await cookies()).get("asguard_auth_token")?.value;
-  if (!token || !env.ASGUARD_JWT_SECRET || !env.AXIM_SERVICE_TOKEN) {
+  const jwtSecret = env.ASGUARD_JWT_SECRET || process?.env?.ASGUARD_JWT_SECRET;
+  const serviceToken = env.AXIM_SERVICE_TOKEN || process?.env?.AXIM_SERVICE_TOKEN;
+
+  if (!token || !jwtSecret || !serviceToken) {
     return new NextResponse("Unauthorized", { status: 401 });
   }
 
   try {
-    const claims = jwt.verify(token, env.ASGUARD_JWT_SECRET, { algorithms: ["HS256"] }) as {
+    const claims = jwt.verify(token, jwtSecret, { algorithms: ["HS256"] }) as {
       axim_internal_admin?: boolean;
     };
     if (!claims.axim_internal_admin) {
@@ -29,13 +39,15 @@ async function proxy(request: Request, context: { params: Promise<{ path: string
     return new NextResponse("Unauthorized", { status: 401 });
   }
 
-  if (!env.ASGUARD) {
-    console.error("ASGUARD service binding is not configured");
+  const asguardBinding = env.ASGUARD;
+  const interceptorUrl = env.NEXT_PUBLIC_INTERCEPTOR_URL || process?.env?.NEXT_PUBLIC_INTERCEPTOR_URL;
+  if (!asguardBinding && !interceptorUrl) {
+    console.error("ASGUARD service binding and interceptor URL are not configured");
     return new NextResponse("Asguard service is unavailable", { status: 503 });
   }
 
   const headers = new Headers();
-  headers.set("X-Asguard-Service-Token", env.AXIM_SERVICE_TOKEN);
+  headers.set("X-Asguard-Service-Token", serviceToken);
   const contentType = request.headers.get("Content-Type");
   if (contentType) {
     headers.set("Content-Type", contentType);
@@ -45,14 +57,27 @@ async function proxy(request: Request, context: { params: Promise<{ path: string
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
 
-    const response = await env.ASGUARD.fetch(
-      new Request(`https://asguard.internal/${targetPath}`, {
+    let response;
+    const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer();
+
+    if (asguardBinding) {
+      response = await asguardBinding.fetch(
+        new Request(`https://asguard.internal/${targetPath}`, {
+          method: request.method,
+          headers,
+          body,
+          signal: controller.signal as any,
+        })
+      );
+    } else {
+      // Local node fallback
+      response = await fetch(`${interceptorUrl}/${targetPath}`, {
         method: request.method,
         headers,
-        body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer(),
+        body,
         signal: controller.signal as any,
-      }),
-    );
+      });
+    }
     clearTimeout(timeout);
     return new NextResponse(response.body, {
       status: response.status,

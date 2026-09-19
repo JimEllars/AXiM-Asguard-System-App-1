@@ -19,6 +19,7 @@ export default function OnyxPipeline() {
   const [location, setLocation] = useState<LocationData | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
   const [edgeTraceId, setEdgeTraceId] = useState<string | null>(null);
+  const [triageStatus, setTriageStatus] = useState<string | null>(null);
 
   const [quarantineIp, setQuarantineIp] = useState('');
   const [isQuarantining, setIsQuarantining] = useState(false);
@@ -201,6 +202,7 @@ clearTimeout(timeoutId);
       const data = await onyxRes.json().catch(() => ({}));
       const traceId = data.traceId || data.id || `edge-${Date.now()}`;
       setEdgeTraceId(traceId);
+      setTriageStatus(data.status || data.threatLevel || 'quarantined_for_review');
 
       setStage('THREAT_ASSESSED');
 
@@ -267,7 +269,7 @@ clearTimeout(timeoutId);
   const isProcessing = stage !== 'IDLE' && stage !== 'FAILED' && stage !== 'THREAT_ASSESSED';
 
   return (
-    <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 shadow-xl max-w-2xl mx-auto relative">
+    <div className="bg-slate-950 border border-slate-800 rounded-xl p-6 shadow-2xl max-w-2xl mx-auto relative w-full sm:w-[95%] md:w-full">
       {toast && (
         <div className={`absolute top-4 right-4 px-4 py-2 rounded text-sm font-mono z-50 shadow-lg border ${toast.type === 'success' ? 'bg-emerald-950/90 text-emerald-400 border-emerald-900' : 'bg-red-950/90 text-red-400 border-red-900'}`}>
           {toast.message}
@@ -303,7 +305,7 @@ clearTimeout(timeoutId);
            />
 
            {file ? (
-             <div className="text-center">
+             <div className="text-center font-mono">
                <div className="text-emerald-400 font-mono text-sm mb-1">{file.name}</div>
                <div className="text-slate-500 text-xs">{(file.size / (1024 * 1024)).toFixed(2)} MB</div>
              </div>
@@ -326,9 +328,12 @@ clearTimeout(timeoutId);
         )}
 
         {stage === 'THREAT_ASSESSED' && (
-          <div className="bg-emerald-950/50 border border-emerald-900 text-emerald-400 px-4 py-3 rounded text-sm font-mono flex flex-col justify-center items-start">
-            <span>[SUCCESS] File successfully analyzed and mitigated.</span>
-            {edgeTraceId && <span className="text-xs text-emerald-600 mt-1">Edge Trace ID: {edgeTraceId}</span>}
+          <div className="bg-emerald-950/50 border border-emerald-900 text-emerald-400 px-4 py-4 rounded text-sm font-mono flex flex-col justify-center items-start shadow-[0_0_15px_rgba(16,185,129,0.1)]">
+            <span className="font-bold tracking-wider">[SUCCESS] File successfully analyzed and mitigated.</span>
+            <div className="flex gap-4 mt-2">
+                {edgeTraceId && <span className="text-xs text-emerald-600 bg-emerald-950 px-2 py-1 border border-emerald-900/50 rounded">Trace ID: {edgeTraceId}</span>}
+                {triageStatus && <span className="text-xs text-amber-500 bg-amber-950 px-2 py-1 border border-amber-900/50 rounded uppercase">Triage: {triageStatus}</span>}
+            </div>
           </div>
         )}
 

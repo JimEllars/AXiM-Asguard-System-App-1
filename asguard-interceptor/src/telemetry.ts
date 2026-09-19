@@ -86,9 +86,10 @@ export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: a
           requestId: payload.requestId,
       };
 
+      let fallbackRes: Promise<any> = Promise.resolve();
       // Fallback Dispatch to central AXiM Core backend ingest
       if (env.AXIM_CORE_INGEST_URL) {
-          const fallbackRes = fetch(env.AXIM_CORE_INGEST_URL, {
+          fallbackRes = fetch(env.AXIM_CORE_INGEST_URL, {
               method: 'POST',
               headers: {
                   'Content-Type': 'application/json',
@@ -103,12 +104,9 @@ export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: a
                    timestamp: ts
                }));
           });
-          if (ctx && ctx.waitUntil) {
-              ctx.waitUntil(fallbackRes);
-          }
       }
 
-      const res = await fetch(`${supabaseUrl}/rest/v1/telemetry_events`, {
+      const resPromise = fetch(`${supabaseUrl}/rest/v1/telemetry_events`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -134,14 +132,26 @@ export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: a
         })
       });
 
-      if (!res.ok) {
-         console.error(JSON.stringify({
+      const [resSettled, _] = await Promise.allSettled([resPromise, fallbackRes]);
+
+      if (resSettled.status === 'fulfilled') {
+          const res = resSettled.value;
+          if (!res.ok) {
+             console.error(JSON.stringify({
+                 level: "error",
+                 message: `Supabase write failed`,
+                 status: res.status,
+                 statusText: res.statusText,
+                 timestamp: new Date().toISOString()
+             }));
+          }
+      } else {
+          console.error(JSON.stringify({
              level: "error",
-             message: `Supabase write failed`,
-             status: res.status,
-             statusText: res.statusText,
+             message: `Supabase write failed completely`,
+             error: resSettled.reason?.message,
              timestamp: new Date().toISOString()
-         }));
+          }));
       }
     } catch (error: any) {
        console.error(JSON.stringify({
@@ -170,7 +180,7 @@ export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: a
   }
 }
 
-export function logAIInference(usage: any, provider: string, ttft: number, failover: boolean = false) {
+export function logAIInference(usage: any, provider: string, ttft: number, failover: boolean = false, env?: any, ctx?: any) {
   let promptCacheHitRatio = 0;
   let promptCacheHitTokens = 0;
   let promptCacheMissTokens = 0;
@@ -198,5 +208,32 @@ export function logAIInference(usage: any, provider: string, ttft: number, failo
   };
 
   console.log(JSON.stringify(logEntry));
+
+  if (env) {
+      const payload: TelemetryPayload = {
+          sourceIp: '127.0.0.1', // Background system task
+          timestamp: Date.now(),
+          threatLevel: 'INFO',
+          eventType: 'ai_inference_executed',
+          severity: 'low',
+          appOrigin: 'axim-asguard',
+          executionDuration: ttft,
+          details: {
+              provider,
+              failover_occurred: failover,
+              prompt_cache_hit_ratio: promptCacheHitRatio,
+              prompt_cache_hit_tokens: promptCacheHitTokens,
+              prompt_cache_miss_tokens: promptCacheMissTokens,
+          }
+      };
+
+      // non-blockingly dispatch
+      if (ctx && ctx.waitUntil) {
+          ctx.waitUntil(logToSupabase(payload, env, ctx));
+      } else {
+          logToSupabase(payload, env, ctx).catch(e => console.error("Failed to log inference telemetry"));
+      }
+  }
+
   return logEntry;
 }
