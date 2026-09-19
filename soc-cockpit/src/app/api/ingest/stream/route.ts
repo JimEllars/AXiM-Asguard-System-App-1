@@ -14,11 +14,12 @@ export async function POST(request: NextRequest) {
   const { readable, writable } = new TransformStream();
   const writer = writable.getWriter();
   let interval: NodeJS.Timeout;
+  let isAborted = false;
 
   const startStream = async () => {
     try {
       interval = setInterval(() => {
-        writer.write(encoder.encode(`: keep-alive\n\n`)).catch(() => {});
+        if (!isAborted) writer.write(encoder.encode(`: keep-alive\n\n`)).catch(() => {});
       }, 15000);
 
       const upstream = await fetch(url, {
@@ -30,11 +31,11 @@ export async function POST(request: NextRequest) {
       if (upstream.body) {
          const reader = upstream.body.getReader();
          let buffer = '';
-         while(true) {
+         while(!isAborted) {
             const { done, value } = await reader.read();
             if (done) {
-               if (buffer.trim()) {
-                  await writer.write(encoder.encode(`${buffer}\n\n`));
+               if (buffer.trim() && !isAborted) {
+                  await writer.write(encoder.encode(`${buffer}\n\n`)).catch(() => {});
                }
                break;
             }
@@ -49,26 +50,26 @@ export async function POST(request: NextRequest) {
                const part = parts[i];
                if (part.startsWith(': keep-alive')) continue; // Strip SSE keep-alive comments from upstream
 
-               if (part.trim()) {
-                  await writer.write(encoder.encode(`${part}\n\n`));
+               if (part.trim() && !isAborted) {
+                  await writer.write(encoder.encode(`${part}\n\n`)).catch(() => {});
                }
             }
          }
       }
 
-      request.signal.addEventListener('abort', () => {
-        clearInterval(interval);
-        writer.close().catch(() => {});
-      });
-
-      clearInterval(interval);
-      await writer.close();
     } catch (err) {
       console.error('Stream processing error:', err);
+    } finally {
       clearInterval(interval);
-      writer.close().catch(() => {});
+      if (!isAborted) writer.close().catch(() => {});
     }
   };
+
+  request.signal.addEventListener('abort', () => {
+    isAborted = true;
+    clearInterval(interval);
+    writer.close().catch(() => {});
+  });
 
   startStream();
 
@@ -89,17 +90,17 @@ export async function GET(request: NextRequest) {
   // Create a TransformStream to handle backpressure and proper piping
   const { readable, writable } = new TransformStream();
   const writer = writable.getWriter();
-
+  let isAborted = false;
   let interval: NodeJS.Timeout;
 
   const startStream = async () => {
     try {
       // Send an initial connected message
-      await writer.write(encoder.encode(`data: ${JSON.stringify({ type: 'connected' })}\n\n`));
+      if (!isAborted) await writer.write(encoder.encode(`data: ${JSON.stringify({ type: 'connected' })}\n\n`)).catch(() => {});
 
       const sendEvent = async (data: any) => {
         try {
-          await writer.write(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+          if (!isAborted) await writer.write(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
         } catch (err: any) {
           console.error(JSON.stringify({
              level: "error",
@@ -112,20 +113,24 @@ export async function GET(request: NextRequest) {
 
       // Heartbeat ping to prevent Cloudflare edge gateway timeouts every 15 seconds
       interval = setInterval(() => {
-        writer.write(encoder.encode(`: keep-alive\n\n`)).catch(() => {});
-        sendEvent({ type: 'ping', timestamp: new Date().toISOString() });
+        if (!isAborted) {
+           writer.write(encoder.encode(`: keep-alive\n\n`)).catch(() => {});
+           sendEvent({ type: 'ping', timestamp: new Date().toISOString() });
+        }
       }, 15000);
-
-      // Handle stream disconnect
-      request.signal.addEventListener('abort', () => {
-        clearInterval(interval);
-        writer.close().catch(() => {});
-      });
 
     } catch (err) {
       console.error('Stream initialization error:', err);
+      clearInterval(interval);
+      if (!isAborted) writer.close().catch(() => {});
     }
   };
+
+  request.signal.addEventListener('abort', () => {
+    isAborted = true;
+    clearInterval(interval);
+    writer.close().catch(() => {});
+  });
 
   startStream();
 

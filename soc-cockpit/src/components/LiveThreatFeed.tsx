@@ -397,11 +397,12 @@ export default function LiveThreatFeed() {
                 const delay = backoffIntervals[Math.min(currentRetry, backoffIntervals.length - 1)];
 
                 timeoutId = setTimeout(() => {
-                    if (currentRetry >= backoffIntervals.length - 1) {
+                    if (currentRetry >= backoffIntervals.length) {
                         setRealtimeStatus('OFFLINE');
+                    } else {
+                        currentRetry++;
+                        setupRealtime();
                     }
-                    currentRetry++;
-                    setupRealtime();
                 }, delay);
             }
         });

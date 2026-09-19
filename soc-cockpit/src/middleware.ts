@@ -70,6 +70,12 @@ export async function middleware(request: NextRequest) {
         } else if (data.role === "super_user") {
           isSuperUser = true;
         }
+      } else if (res.status === 401 || res.status === 403) {
+        if (pathname.startsWith('/api/')) {
+          return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+        const redirectUrl = `https://passport.axim.us.com/login?redirect_to=https://asguard.axim.us.com`;
+        return NextResponse.redirect(redirectUrl, 307);
       }
     } catch (e: any) {
       // In case passport is down or edge is restarting, do not immediately drop session.
