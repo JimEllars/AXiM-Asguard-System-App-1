@@ -11,3 +11,15 @@ soc-cockpit/src/app/api/asguard/[...path]/route.ts: Added AbortController timeou
 - **asguard-interceptor Telemetry**: Formatted telemetry pipeline outputs to standard structure (`clientIpHash`, `executionLatencyMs`, `ruleMatches`) and implemented dual-dispatch fallback behavior by wrapping the central generic logging endpoint in `ctx.waitUntil()`.
 - **asguard-interceptor Index**: Activated standard standard `GET /health` and `GET /telemetry/summary` observability checkpoints.
 - **soc-cockpit Aesthetics & Components**: Refined error state buttons and added telemetry radar ping skeleton state via `loading.tsx` to handle async edge boundaries natively.
+- **asguard-interceptor & soc-cockpit AI Inference**: Created `aiClient.ts` and `aiService.ts` to implement resilient multi-protocol AI inference client.
+  - Configured primary inference against DeepSeek (`deepseek-reasoner` for thinking mode).
+  - Implemented secondary failover to Anthropic (`claude-3-5-sonnet-20241022`) when encountering recoverable HTTP status codes.
+  - Enforced reasoning token invariant by formatting `reasoning_content` into `<thinking>` tags for Anthropic fallback.
+  - Added `user_id` to payloads for multi-tenant isolation.
+- **soc-cockpit Edge Streaming**: Updated `src/app/api/ingest/stream/route.ts`.
+  - Implemented TransformStream for handling raw frames.
+  - Added SSE `: keep-alive\n\n` comments every 15 seconds to prevent Cloudflare edge gateway timeouts.
+- **asguard-interceptor Telemetry Instrumentation**: Updated `src/telemetry.ts`.
+  - Parsed API `usage` blocks in `logAIInference` to capture `prompt_cache_hit_tokens` and `prompt_cache_miss_tokens`.
+  - Computed Context Cache Hit Ratio automatically.
+  - Added event `ai_inference_executed` to `TelemetryPayloadSchema`.
