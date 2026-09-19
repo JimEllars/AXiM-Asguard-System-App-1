@@ -1,4 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+const originalFetch = global.fetch;
 import worker from "../src/index";
 
 const mockKV = {
@@ -26,6 +28,12 @@ describe("Asguard Interceptor", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    vi.clearAllMocks();
+  });
+
 
   it("should trigger client-error throttle circuit breaker returning 429", async () => {
     const env = {
@@ -294,7 +302,7 @@ describe("Asguard Interceptor", () => {
 
     const response = await worker.fetch(request, env, ctx);
     expect(response.status).toBe(200);
-    const data = await response.json();
+    const data = (await response.json()) as any;
     expect(data).toEqual([{ name: "ip:1.2.3.4", expiration: 1234567890 }, { name: "token:abc" }]);
   });
 
@@ -476,4 +484,87 @@ describe("Asguard Interceptor", () => {
     expect(ctx.waitUntil).toHaveBeenCalled();
   });
 
+
+  it("executes POST /analysis successfully and returns 200 JSON", async () => {
+    const payload = {
+      sourceIp: "192.168.1.1",
+      timestamp: Date.now(),
+      eventType: "signature_tampering",
+      severity: "high"
+    };
+
+    const mockResponse = {
+      risk: "high",
+      summary: "Signature tampering detected",
+      recommendedActions: ["Block IP"],
+      rationale: "Suspicious behavior"
+    };
+
+    global.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify(mockResponse), {
+       status: 200,
+       headers: { "Content-Type": "application/json" }
+    }));
+
+    const request = new Request("https://example.com/analysis", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      headers: { "X-Asguard-Auth": "secret-key", "Content-Type": "application/json" }
+    });
+
+    const env = {
+      ASGUARD_API_KEY: "secret-key",
+      DEEPSEEK_API_KEY: "ds-key",
+      ASGUARD_BLACKLIST: mockKV as any,
+      ASGUARD_TELEMETRY: mockTelemetryKV as any,
+    };
+    const ctx = { waitUntil: vi.fn() } as any;
+
+    const response = await worker.fetch(request, env, ctx);
+    expect(response.status).toBe(200);
+    const data = (await response.json()) as any;
+    expect(data.risk).toBe("high");
+    expect(response.headers.get("X-Asguard-Analysis-Provider")).toBe("deepseek");
+  });
+
+  it("falls back to Anthropic when DeepSeek returns recoverable HTTP 429", async () => {
+    const payload = {
+      sourceIp: "192.168.1.2",
+      timestamp: Date.now(),
+      eventType: "authentication_failure",
+      severity: "critical"
+    };
+
+    const mockAnthropicResponse = {
+      risk: "critical",
+      summary: "Brute force attack",
+      recommendedActions: ["Block immediately"],
+      rationale: "High frequency login attempts"
+    };
+
+    // First call to deepseek returns 429, second call to anthropic returns 200
+    global.fetch = vi.fn()
+      .mockResolvedValueOnce(new Response("Rate limited", { status: 429 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(mockAnthropicResponse), { status: 200, headers: { "Content-Type": "application/json" } }));
+
+    const request = new Request("https://example.com/analysis", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      headers: { "X-Asguard-Auth": "secret-key", "Content-Type": "application/json" }
+    });
+
+    const env = {
+      ASGUARD_API_KEY: "secret-key",
+      DEEPSEEK_API_KEY: "ds-key",
+      ANTHROPIC_API_KEY: "anth-key",
+      ASGUARD_BLACKLIST: mockKV as any,
+      ASGUARD_TELEMETRY: mockTelemetryKV as any,
+    };
+    const ctx = { waitUntil: vi.fn() } as any;
+
+    const response = await worker.fetch(request, env, ctx);
+    expect(response.status).toBe(200);
+    const data = (await response.json()) as any;
+    expect(data.risk).toBe("critical");
+    expect(response.headers.get("X-Asguard-Analysis-Provider")).toBe("anthropic");
+  });
 });

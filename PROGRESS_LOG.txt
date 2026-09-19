@@ -50,3 +50,9 @@ soc-cockpit/src/app/api/asguard/[...path]/route.ts: Added AbortController timeou
   - Updated visual status tags to map more correctly to system active states in `GlobalThreatMap.tsx`.
   - Ran `npm test` successfully within `asguard-interceptor` (18 passing tests).
   - Ran `npm run build` cleanly for `soc-cockpit`.
+Sprint 3.1 completed:
+- Replaced deepseek-reasoner with deepseek-flash as the default model, added thinking enablement flags, and refactored AIClientOptions in both asguard-interceptor/src/aiService.ts and soc-cockpit/src/utils/aiClient.ts.
+- Refactored analyzeThreat() in asguard-interceptor/src/index.ts to use the new AIClient implementation to leverage context caching, and hooked up the onTelemetry callback to the existing logAIInference function.
+- Updated soc-cockpit/src/components/LiveThreatFeed.tsx to convert the anomaly banner into a Cognitive Triage interactive trigger, and implemented individual per-row triage execution alongside an inline panel rendering AI outputs (risk, rationale, recommended actions).
+- Added comprehensive unit tests inside asguard-interceptor/tests/interceptor.test.ts to verify the successful POST /analysis pipeline and the graceful fallback to Anthropic (HTTP 200 via fallback instead of dropping).
+- Verified everything with vitest run in interceptor and next build in cockpit.

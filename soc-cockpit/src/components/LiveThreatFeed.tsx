@@ -220,6 +220,30 @@ export default function LiveThreatFeed() {
   const tempAuditPageFix = setAuditPage; // just to prevent the linter from warning about unused setAuditPage until I use it.
   const itemsPerPage = 10;
 
+  // Triage state
+  const [analyzingEventId, setAnalyzingEventId] = useState<string | null>(null);
+  const [analysisResult, setAnalysisResult] = useState<any | null>(null);
+
+  const handleCognitiveTriage = async (event: any) => {
+    setAnalyzingEventId(event.signatureMetadata || 'global');
+    try {
+       const res = await fetch('/api/asguard/analysis', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(event)
+       });
+       if (res.ok) {
+          const data = await res.json();
+          setAnalysisResult({ ...data, provider: res.headers.get('X-Asguard-Analysis-Provider') || 'unknown' });
+       }
+    } catch (e) {
+       console.error(e);
+    } finally {
+       setAnalyzingEventId(null);
+    }
+  };
+
+
 
   const [auditLog, setAuditLog] = useState<AuditEvent[]>([]);
   const [copiedRow, setCopiedRow] = useState<number | null>(null);
@@ -893,7 +917,41 @@ export default function LiveThreatFeed() {
         </div>
       )}
 
+
+        {/* Analysis Result Drawer */}
+        {analysisResult && (
+           <div className="absolute top-0 right-0 w-1/3 h-full bg-slate-900 border-l border-slate-700 shadow-2xl z-50 flex flex-col font-mono text-sm">
+             <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800">
+                <span className="font-bold text-slate-200">Cognitive Triage Report</span>
+                <button onClick={() => setAnalysisResult(null)} className="text-slate-400 hover:text-white">✕</button>
+             </div>
+             <div className="p-4 overflow-y-auto flex-1 space-y-4">
+                <div>
+                   <span className="text-slate-500 block mb-1">Risk Level:</span>
+                   <span className={`px-2 py-1 rounded text-xs border uppercase ${analysisResult.risk === 'critical' || analysisResult.risk === 'high' ? 'bg-red-900/50 border-red-700 text-red-200' : 'bg-amber-900/50 border-amber-700 text-amber-200'}`}>{analysisResult.risk}</span>
+                </div>
+                <div>
+                   <span className="text-slate-500 block mb-1">Summary:</span>
+                   <p className="text-slate-300">{analysisResult.summary}</p>
+                </div>
+                <div>
+                   <span className="text-slate-500 block mb-1">Rationale:</span>
+                   <p className="text-slate-300">{analysisResult.rationale}</p>
+                </div>
+                <div>
+                   <span className="text-slate-500 block mb-1">Recommended Actions:</span>
+                   <ul className="list-disc list-inside text-slate-300">
+                      {analysisResult.recommendedActions?.map((action: string, i: number) => <li key={i}>{action}</li>)}
+                   </ul>
+                </div>
+                <div className="mt-4 pt-4 border-t border-slate-700 text-xs text-slate-500">
+                   Provider: {analysisResult.provider}
+                </div>
+             </div>
+           </div>
+        )}
       {/* Main Content Area */}
+
       {false ? null : (
         <div className="flex-1 flex flex-col min-h-0 gap-4">
           <div className="flex-1 flex flex-col lg:flex-row gap-4 min-h-0 overflow-hidden">
@@ -901,9 +959,13 @@ export default function LiveThreatFeed() {
           {/* Left Pane: Telemetry Grid (2/3) */}
           <div className="flex-[2] bg-slate-950 border border-slate-800 rounded-lg relative overflow-hidden flex flex-col min-h-0">
             {hasHighDensityAnomaly && (
-              <div className="bg-amber-500/10 border-b border-amber-500/30 px-4 py-2 text-center text-amber-500 font-mono text-xs font-bold tracking-widest uppercase">
-                [ SYSTEM ACCELERATION ALERT: HIGH-DENSITY IP ANOMALY - ONYX COGNITIVE TRIAGE REQ ]
-              </div>
+              <button
+                onClick={() => handleCognitiveTriage({ anomaly: 'high_density', events: filteredData.slice(0, 10) })}
+                disabled={analyzingEventId === 'global'}
+                className="w-full bg-amber-500/10 hover:bg-amber-500/20 disabled:opacity-50 transition-colors border-b border-amber-500/30 px-4 py-2 text-center text-amber-500 font-mono text-xs font-bold tracking-widest uppercase cursor-pointer"
+              >
+                {analyzingEventId === 'global' ? '[ ANALYZING ANOMALY... ]' : '[ INITIATE ONYX COGNITIVE TRIAGE ]'}
+              </button>
             )}
             <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: `linear-gradient(to right, #334155 1px, transparent 1px), linear-gradient(to bottom, #334155 1px, transparent 1px)`, backgroundSize: '40px 40px' }}></div>
 

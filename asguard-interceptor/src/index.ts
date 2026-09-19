@@ -1,4 +1,5 @@
-import { TelemetryPayloadSchema, logToSupabase } from "./telemetry";
+import { TelemetryPayloadSchema, logToSupabase, logAIInference } from "./telemetry";
+import { AIClient } from "./aiService";
 
 const rateLimitMap = new Map<string, { count: number; timestamp: number }>();
 const penaltyLedger = new Map<string, { consecutive: number; timestamp: number }>();
@@ -75,87 +76,39 @@ async function analyzeThreat(payload: unknown, env: Env): Promise<Response> {
     return new Response("Invalid analysis payload", { status: 400, headers: corsHeaders });
   }
 
-  const prompt = [
+  const systemPrompt = [
     "You are AXiM Asguard, a security operations analyst.",
     "Assess the following security event. Return concise JSON with exactly these fields:",
     "risk (low|medium|high|critical), summary, recommendedActions (array of strings), and rationale.",
-    "Do not include markdown fences or any text outside the JSON object.",
-    JSON.stringify(parsedPayload.data),
-  ].join("\n");
+    "Do not include markdown fences or any text outside the JSON object."
+  ].join('\n');
 
-  const providers = [
-    {
-      name: "deepseek",
-      key: env.DEEPSEEK_API_KEY,
-      request: () =>
-        fetch("https://api.deepseek.com/chat/completions", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${env.DEEPSEEK_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "deepseek-chat",
-            messages: [{ role: "user", content: prompt }],
-            response_format: { type: "json_object" },
-            temperature: 0,
-          }),
-        }),
-      extract: (body: { choices?: Array<{ message?: { content?: string } }> }) =>
-        body.choices?.[0]?.message?.content,
-    },
-    {
-      name: "anthropic",
-      key: env.ANTHROPIC_API_KEY,
-      request: () =>
-        fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "x-api-key": env.ANTHROPIC_API_KEY || "",
-            "anthropic-version": "2023-06-01",
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "claude-sonnet-4-20250514",
-            max_tokens: 512,
-            temperature: 0,
-            messages: [{ role: "user", content: prompt }],
-          }),
-        }),
-      extract: (body: { content?: Array<{ type?: string; text?: string }> }) =>
-        body.content?.find((part) => part.type === "text")?.text,
-    },
-  ];
-
-  for (const provider of providers) {
-    if (!provider.key) {
-      continue;
+  const aiClient = new AIClient({
+    userId: (parsedPayload.data as any).correlationId || "asguard-analyst",
+    apiKey: env.DEEPSEEK_API_KEY,
+    anthropicApiKey: env.ANTHROPIC_API_KEY,
+    onTelemetry: (usage, provider, ttft, failover) => {
+       // Using an empty context block since we don't have ctx directly in this function
+       logAIInference(usage, provider, ttft, failover, env);
     }
+  });
 
-    try {
-      const response = await provider.request();
-      if (!response.ok) {
-        console.error(`Asguard ${provider.name} analysis provider returned ${response.status}`);
-        continue;
-      }
+  const { response, provider } = await aiClient.generate([
+    { role: "system", content: systemPrompt },
+    { role: "user", content: JSON.stringify(parsedPayload.data) }
+  ]);
 
-      const content = provider.extract(await response.json());
-      if (!content) {
-        console.error(`Asguard ${provider.name} analysis provider returned no content`);
-        continue;
-      }
-
-      return new Response(content, {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json", "X-Asguard-Analysis-Provider": provider.name },
-      });
-    } catch (error) {
-      console.error(`Asguard ${provider.name} analysis provider failed`, error);
-    }
-  }
-
-  return new Response("Threat analysis is unavailable", { status: 503, headers: corsHeaders });
+  const rawJson = await response.text();
+  return new Response(rawJson, {
+    status: 200,
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/json",
+      "X-Asguard-Analysis-Provider": provider,
+    },
+  });
 }
+
 
 export default {
   async fetch(
