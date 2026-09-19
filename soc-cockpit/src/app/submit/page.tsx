@@ -2,6 +2,7 @@
 import React from 'react';
 import OnyxPipeline from '@/components/Submit/OnyxPipeline';
 import * as ReactErrorBoundary from 'react-error-boundary';
+import { Suspense } from 'react';
 
 export default function SubmitPage() {
   return (
@@ -19,7 +20,9 @@ export default function SubmitPage() {
 
       <div className="mt-8 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8">
         <ReactErrorBoundary.ErrorBoundary fallback={<div className="bg-red-950 border border-red-900 p-6 rounded-xl text-red-400 font-mono text-sm">[ FATAL PIPELINE ERROR ] - Please reload the cockpit.</div>}>
-          <OnyxPipeline />
+          <Suspense fallback={<div className="bg-slate-900 border border-slate-700 p-6 rounded-xl text-slate-400 font-mono text-sm">Loading Pipeline...</div>}>
+            <OnyxPipeline />
+          </Suspense>
         </ReactErrorBoundary.ErrorBoundary>
       </div>
 

@@ -28,14 +28,22 @@ export class AIClient {
     let response: Response;
     const startTime = Date.now();
     try {
-      response = await fetch(this.deepseekEndpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${this.options.apiKey || process.env.DEEPSEEK_API_KEY}`,
-        },
-        body: JSON.stringify(payload),
-      });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+
+      try {
+        response = await fetch(this.deepseekEndpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${this.options.apiKey || process.env.DEEPSEEK_API_KEY}`,
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal as any
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
 
       if ([429, 500, 503].includes(response.status)) {
          throw new Error(`Recoverable error: ${response.status}`);
@@ -57,7 +65,9 @@ export class AIClient {
 
       return { response, provider: "deepseek", ttft: Date.now() - startTime };
     } catch (e: any) {
-      if (e.message.includes("Recoverable error") || e.message.includes("fetch failed") || e.name === "TypeError") {
+      const isRecoverable = e.message.includes("Recoverable error") || e.message.includes("fetch failed") || e.name === "TypeError" || e.name === "AbortError" || e.message.includes("timeout");
+
+      if (isRecoverable) {
         const fallbackStartTime = Date.now();
         console.warn(`Falling back to Anthropic due to: ${e.message}`);
         const anthropicPayload = {
@@ -72,33 +82,69 @@ export class AIClient {
           metadata: { user_id: this.options.userId }
         };
 
-        response = await fetch(this.anthropicEndpoint, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": this.options.anthropicApiKey || process.env.ANTHROPIC_API_KEY || "",
-            "anthropic-version": "2023-06-01"
-          },
-          body: JSON.stringify(anthropicPayload),
-        });
+        const anthropicController = new AbortController();
+        const anthropicTimeout = setTimeout(() => anthropicController.abort(), 8000);
 
-        if (!response.ok) {
-           throw new Error(`Fallback failed: ${response.status}`);
+        try {
+          try {
+            response = await fetch(this.anthropicEndpoint, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "x-api-key": this.options.anthropicApiKey || process.env.ANTHROPIC_API_KEY || "",
+                "anthropic-version": "2023-06-01"
+              },
+              body: JSON.stringify(anthropicPayload),
+              signal: anthropicController.signal as any
+            });
+          } finally {
+            clearTimeout(anthropicTimeout);
+          }
+
+          if (!response.ok) {
+             throw new Error(`Fallback failed: ${response.status}`);
+          }
+
+          if (!stream) {
+             let text = await response.text();
+             text = text.replace(/^(\s*:\s*keep-alive\n)+/, '').trim();
+             const json = JSON.parse(text);
+             if (this.options.onTelemetry) {
+                this.options.onTelemetry(json.usage, "anthropic", Date.now() - fallbackStartTime, true);
+             }
+             return { response: new Response(JSON.stringify(json), { headers: response.headers }), provider: "anthropic", ttft: Date.now() - fallbackStartTime };
+          }
+
+          return { response, provider: "anthropic", ttft: Date.now() - fallbackStartTime };
+        } catch (fallbackError: any) {
+          console.warn(`Fallback also failed: ${fallbackError.message}`);
+          return {
+            response: new Response(
+              JSON.stringify({
+                status: "flagged_for_manual_review",
+                confidence: 0.0,
+                error: fallbackError.message
+              }),
+              { headers: { "Content-Type": "application/json" } }
+            ),
+            provider: "fallback_circuit_breaker",
+            ttft: Date.now() - startTime
+          };
         }
-
-        if (!stream) {
-           let text = await response.text();
-           text = text.replace(/^(\s*:\s*keep-alive\n)+/, '').trim();
-           const json = JSON.parse(text);
-           if (this.options.onTelemetry) {
-              this.options.onTelemetry(json.usage, "anthropic", Date.now() - fallbackStartTime, true);
-           }
-           return { response: new Response(JSON.stringify(json), { headers: response.headers }), provider: "anthropic", ttft: Date.now() - fallbackStartTime };
-        }
-
-        return { response, provider: "anthropic", ttft: Date.now() - fallbackStartTime };
       }
-      throw e;
+
+      return {
+        response: new Response(
+          JSON.stringify({
+            status: "flagged_for_manual_review",
+            confidence: 0.0,
+            error: e.message
+          }),
+          { headers: { "Content-Type": "application/json" } }
+        ),
+        provider: "fallback_circuit_breaker",
+        ttft: Date.now() - startTime
+      };
     }
   }
 }

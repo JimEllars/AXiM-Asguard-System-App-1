@@ -248,7 +248,7 @@ export default function GlobalThreatMap() {
     <div ref={containerRef} className="w-full h-full relative bg-slate-950 rounded-xl border border-slate-800 overflow-hidden flex items-center justify-center p-4">
       <div className="absolute top-4 left-4 z-10 pointer-events-none">
         <h3 className="text-sm font-bold text-slate-300 uppercase tracking-widest flex items-center gap-2">
-          <svg className={`w-4 h-4 ${streamConnected ? 'text-amber-500 animate-pulse' : 'text-slate-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21.128 12A10.01 10.01 0 0012 2.012A10.01 10.01 0 002.872 12A10.01 10.01 0 0012 21.988 10.01 10.01 0 0021.128 12z"></path></svg>
+          <svg className={`w-4 h-4 ${streamConnected ? 'text-emerald-500 animate-pulse' : 'text-slate-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21.128 12A10.01 10.01 0 0012 2.012A10.01 10.01 0 002.872 12A10.01 10.01 0 0012 21.988 10.01 10.01 0 0021.128 12z"></path></svg>
           Global Attack Map Visualizer
         </h3>
         {!streamConnected && (

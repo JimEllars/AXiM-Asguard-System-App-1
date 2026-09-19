@@ -3,6 +3,7 @@ import LiveChat from "@/components/Stream/LiveChat";
 import React, { useState, useEffect } from 'react';
 import GlobalThreatMap from '@/components/Stream/GlobalThreatMap';
 import { ErrorBoundary } from 'react-error-boundary';
+import { Suspense } from 'react';
 
 const MOCK_VODS = [
   {
@@ -105,7 +106,9 @@ export default function StreamPage() {
           </div>
         </div>
         <div className="w-full lg:w-96 h-[600px] lg:h-auto">
-          <LiveChat isAuthenticated={!!aximUser} />
+          <Suspense fallback={<div className="h-full bg-slate-900 border border-slate-700 rounded-xl">Loading Chat...</div>}>
+            <LiveChat isAuthenticated={!!aximUser} />
+          </Suspense>
         </div>
       </div>
 
@@ -160,7 +163,9 @@ export default function StreamPage() {
 
       <div className="w-full max-w-7xl mx-auto h-[400px] mt-6">
         <ErrorBoundary FallbackComponent={ThreatMapFallback}>
-          <GlobalThreatMap />
+          <Suspense fallback={<div className="h-full bg-slate-900 border border-slate-700 rounded-xl">Loading Map...</div>}>
+            <GlobalThreatMap />
+          </Suspense>
         </ErrorBoundary>
       </div>
 

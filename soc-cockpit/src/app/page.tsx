@@ -1,6 +1,14 @@
 import React from 'react';
 import LiveThreatFeed from '@/components/LiveThreatFeed';
 import { Suspense } from 'react';
+import { ErrorBoundary } from 'react-error-boundary';
+
+const HomeFallback = () => (
+  <div className="border border-slate-800/50 bg-slate-950/20 rounded font-mono p-6 text-center text-xs text-slate-500 max-w-lg w-full flex flex-col items-center gap-2 m-auto mt-20">
+     <div className="uppercase tracking-wider text-red-500">Telemetry Disconnected</div>
+     <div>Could not render active threat grid. Reconnecting...</div>
+  </div>
+);
 
 export default function Home() {
   return (
@@ -15,9 +23,11 @@ export default function Home() {
         </div>
       </div>
 
-      <Suspense fallback={<div>Loading...</div>}>
-        <LiveThreatFeed />
-      </Suspense>
+      <ErrorBoundary FallbackComponent={HomeFallback}>
+        <Suspense fallback={<div className="border border-slate-800/50 bg-slate-950/20 rounded font-mono p-6 text-center text-xs text-slate-500">Loading Telemetry...</div>}>
+          <LiveThreatFeed />
+        </Suspense>
+      </ErrorBoundary>
     </div>
   );
 }
