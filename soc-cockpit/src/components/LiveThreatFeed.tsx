@@ -110,6 +110,11 @@ export default function LiveThreatFeed() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
 
+    const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const [data, setData] = useState<TelemetryPayload[]>([]);
   const [blocklist, setBlocklist] = useState<{ name: string; expiration?: number; note?: string }[]>([]);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
@@ -419,12 +424,12 @@ export default function LiveThreatFeed() {
                 // Auto-Heal backoff: 1s, 2s, 5s, max 10s
                 const backoffIntervals = [1000, 2000, 5000, 10000];
                 const delay = backoffIntervals[Math.min(currentRetry, backoffIntervals.length - 1)];
+                currentRetry++;
 
                 timeoutId = setTimeout(() => {
-                    if (currentRetry >= backoffIntervals.length) {
+                    if (currentRetry > backoffIntervals.length + 1) { // Stop indefinitely retrying after max
                         setRealtimeStatus('OFFLINE');
                     } else {
-                        currentRetry++;
                         setupRealtime();
                     }
                 }, delay);
@@ -1008,7 +1013,7 @@ export default function LiveThreatFeed() {
                        onClick={() => setExpandedRow(isExpanded ? null : idx)}
                      >
                        <div className="text-slate-500">
-                          {new Date(event.timestamp).toISOString().substring(11, 19) + ' UTC'}
+                          {mounted ? new Date(event.timestamp).toISOString().substring(11, 19) + ' UTC' : ''}
                        </div>
                        <div className="text-slate-300 truncate">
                           {event.sourceIp}
@@ -1233,7 +1238,7 @@ export default function LiveThreatFeed() {
                  paginatedAudit.map((event, idx) => (
                    <div key={idx} className="grid grid-cols-4 gap-4 items-center p-3 rounded bg-slate-900/40 border border-slate-800 hover:bg-slate-800/50 transition-colors text-sm text-slate-300 font-mono">
                      <div className="text-slate-500">
-                        {new Date(event.timestamp).toISOString().replace('T', ' ').substring(0, 19) + ' UTC'}
+                        {mounted ? new Date(event.timestamp).toISOString().replace('T', ' ').substring(0, 19) + ' UTC' : ''}
                      </div>
                      <div>
                         <span className={`px-2 py-1 rounded text-xs border whitespace-nowrap ${event.action === 'block' ? 'text-red-400 bg-red-950/50 border-red-900' : 'text-emerald-400 bg-emerald-950/50 border-emerald-900'}`}>
