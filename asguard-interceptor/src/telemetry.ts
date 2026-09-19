@@ -6,7 +6,7 @@ export const TelemetryPayloadSchema = z.object({
   timestamp: z.union([z.number(), z.string()]),
   threatLevel: z.enum(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO', 'BENIGN']).optional(),
   targetVector: z.enum(['Email', 'API', 'Auth', 'Pipeline']).optional(),
-  eventType: z.enum(['authentication_failure', 'signature_tampering', 'suspicious_activity', 'client_error', 'threat.blocked', 'rate_limit.exceeded', 'bot_challenge.failed', 'ip.quarantined', 'onyx_pipeline_job_executed', 'telephony.threat_evaluated']),
+  eventType: z.enum(['authentication_failure', 'signature_tampering', 'suspicious_activity', 'client_error', 'threat.blocked', 'rate_limit.exceeded', 'bot_challenge.failed', 'ip.quarantined', 'onyx_pipeline_job_executed', 'telephony.threat_evaluated', 'ai_inference_executed']),
   requestId: z.string().optional(),
   correlationId: z.string().optional(),
   clientIp: z.string().optional(),
@@ -168,4 +168,35 @@ export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: a
        timestamp: new Date().toISOString()
     })));
   }
+}
+
+export function logAIInference(usage: any, provider: string, ttft: number, failover: boolean = false) {
+  let promptCacheHitRatio = 0;
+  let promptCacheHitTokens = 0;
+  let promptCacheMissTokens = 0;
+
+  if (usage) {
+    // Deepseek reports cache hits in usage.prompt_cache_hit_tokens
+    promptCacheHitTokens = usage.prompt_cache_hit_tokens || 0;
+    promptCacheMissTokens = usage.prompt_cache_miss_tokens || usage.prompt_tokens - promptCacheHitTokens || 0;
+    const totalPromptTokens = promptCacheHitTokens + promptCacheMissTokens;
+    if (totalPromptTokens > 0) {
+      promptCacheHitRatio = (promptCacheHitTokens / totalPromptTokens) * 100;
+    }
+  }
+
+  const logEntry = {
+    level: "info",
+    message: "AI Inference Executed",
+    provider,
+    ttft_ms: ttft,
+    failover_occurred: failover,
+    prompt_cache_hit_ratio: promptCacheHitRatio,
+    prompt_cache_hit_tokens: promptCacheHitTokens,
+    prompt_cache_miss_tokens: promptCacheMissTokens,
+    timestamp: new Date().toISOString()
+  };
+
+  console.log(JSON.stringify(logEntry));
+  return logEntry;
 }
