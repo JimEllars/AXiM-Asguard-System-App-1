@@ -5,6 +5,7 @@ export interface AIMessage {
 }
 
 export interface AIClientOptions {
+  model?: "deepseek-flash" | "deepseek-v4-pro";
   userId: string;
   apiKey?: string;
   anthropicApiKey?: string;
@@ -19,10 +20,12 @@ export class AIClient {
 
   public async generate(messages: AIMessage[], stream: boolean = false) {
     const payload = {
-      model: "deepseek-reasoner",
+      model: this.options.model || "deepseek-flash",
+      thinking: { type: "enabled" },
+      reasoning_effort: "high",
       messages,
       stream,
-      user: this.options.userId,
+      user_id: this.options.userId,
     };
 
     let response: Response;
@@ -47,7 +50,7 @@ export class AIClient {
 
       if (!stream) {
          let text = await response.text();
-         text = text.replace(/^(\s*:\s*keep-alive\n)+/, '').trim();
+         text = text.replace(/^(\s*:\s*keep-alive\n)+|^\n+/, '').trim();
          const json = JSON.parse(text);
          if (this.options.onTelemetry) {
             this.options.onTelemetry(json.usage, "deepseek", Date.now() - startTime, false);
@@ -88,7 +91,7 @@ export class AIClient {
 
         if (!stream) {
            let text = await response.text();
-           text = text.replace(/^(\s*:\s*keep-alive\n)+/, '').trim();
+           text = text.replace(/^(\s*:\s*keep-alive\n)+|^\n+/, '').trim();
            const json = JSON.parse(text);
            if (this.options.onTelemetry) {
               this.options.onTelemetry(json.usage, "anthropic", Date.now() - fallbackStartTime, true);
