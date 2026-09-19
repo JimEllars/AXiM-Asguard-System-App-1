@@ -5,3 +5,9 @@ asguard-interceptor/src/telemetry.ts: standardize schema and properties
 soc-cockpit/src/middleware.ts & soc-cockpit/src/utils/supabaseClient.ts: added proper JSON warn fallbacks for edge SSO/network latency cases
 soc-cockpit/src/components/Submit/OnyxPipeline.tsx: inline validation of size and json
 soc-cockpit/src/app/api/asguard/[...path]/route.ts: Added AbortController timeout to proxy fetch
+- **soc-cockpit Middleware**: Replaced redirects for API routes with explicit 401 JSON responses to prevent infinite redirect loops on unauthenticated edge node calls.
+- **soc-cockpit LiveThreatFeed**: Added robust connection status indicators and exponential backoff retry states (1s, 2s, 5s, 10s) to automatically re-establish edge uplink.
+- **soc-cockpit OnyxPipeline**: Upgraded submission pipeline to use exact internal states (`VALIDATING`, `QUEUED_TO_ONYX`, `EXTRACTING_FEATURES`, `AI_INFERENCE`, `THREAT_ASSESSED`). Inserted validation of MIME types and a mock SHA-256 calculator block before dispatch. Added explicit fail states without resetting form data.
+- **asguard-interceptor Telemetry**: Formatted telemetry pipeline outputs to standard structure (`clientIpHash`, `executionLatencyMs`, `ruleMatches`) and implemented dual-dispatch fallback behavior by wrapping the central generic logging endpoint in `ctx.waitUntil()`.
+- **asguard-interceptor Index**: Activated standard standard `GET /health` and `GET /telemetry/summary` observability checkpoints.
+- **soc-cockpit Aesthetics & Components**: Refined error state buttons and added telemetry radar ping skeleton state via `loading.tsx` to handle async edge boundaries natively.

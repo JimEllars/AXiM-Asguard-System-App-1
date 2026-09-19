@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 
-export type PipelineStage = 'idle' | 'uploading' | 'analyzing' | 'mitigated' | 'failed';
+export type PipelineStage = 'IDLE' | 'VALIDATING' | 'QUEUED_TO_ONYX' | 'EXTRACTING_FEATURES' | 'AI_INFERENCE' | 'THREAT_ASSESSED' | 'FAILED';
 
 interface LocationData {
   lat: number;
@@ -15,7 +15,7 @@ interface ToastData {
 export default function OnyxPipeline() {
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [stage, setStage] = useState<PipelineStage>('idle');
+  const [stage, setStage] = useState<PipelineStage>('IDLE');
   const [location, setLocation] = useState<LocationData | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
   const [edgeTraceId, setEdgeTraceId] = useState<string | null>(null);
@@ -86,7 +86,7 @@ export default function OnyxPipeline() {
     }
 
     setFile(selectedFile);
-    setStage('idle');
+    setStage('IDLE');
   };
 
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
@@ -97,11 +97,33 @@ export default function OnyxPipeline() {
     e.preventDefault();
     if (!file) {
       setError('Please select a file to upload.');
-      setStage('failed');
+      setStage('FAILED');
       return;
     }
 
-    setStage('uploading');
+
+      setStage('VALIDATING');
+
+      const allowedMimeTypes = ['image/png', 'image/jpeg', 'image/gif', 'video/mp4', 'video/webm', 'text/plain', 'text/csv'];
+      const allowedExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.mp4', '.webm', '.txt', '.csv'];
+
+      if (!allowedMimeTypes.includes(file.type)) {
+          throw new Error("Invalid file type: Unsupported MIME type.");
+      }
+
+      const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+      if (!allowedExtensions.includes(ext)) {
+          throw new Error("Invalid file extension.");
+      }
+
+      // Calculate SHA-256 Mock
+      const arrayBuffer = await file.arrayBuffer();
+      const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const sha256Hex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+      setStage('QUEUED_TO_ONYX');
+
     setError(null);
 
     try {
@@ -139,7 +161,8 @@ export default function OnyxPipeline() {
         })
       }).catch(console.error);
 
-      setStage('analyzing');
+      setStage('EXTRACTING_FEATURES');
+      setTimeout(() => setStage('AI_INFERENCE'), 1000);
 
       // Payload construction
       if (file.size > 50 * 1024 * 1024) throw new Error("File size exceeds 50MB limit");
@@ -179,7 +202,7 @@ clearTimeout(timeoutId);
       const traceId = data.traceId || data.id || `edge-${Date.now()}`;
       setEdgeTraceId(traceId);
 
-      setStage('mitigated');
+      setStage('THREAT_ASSESSED');
 
       // Reset after success
       setFile(null);
@@ -190,7 +213,7 @@ clearTimeout(timeoutId);
       setToast({ type: 'success', message: `[ MEDIA SUBMITTED TO ONYX PIPELINE ] - Trace: ${traceId}` });
       setTimeout(() => {
           setToast(null);
-          setStage('idle');
+          setStage('IDLE');
       }, 5000);
 
       // Dispatch completion telemetry
@@ -212,7 +235,7 @@ clearTimeout(timeoutId);
       }).catch(console.error);
 
     } catch (err: any) {
-      setStage('failed');
+      setStage('FAILED');
       setError(err.message || 'Failed to capture location or upload file.');
 
       if (file) {
@@ -241,7 +264,7 @@ clearTimeout(timeoutId);
     }
   };
 
-  const isProcessing = stage === 'uploading' || stage === 'analyzing';
+  const isProcessing = stage !== 'IDLE' && stage !== 'FAILED' && stage !== 'THREAT_ASSESSED';
 
   return (
     <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 shadow-xl max-w-2xl mx-auto relative">
@@ -295,14 +318,14 @@ clearTimeout(timeoutId);
            )}
         </div>
 
-        {error && stage === 'failed' && (
+        {error && stage === 'FAILED' && (
           <div className="bg-red-950/50 border border-red-900 text-red-400 px-4 py-3 rounded text-sm font-mono flex justify-between items-center">
             <span>[ERROR] {error}</span>
             <button type="button" onClick={handleSubmit} className="text-xs bg-red-900 hover:bg-red-800 px-2 py-1 rounded transition-colors">Retry</button>
           </div>
         )}
 
-        {stage === 'mitigated' && (
+        {stage === 'THREAT_ASSESSED' && (
           <div className="bg-emerald-950/50 border border-emerald-900 text-emerald-400 px-4 py-3 rounded text-sm font-mono flex flex-col justify-center items-start">
             <span>[SUCCESS] File successfully analyzed and mitigated.</span>
             {edgeTraceId && <span className="text-xs text-emerald-600 mt-1">Edge Trace ID: {edgeTraceId}</span>}

@@ -12,3 +12,51 @@ body {
   color: var(--foreground);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
 }
+
+
+/* SOC Dark-Mode Aesthetics */
+.soc-glass-panel {
+  border-color: rgba(30, 41, 59, 0.8); /* slate-800/80 */
+  background-color: rgba(2, 6, 23, 0.6); /* slate-950/60 */
+  backdrop-filter: blur(12px);
+}
+
+.soc-mono-feed {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+/* High-Visibility Threat Severity Badges */
+.threat-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.threat-badge-critical {
+  background-color: rgba(127, 29, 29, 0.5); /* red-900/50 */
+  color: #fca5a5; /* red-300 */
+  border: 1px solid #7f1d1d; /* red-900 */
+}
+
+.threat-badge-high {
+  background-color: rgba(153, 27, 27, 0.4); /* red-800/40 */
+  color: #f87171; /* red-400 */
+  border: 1px solid #991b1b; /* red-800 */
+}
+
+.threat-badge-elevated {
+  background-color: rgba(146, 64, 14, 0.4); /* amber-800/40 */
+  color: #fbbf24; /* amber-400 */
+  border: 1px solid #92400e; /* amber-800 */
+}
+
+.threat-badge-normal {
+  background-color: rgba(6, 78, 59, 0.4); /* emerald-900/40 */
+  color: #34d399; /* emerald-400 */
+  border: 1px solid #064e3b; /* emerald-900 */
+}

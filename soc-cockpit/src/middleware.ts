@@ -26,6 +26,9 @@ export async function middleware(request: NextRequest) {
     const token = sessionCookie?.value || tokenQueryParam;
 
     if (!token) {
+      if (pathname.startsWith('/api/')) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
       const redirectUrl = `https://passport.axim.us.com/login?redirect_to=https://asguard.axim.us.com`;
       return NextResponse.redirect(redirectUrl, 307);
     }

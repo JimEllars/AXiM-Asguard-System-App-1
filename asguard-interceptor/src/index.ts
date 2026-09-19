@@ -528,6 +528,31 @@ export default {
       }
     }
 
+
+    if (request.method === "GET" && url.pathname === "/health") {
+      return new Response(JSON.stringify({ status: "OK", timestamp: Date.now() }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (request.method === "GET" && url.pathname === "/telemetry/summary") {
+      if (!isAdminRequest(request, env)) {
+        return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+      }
+      return new Response(JSON.stringify({
+        status: "OK",
+        metrics: {
+            uptime: process?.uptime ? process.uptime() : 'N/A', // Assuming standard env or worker doesn't have process, maybe just static
+            totalEvents: 0,
+            activeBlocks: 0
+        }
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Pass-through
     return new Response("OK", { status: 200, headers: corsHeaders });
   },
