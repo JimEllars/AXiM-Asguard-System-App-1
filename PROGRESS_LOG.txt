@@ -72,3 +72,11 @@ Sprint 3.1 completed:
 - Synced DeepSeek options and stream functions to `soc-cockpit/src/utils/aiClient.ts` to support BaseUrl mapping and deepseek-flash default logic.
 - Verified backend API connectivity in `asguard-interceptor/src/aiService.ts` aligning with default `deepseek-flash` models.
 - Completed Playwright validations of button interactivity on test pages and successfully built standard Next.js apps with passing Vitest backend scenarios.
+- **soc-cockpit Middleware**: Added fail-soft for missing Supabase credentials instead of throwing 500s. Handled `/stream`, `/submit`, and `/` as open routes in middleware.
+- **soc-cockpit Auth Callback**: Handled PKCE code exchange for future Supabase direct auth and ensured edge-safe redirection.
+- **soc-cockpit Supabase Client**: Added defensive fallback to a dummy read-only client if credentials are empty or misconfigured, preserving app stability in unconfigured environments.
+- **soc-cockpit Ingest & Stream Parity**: Updated `soc-cockpit/src/app/api/ingest/route.ts` to expect `AsguardTelemetryEvent` schemas, implemented constant-time validation of tokens, and added broadcast to SSE endpoint. Fail-soft behavior for persistence logic built in without throwing 500s.
+- **asguard-interceptor Telemetry Contract**: Added `AsguardTelemetryEvent` to `asguard-interceptor/src/telemetry.ts` (via `telemetry_events.ts`) and built `sendTelemetryToCockpit` logic to send payload with INGEST_TOKEN.
+- **soc-cockpit Components**: Wrapped `window`, `canvas`, and real-time interval logic in `GlobalThreatMap.tsx` and `LiveThreatFeed.tsx` behind `isMounted` hooks to prevent React SSR hydration mismatches and cleanly tear down bindings.
+- **soc-cockpit Probes**: Updated `/api/health` and `/api/ready` to include explicit timeout-bounded checks (1500ms max) against upstream `AXiM Core` ensuring they never block edge infrastructure routing, correctly parsing `process.memoryUsage` dynamically across edge isolates.
+- **Tests & Builds**: Verified Next.js builds clean (`npm run build`) in `soc-cockpit`, run clean tests (`npm run test`) in `asguard-interceptor`, and fixed a minor linter issue in `api/ready/route.ts`.

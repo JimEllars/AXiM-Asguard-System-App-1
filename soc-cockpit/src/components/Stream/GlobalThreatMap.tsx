@@ -1,9 +1,8 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
-// Use a fallback for mock data in case stream is empty
 const MOCK_ATTACKS = [
-  { id: 1, lat: 55.7558, lng: 37.6173, country: 'RU', intensity: 8, severity: 'high' },
-  { id: 2, lat: 39.9042, lng: 116.4074, country: 'CN', intensity: 7, severity: 'high' },
+  { id: 1, lat: 40.7128, lng: -74.0060, country: 'US', intensity: 8, severity: 'critical' },
+  { id: 2, lat: 35.6762, lng: 139.6503, country: 'JP', intensity: 6, severity: 'high' },
   { id: 3, lat: -15.7938, lng: -47.8827, country: 'BR', intensity: 5, severity: 'medium' },
   { id: 4, lat: 38.9072, lng: -77.0369, country: 'US', intensity: 4, severity: 'low' },
   { id: 5, lat: 51.5074, lng: -0.1278, country: 'UK', intensity: 6, severity: 'high' },
@@ -23,13 +22,19 @@ export default function GlobalThreatMap() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Keep real-time stream of attacks
+  const [mounted, setMounted] = useState(false);
   const [streamedAttacks, setStreamedAttacks] = useState<ThreatEvent[]>([]);
   const [pulses, setPulses] = useState<{id: string, lat: number, lng: number, severity: string, timestamp: number}[]>([]);
   const [streamConnected, setStreamConnected] = useState<boolean>(true);
   const [packetLatency, setPacketLatency] = useState<number>(0);
 
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+
     let eventSource: EventSource | null = null;
     let reconnectTimeout: NodeJS.Timeout;
     let retryCount = 0;
@@ -54,17 +59,14 @@ export default function GlobalThreatMap() {
             }
             if (data.type === 'connected') return;
 
-
-            // Ensure bounded memory (last 100 events)
             setStreamedAttacks(prev => {
               const updated = [data, ...prev].slice(0, 100);
               return updated;
             });
 
-            // Add a pulse for the new event
             setPulses(prev => {
               const now = Date.now();
-              const active = prev.filter(p => now - p.timestamp < 2000); // 2 seconds TTL
+              const active = prev.filter(p => now - p.timestamp < 2000);
               return [...active, {
                 id: data.id || Math.random().toString(36).substr(2, 9),
                 lat: data.lat || 0,
@@ -101,10 +103,11 @@ export default function GlobalThreatMap() {
         eventSource.close();
       }
     };
-  }, []);
+  }, [mounted]);
 
-  // Animation and resize logic for WebGL/Canvas
   useEffect(() => {
+    if (!mounted) return;
+
     const canvas = canvasRef.current;
     const container = containerRef.current;
     if (!canvas || !container) return;
@@ -126,7 +129,6 @@ export default function GlobalThreatMap() {
     window.addEventListener('resize', resize);
     resize();
 
-    // Pulse generator for MOCK_ATTACKS if stream is empty
     const pulseInterval = setInterval(() => {
       if (streamedAttacks.length === 0) {
         const mockAttack = MOCK_ATTACKS[Math.floor(Math.random() * MOCK_ATTACKS.length)];
@@ -150,8 +152,7 @@ export default function GlobalThreatMap() {
 
       const now = Date.now();
 
-      // Draw world map approximation dots
-      ctx.fillStyle = '#1e293b'; // slate-800
+      ctx.fillStyle = '#1e293b';
       const dots = [
         [0.25, 0.375], [0.2625, 0.4], [0.275, 0.35], [0.225, 0.325],
         [0.1875, 0.425], [0.35, 0.625], [0.3625, 0.675], [0.3375, 0.7],
@@ -161,34 +162,29 @@ export default function GlobalThreatMap() {
       ];
 
       dots.forEach(([px, py]) => {
-        ctx!.beginPath();
-        ctx!.arc(px * width, py * height, 2, 0, Math.PI * 2);
-        ctx!.fill();
+        ctx.beginPath();
+        ctx.arc(px * width, py * height, 2, 0, Math.PI * 2);
+        ctx.fill();
       });
 
       const itemsToRender = streamedAttacks.length > 0 ? streamedAttacks : MOCK_ATTACKS;
 
-      // Render attacks
       itemsToRender.forEach((attack) => {
-        // Approximate lat/lng to canvas x/y
         const x = ((attack.lng + 180) / 360) * width;
         const y = ((90 - attack.lat) / 180) * height;
 
         const isHighSeverity = attack.severity === 'high' || attack.severity === 'critical';
 
-        // Base dot
-        ctx!.beginPath();
-        ctx!.arc(x, y, 3, 0, Math.PI * 2);
-        ctx!.fillStyle = isHighSeverity ? '#ef4444' : '#00f0ff'; // Crimson for high severity, Cyan for normal
-        ctx!.fill();
+        ctx.beginPath();
+        ctx.arc(x, y, 3, 0, Math.PI * 2);
+        ctx.fillStyle = isHighSeverity ? '#ef4444' : '#00f0ff';
+        ctx.fill();
 
-        // Label
-        ctx!.fillStyle = '#94a3b8'; // slate-400
-        ctx!.font = '10px monospace';
-        ctx!.fillText(attack.country || 'XX', x + 8, y + 4);
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '10px monospace';
+        ctx.fillText(attack.country || 'XX', x + 8, y + 4);
       });
 
-      // Render active pulses
       pulses.forEach(pulse => {
         const x = ((pulse.lng + 180) / 360) * width;
         const y = ((90 - pulse.lat) / 180) * height;
@@ -197,28 +193,25 @@ export default function GlobalThreatMap() {
 
         if (age < 2000) {
           const progress = age / 2000;
-          const radius = 3 + (progress * 32); // arbitrary scale for intensity
+          const radius = 3 + (progress * 32);
           const opacity = 1 - progress;
 
-          ctx!.beginPath();
-          ctx!.arc(x, y, radius, 0, Math.PI * 2);
-          ctx!.strokeStyle = isHighSeverity ? `rgba(239, 68, 68, ${opacity})` : `rgba(0, 240, 255, ${opacity})`;
-          ctx!.lineWidth = 2;
-          ctx!.stroke();
+          ctx.beginPath();
+          ctx.arc(x, y, radius, 0, Math.PI * 2);
+          ctx.strokeStyle = isHighSeverity ? `rgba(239, 68, 68, ${opacity})` : `rgba(0, 240, 255, ${opacity})`;
+          ctx.lineWidth = 2;
+          ctx.stroke();
 
-          // Render trajectory arc to arbitrary center (representing Edge / Origin)
           const targetX = width / 2;
           const targetY = height / 2;
 
-          ctx!.beginPath();
-          ctx!.moveTo(x, y);
-          // control point for arc
+          ctx.beginPath();
+          ctx.moveTo(x, y);
           const cpX = (x + targetX) / 2;
           const cpY = Math.min(y, targetY) - 50;
-          ctx!.quadraticCurveTo(cpX, cpY, targetX, targetY);
+          ctx.quadraticCurveTo(cpX, cpY, targetX, targetY);
 
-          // Gradient for arc
-          const grad = ctx!.createLinearGradient(x, y, targetX, targetY);
+          const grad = ctx.createLinearGradient(x, y, targetX, targetY);
           if (isHighSeverity) {
              grad.addColorStop(0, `rgba(239, 68, 68, ${opacity * 0.5})`);
              grad.addColorStop(1, 'rgba(239, 68, 68, 0)');
@@ -227,9 +220,9 @@ export default function GlobalThreatMap() {
              grad.addColorStop(1, 'rgba(0, 240, 255, 0)');
           }
 
-          ctx!.strokeStyle = grad;
-          ctx!.lineWidth = 1;
-          ctx!.stroke();
+          ctx.strokeStyle = grad;
+          ctx.lineWidth = 1;
+          ctx.stroke();
         }
       });
 
@@ -242,7 +235,17 @@ export default function GlobalThreatMap() {
       clearInterval(pulseInterval);
       cancelAnimationFrame(animationFrameId);
     };
-  }, [pulses, streamedAttacks]);
+  }, [mounted, pulses, streamedAttacks]);
+
+  if (!mounted) {
+    return (
+      <div className="w-full h-full relative bg-slate-950 rounded-xl border border-slate-800 flex items-center justify-center p-4">
+        <div className="border border-slate-800/50 bg-slate-950/20 rounded font-mono p-6 text-center text-xs text-slate-500">
+          Loading Tactical View...
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div ref={containerRef} className="w-full h-full relative bg-slate-950 rounded-xl border border-slate-800 overflow-hidden flex items-center justify-center p-4">

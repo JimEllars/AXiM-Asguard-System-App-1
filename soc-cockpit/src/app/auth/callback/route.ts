@@ -3,6 +3,16 @@ import type { NextRequest } from 'next/server';
 
 export async function GET(request: NextRequest) {
   const token = request.nextUrl.searchParams?.get('token');
+  const code = request.nextUrl.searchParams?.get('code');
+
+  if (code) {
+     // PKCE code exchange placeholder for future Supabase direct auth
+     // the route currently handles a custom SSO token
+     console.log("Received Supabase Auth Code", code);
+     // Note: If using pure Supabase auth, exchange code for session here and redirect.
+     // For fail-safe redirection:
+     return NextResponse.redirect(new URL('/', request.url));
+  }
 
   if (!token) {
     return NextResponse.redirect(new URL('https://passport.axim.us.com/login?redirect_to=https://asguard.axim.us.com', request.url));

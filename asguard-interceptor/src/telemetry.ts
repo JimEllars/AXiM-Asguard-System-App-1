@@ -273,3 +273,29 @@ export function logAIFailure(errorMsg: string, env?: any, ctx?: any) {
 
   return logEntry;
 }
+import { AsguardTelemetryEvent } from './telemetry_events';
+
+// Export shared interface for cross-repo use (or just define it here)
+export { AsguardTelemetryEvent };
+
+export async function sendTelemetryToCockpit(payload: AsguardTelemetryEvent, env: any) {
+  const url = env.COCKPIT_INGEST_URL || 'http://localhost:3000/api/ingest';
+  const token = env.INGEST_TOKEN || 'default_ingest_token';
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) {
+       console.warn(`Cockpit telemetry ingest failed: ${res.status}`);
+    }
+  } catch (error) {
+     console.error("Failed to send telemetry to cockpit", error);
+  }
+}
