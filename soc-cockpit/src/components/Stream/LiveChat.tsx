@@ -32,13 +32,15 @@ interface LiveChatProps {
 
 export default function LiveChat({ isAuthenticated = false }: LiveChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { id: 1, user: 'System', text: 'Chat active. Awaiting broadcast.', time: '12:00 PM', isSystem: true },
-    { id: 2, user: 'WeatherWatcher99', text: 'Looks like the storm front is shifting west.', time: '12:01 PM', isSystem: false },
-    { id: 3, user: 'StormChaserBob', text: 'Checking radar now, massive cell developing.', time: '12:03 PM', isSystem: false }
+    { id: 1, user: 'System', text: 'Chat active. Awaiting broadcast.', time: new Date().toISOString().substring(11, 16) + ' UTC', isSystem: true },
   ]);
   const [inputValue, setInputValue] = useState('');
   const [isReconnecting, setIsReconnecting] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [latency, setLatency] = useState<number | null>(null);
+  const [hasError, setHasError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const activeStreamContent = useRef<string>('');
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -67,20 +69,107 @@ export default function LiveChat({ isAuthenticated = false }: LiveChatProps) {
     };
   }, []);
 
-  // Basic sanitization to prevent XSS in chat
   const sanitizeInput = (str: string) => {
     return str.replace(/[<>]/g, (match) => {
       return match === '<' ? '&lt;' : '&gt;';
     });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputValue.trim() || !isAuthenticated) return;
+  const handleSendToAI = async (text: string) => {
+    setIsGenerating(true);
+    setHasError(null);
+    setLatency(null);
+    activeStreamContent.current = '';
+
+    const newAiMessageId = Date.now() + 1;
+
+    setMessages(prev => [
+      ...prev,
+      {
+        id: newAiMessageId,
+        user: 'DeepSeek',
+        text: '',
+        time: new Date().toISOString().substring(11, 16) + ' UTC',
+        isSystem: false
+      }
+    ]);
+
+    const apiMessages = messages
+      .filter(m => !m.isSystem)
+      .map(m => ({
+        role: m.user === 'You' ? 'user' : 'assistant',
+        content: m.text
+      })) as { role: 'user' | 'assistant', content: string }[];
+
+    apiMessages.push({ role: 'user', content: text });
+
+    const startTime = Date.now();
+
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ messages: apiMessages })
+      });
+
+      if (!response.ok) {
+        if (response.status === 503) {
+          setHasError('Config Required');
+          throw new Error('AI service offline: DEEPSEEK_API_KEY not configured');
+        }
+        setHasError('Error');
+        throw new Error(`Error: ${response.statusText}`);
+      }
+
+      setLatency(Date.now() - startTime);
+
+      if (response.body) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          // Process SSE chunks
+          const lines = chunk.split('\n');
+          for (const line of lines) {
+            if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+              try {
+                const data = JSON.parse(line.slice(6));
+                const content = data.choices[0]?.delta?.content || '';
+                if (content) {
+                  activeStreamContent.current += content;
+                  setMessages(prev => prev.map(m =>
+                    m.id === newAiMessageId ? { ...m, text: activeStreamContent.current } : m
+                  ));
+                }
+              } catch (e) {
+                // Ignore parse errors on incomplete chunks
+              }
+            }
+          }
+        }
+      }
+    } catch (err: any) {
+      setMessages(prev => prev.map(m =>
+        m.id === newAiMessageId ? { ...m, text: `[Error: ${err.message}]` } : m
+      ));
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!inputValue.trim() || !isAuthenticated || isGenerating) return;
 
     const sanitizedText = sanitizeInput(inputValue.trim());
 
-    setMessages([...messages, {
+    setMessages(prev => [...prev, {
       id: Date.now(),
       user: 'You',
       text: sanitizedText,
@@ -88,28 +177,65 @@ export default function LiveChat({ isAuthenticated = false }: LiveChatProps) {
       isSystem: false
     }]);
     setInputValue('');
+
+    handleSendToAI(sanitizedText);
+  };
+
+  const handleTestPing = () => {
+    if (!isAuthenticated || isGenerating) return;
+    const prompt = "Ping: Report system threat triage status";
+    setMessages(prev => [...prev, {
+      id: Date.now(),
+      user: 'You',
+      text: prompt,
+      time: new Date().toISOString().substring(11, 16) + ' UTC',
+      isSystem: false
+    }]);
+    handleSendToAI(prompt);
   };
 
   return (
     <div className="flex flex-col h-full bg-slate-950 border border-slate-800 rounded-xl overflow-hidden shadow-2xl">
-
       {/* Chat Header */}
       <div className="bg-slate-900 border-b border-slate-800 p-4 flex items-center justify-between">
         <h3 className="font-semibold text-slate-200 flex items-center gap-2">
           <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z"></path></svg>
           Ecosystem Comms
         </h3>
-        <div className="flex items-center gap-2 text-xs font-mono">
-          {isReconnecting ? (
-            <span className="text-amber-500 animate-pulse">Reconnecting...</span>
-          ) : (
-            <>
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-              </span>
-              <span className="text-emerald-400">142 ONLINE</span>
-            </>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleTestPing}
+            disabled={!isAuthenticated || isGenerating}
+            className="text-xs bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-blue-400 px-2 py-1 rounded border border-slate-700 transition-colors"
+          >
+            Test Ping
+          </button>
+
+          <div className="flex items-center gap-2 text-xs font-mono">
+            {isReconnecting ? (
+              <span className="text-amber-500 animate-pulse">Reconnecting...</span>
+            ) : hasError === 'Config Required' ? (
+               <span className="text-amber-400 border border-amber-400/50 bg-amber-950/30 px-2 py-0.5 rounded">Config Required</span>
+            ) : hasError ? (
+               <span className="text-rose-500 border border-rose-500/50 bg-rose-950/30 px-2 py-0.5 rounded">Error</span>
+            ) : (
+              <>
+                <span className="relative flex h-2 w-2">
+                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isGenerating ? 'bg-blue-400' : 'bg-emerald-400'}`}></span>
+                  <span className={`relative inline-flex rounded-full h-2 w-2 ${isGenerating ? 'bg-blue-500' : 'bg-emerald-500'}`}></span>
+                </span>
+                <span className={isGenerating ? "text-blue-400" : "text-emerald-400"}>
+                  {isGenerating ? "DeepSeek Computing..." : "DeepSeek Online"}
+                </span>
+              </>
+            )}
+          </div>
+
+          {latency !== null && !isGenerating && (
+             <div className="text-[10px] text-slate-500 font-mono hidden sm:block">
+               {latency}ms
+             </div>
           )}
         </div>
       </div>
@@ -125,12 +251,19 @@ export default function LiveChat({ isAuthenticated = false }: LiveChatProps) {
             ) : (
               <div>
                 <span className="text-xs text-slate-500 mr-2">{msg.time}</span>
-                <span className="font-semibold text-blue-400 mr-2">{msg.user}:</span>
-                <span className="text-slate-300">{msg.text}</span>
+                <span className={`font-semibold mr-2 ${msg.user === 'DeepSeek' ? 'text-indigo-400' : 'text-blue-400'}`}>
+                  {msg.user}:
+                </span>
+                <span className="text-slate-300 whitespace-pre-wrap leading-relaxed">{msg.text}</span>
               </div>
             )}
           </div>
         ))}
+        {hasError === 'Config Required' && (
+           <div className="text-center bg-amber-950/20 border border-amber-900/50 p-2 rounded text-xs text-amber-500 my-2">
+             ⚠️ AI service offline: DEEPSEEK_API_KEY not configured
+           </div>
+        )}
         <div ref={messagesEndRef} />
       </div>
 
@@ -143,11 +276,12 @@ export default function LiveChat({ isAuthenticated = false }: LiveChatProps) {
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               placeholder="Send message to ecosystem..."
-              className="flex-1 bg-slate-950 border border-slate-700 rounded text-slate-200 px-3 py-2 text-sm focus:outline-none focus:border-blue-500 transition-colors"
+              disabled={isGenerating}
+              className="flex-1 bg-slate-950 border border-slate-700 rounded text-slate-200 px-3 py-2 text-sm focus:outline-none focus:border-blue-500 transition-colors disabled:opacity-50"
             />
             <button
               type="submit"
-              disabled={!inputValue.trim()}
+              disabled={!inputValue.trim() || isGenerating}
               className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-800 disabled:text-slate-500 text-white px-4 py-2 rounded text-sm font-medium transition-colors"
             >
               Send
