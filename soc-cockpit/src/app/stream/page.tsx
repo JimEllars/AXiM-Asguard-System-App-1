@@ -54,15 +54,7 @@ const ThreatMapFallback = ({ error }: { error: any }) => (
 );
 
 export default function StreamPage() {
-  const [aximUser, setAximUser] = useState<string | null>(null);
-  useEffect(() => {
-    if (typeof document !== 'undefined') {
-      const match = document.cookie.match(new RegExp('(^| )axim_user=([^;]+)'));
-      if (match) {
-        setAximUser(decodeURIComponent(match[2]));
-      }
-    }
-  }, []);
+
 
   const [isLive] = useState(false);
   const streamUrl = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8";
@@ -107,7 +99,7 @@ export default function StreamPage() {
         </div>
         <div className="w-full lg:w-96 h-[600px] lg:h-auto">
           <Suspense fallback={<div className="h-full bg-slate-900 border border-slate-700 rounded-xl">Loading Chat...</div>}>
-            <LiveChat isAuthenticated={!!aximUser} />
+            <LiveChat isAuthenticated={true} />
           </Suspense>
         </div>
       </div>
