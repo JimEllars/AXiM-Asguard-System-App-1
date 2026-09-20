@@ -106,6 +106,11 @@ export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: a
           });
       }
 
+
+      // Add abort controller for 1500ms timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 1500);
+
       const resPromise = fetch(`${supabaseUrl}/rest/v1/telemetry_events`, {
         method: 'POST',
         headers: {
@@ -129,10 +134,13 @@ export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: a
             threatLevel: payload.threatLevel,
             targetVector: payload.targetVector
           }
-        })
-      });
+        }),
+        signal: controller.signal as any
+      }).finally(() => clearTimeout(timeoutId));
+
 
       const [resSettled, _] = await Promise.allSettled([resPromise, fallbackRes]);
+
 
       if (resSettled.status === 'fulfilled') {
           const res = resSettled.value;
@@ -144,6 +152,10 @@ export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: a
                  statusText: res.statusText,
                  timestamp: new Date().toISOString()
              }));
+             // Buffer locally on failure
+             if (env.ASGUARD_TELEMETRY) {
+                 env.ASGUARD_TELEMETRY.put(`audit:${Date.now()}`, JSON.stringify(structuredPayload)).catch((e: any) => console.error("KV Put Error", e));
+             }
           }
       } else {
           console.error(JSON.stringify({
@@ -152,6 +164,10 @@ export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: a
              error: resSettled.reason?.message,
              timestamp: new Date().toISOString()
           }));
+          // Buffer locally on failure
+          if (env.ASGUARD_TELEMETRY) {
+              env.ASGUARD_TELEMETRY.put(`audit:${Date.now()}`, JSON.stringify(structuredPayload)).catch((e: any) => console.error("KV Put Error", e));
+          }
       }
     } catch (error: any) {
        console.error(JSON.stringify({

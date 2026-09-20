@@ -52,6 +52,14 @@ async function proxy(request: Request, context: { params: Promise<{ path: string
   if (contentType) {
     headers.set("Content-Type", contentType);
   }
+  const authHeader = request.headers.get("Authorization");
+  if (authHeader) {
+    headers.set("Authorization", authHeader);
+  }
+  const requestIdHeader = request.headers.get("X-Asguard-Request-ID");
+  if (requestIdHeader) {
+    headers.set("X-Asguard-Request-ID", requestIdHeader);
+  }
 
   try {
     const controller = new AbortController();
