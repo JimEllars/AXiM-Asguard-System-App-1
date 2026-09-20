@@ -5,23 +5,27 @@ export interface AIMessage {
 }
 
 export interface AIClientOptions {
-  model?: "deepseek-flash" | "deepseek-v4-pro";
+  model?: "deepseek-flash" | "deepseek-v4-pro" | string;
   userId: string;
   apiKey?: string;
   anthropicApiKey?: string;
   onTelemetry?: (usage: any, provider: string, ttft: number, failover: boolean) => void;
   onError?: (errorMsg: string) => void;
+  baseUrl?: string;
 }
 
 export class AIClient {
-  private deepseekEndpoint = "https://api.deepseek.com/chat/completions";
   private anthropicEndpoint = "https://api.anthropic.com/v1/messages";
 
   constructor(private options: AIClientOptions) {}
 
   public async generate(messages: AIMessage[], stream: boolean = false) {
+    const deepseekEndpoint = this.options.baseUrl
+      ? `${this.options.baseUrl}/chat/completions`
+      : "https://api.deepseek.com/chat/completions";
+
     const payload = {
-      model: this.options.model || "deepseek-flash",
+      model: this.options.model || "deepseek-chat",
       thinking: { type: "enabled" },
       reasoning_effort: "high",
       messages,
@@ -36,7 +40,7 @@ export class AIClient {
       const timeout = setTimeout(() => controller.abort(), 4500);
 
       try {
-        response = await fetch(this.deepseekEndpoint, {
+        response = await fetch(deepseekEndpoint, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

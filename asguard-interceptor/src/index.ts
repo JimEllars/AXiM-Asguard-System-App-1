@@ -41,6 +41,8 @@ export interface Env {
   TELEMETRY_INGEST_KEY?: string;
   DEEPSEEK_API_KEY?: string;
   ANTHROPIC_API_KEY?: string;
+  DEEPSEEK_BASE_URL?: string;
+  DEEPSEEK_MODEL?: string;
 }
 
 const corsHeaders = {
@@ -86,6 +88,8 @@ async function analyzeThreat(payload: unknown, env: Env): Promise<Response> {
   const aiClient = new AIClient({
     userId: (parsedPayload.data as any).correlationId || "asguard-analyst",
     apiKey: env.DEEPSEEK_API_KEY,
+    baseUrl: env.DEEPSEEK_BASE_URL,
+    model: env.DEEPSEEK_MODEL,
     anthropicApiKey: env.ANTHROPIC_API_KEY,
     onTelemetry: (usage, provider, ttft, failover) => {
        // Using an empty context block since we don't have ctx directly in this function

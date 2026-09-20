@@ -4,8 +4,19 @@ export interface AIMessage {
   reasoning_content?: string;
 }
 
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
+export interface DeepSeekStreamOptions {
+  model?: string;
+  temperature?: number;
+  max_tokens?: number;
+}
+
 export interface AIClientOptions {
-  model?: "deepseek-flash" | "deepseek-v4-pro";
+  model?: "deepseek-flash" | "deepseek-v4-pro" | string;
   userId: string;
   apiKey?: string;
   anthropicApiKey?: string;
@@ -13,14 +24,14 @@ export interface AIClientOptions {
 }
 
 export class AIClient {
-  private deepseekEndpoint = "https://api.deepseek.com/chat/completions";
+  private deepseekEndpoint = process.env.DEEPSEEK_BASE_URL ? `${process.env.DEEPSEEK_BASE_URL}/chat/completions` : "https://api.deepseek.com/chat/completions";
   private anthropicEndpoint = "https://api.anthropic.com/v1/messages";
 
   constructor(private options: AIClientOptions) {}
 
   public async generate(messages: AIMessage[], stream: boolean = false) {
     const payload = {
-      model: this.options.model || "deepseek-flash",
+      model: this.options.model || process.env.DEEPSEEK_MODEL || "deepseek-chat",
       thinking: { type: "enabled" },
       reasoning_effort: "high",
       messages,
@@ -104,4 +115,69 @@ export class AIClient {
       throw e;
     }
   }
+}
+
+export async function createDeepSeekChatStream(
+  messages: ChatMessage[],
+  options?: DeepSeekStreamOptions
+): Promise<ReadableStream<Uint8Array>> {
+  const deepseekEndpoint = process.env.DEEPSEEK_BASE_URL
+    ? `${process.env.DEEPSEEK_BASE_URL}/chat/completions`
+    : "https://api.deepseek.com/chat/completions";
+
+  const payload = {
+    model: options?.model || process.env.DEEPSEEK_MODEL || "deepseek-chat",
+    messages: [
+      { role: "system", content: "You are a concise, threat-analysis focused AXiM SOC operations assistant. Provide technical clarity." },
+      ...messages
+    ],
+    temperature: options?.temperature ?? 0.7,
+    max_tokens: options?.max_tokens ?? 2000,
+    stream: true,
+  };
+
+  let attempt = 0;
+  const maxRetries = 2;
+
+  while (attempt <= maxRetries) {
+    try {
+      const response = await fetch(deepseekEndpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        if (response.status === 429 || (response.status >= 500 && response.status < 600)) {
+          if (attempt < maxRetries) {
+            attempt++;
+            const backoff = Math.pow(2, attempt) * 1000;
+            await new Promise(r => setTimeout(r, backoff));
+            continue;
+          }
+        }
+        throw new Error(`DeepSeek API error: ${response.status}`);
+      }
+
+      if (!response.body) {
+        throw new Error("No response body returned from DeepSeek");
+      }
+
+      return response.body;
+
+    } catch (err: any) {
+      if (attempt < maxRetries) {
+        attempt++;
+        const backoff = Math.pow(2, attempt) * 1000;
+        await new Promise(r => setTimeout(r, backoff));
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  throw new Error("Failed to create DeepSeek stream");
 }
