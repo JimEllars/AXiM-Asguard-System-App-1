@@ -37,6 +37,7 @@ export default function LiveChat({ isAuthenticated = false }: LiveChatProps) {
   const [inputValue, setInputValue] = useState('');
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isThinking, setIsThinking] = useState(false);
   const [latency, setLatency] = useState<number | null>(null);
   const [hasError, setHasError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -104,6 +105,9 @@ export default function LiveChat({ isAuthenticated = false }: LiveChatProps) {
     apiMessages.push({ role: 'user', content: text });
 
     const startTime = Date.now();
+    setIsThinking(false);
+    setIsThinking(false);
+    setIsThinking(false);
 
     try {
       const response = await fetch('/api/chat', {
@@ -114,7 +118,11 @@ export default function LiveChat({ isAuthenticated = false }: LiveChatProps) {
         body: JSON.stringify({ messages: apiMessages })
       });
 
-      if (!response.ok) {
+            if (!response.ok) {
+        if (response.status === 401) {
+          setHasError('Session Expired');
+          throw new Error('Session expired. Please re-authenticate.');
+        }
         if (response.status === 503) {
           setHasError('Config Required');
           throw new Error('AI service offline: DEEPSEEK_API_KEY not configured');
@@ -122,24 +130,34 @@ export default function LiveChat({ isAuthenticated = false }: LiveChatProps) {
         setHasError('Error');
         throw new Error(`Error: ${response.statusText}`);
       }
-
-      setLatency(Date.now() - startTime);
-
       if (response.body) {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
+        let buffer = '';
 
         while (true) {
           const { value, done } = await reader.read();
-          if (done) break;
+          if (done) {
+            setLatency(Date.now() - startTime);
+            setIsThinking(false);
+            break;
+          }
 
-          const chunk = decoder.decode(value, { stream: true });
-          // Process SSE chunks
-          const lines = chunk.split('\n');
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || ''; // Preserve incomplete trailing chunk
+
           for (const line of lines) {
             if (line.startsWith('data: ') && line !== 'data: [DONE]') {
               try {
                 const data = JSON.parse(line.slice(6));
+
+                if (data.choices[0]?.delta?.reasoning_content) {
+                  setIsThinking(true);
+                } else if (data.choices[0]?.delta?.content) {
+                  setIsThinking(false);
+                }
+
                 const content = data.choices[0]?.delta?.content || '';
                 if (content) {
                   activeStreamContent.current += content;
@@ -183,7 +201,7 @@ export default function LiveChat({ isAuthenticated = false }: LiveChatProps) {
 
   const handleTestPing = () => {
     if (!isAuthenticated || isGenerating) return;
-    const prompt = "Ping: Report system threat triage status";
+    const prompt = "Ping: Verify DeepSeek link connectivity and report system threat status.";
     setMessages(prev => [...prev, {
       id: Date.now(),
       user: 'You',
@@ -215,6 +233,12 @@ export default function LiveChat({ isAuthenticated = false }: LiveChatProps) {
           <div className="flex items-center gap-2 text-xs font-mono">
             {isReconnecting ? (
               <span className="text-amber-500 animate-pulse">Reconnecting...</span>
+                        ) : hasError === 'Session Expired' ? (
+               <span className="text-rose-500 border border-rose-500/50 bg-rose-950/30 px-2 py-0.5 rounded">Session Expired</span>
+                        ) : hasError === 'Session Expired' ? (
+               <span className="text-rose-500 border border-rose-500/50 bg-rose-950/30 px-2 py-0.5 rounded">Session Expired</span>
+                        ) : hasError === 'Session Expired' ? (
+               <span className="text-rose-500 border border-rose-500/50 bg-rose-950/30 px-2 py-0.5 rounded">Session Expired</span>
             ) : hasError === 'Config Required' ? (
                <span className="text-amber-400 border border-amber-400/50 bg-amber-950/30 px-2 py-0.5 rounded">Config Required</span>
             ) : hasError ? (
@@ -225,8 +249,8 @@ export default function LiveChat({ isAuthenticated = false }: LiveChatProps) {
                   <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isGenerating ? 'bg-blue-400' : 'bg-emerald-400'}`}></span>
                   <span className={`relative inline-flex rounded-full h-2 w-2 ${isGenerating ? 'bg-blue-500' : 'bg-emerald-500'}`}></span>
                 </span>
-                <span className={isGenerating ? "text-blue-400" : "text-emerald-400"}>
-                  {isGenerating ? "DeepSeek Computing..." : "DeepSeek Online"}
+                <span className={isThinking ? "text-purple-400" : isGenerating ? "text-blue-400" : "text-emerald-400"}>
+                  {isThinking ? "DeepSeek Reasoning..." : isThinking ? "DeepSeek Reasoning..." : isThinking ? "DeepSeek Reasoning..." : isGenerating ? "DeepSeek Computing..." : "DeepSeek Online"}
                 </span>
               </>
             )}
@@ -259,6 +283,21 @@ export default function LiveChat({ isAuthenticated = false }: LiveChatProps) {
             )}
           </div>
         ))}
+                {hasError === 'Session Expired' && (
+           <div className="text-center bg-rose-950/20 border border-rose-900/50 p-2 rounded text-xs text-rose-500 my-2">
+             ⚠️ Session expired. Please re-authenticate.
+           </div>
+        )}
+        {hasError === 'Session Expired' && (
+           <div className="text-center bg-rose-950/20 border border-rose-900/50 p-2 rounded text-xs text-rose-500 my-2">
+             ⚠️ Session expired. Please re-authenticate.
+           </div>
+        )}
+        {hasError === 'Session Expired' && (
+           <div className="text-center bg-rose-950/20 border border-rose-900/50 p-2 rounded text-xs text-rose-500 my-2">
+             ⚠️ Session expired. Please re-authenticate.
+           </div>
+        )}
         {hasError === 'Config Required' && (
            <div className="text-center bg-amber-950/20 border border-amber-900/50 p-2 rounded text-xs text-amber-500 my-2">
              ⚠️ AI service offline: DEEPSEEK_API_KEY not configured

@@ -25,7 +25,7 @@ export class AIClient {
       : "https://api.deepseek.com/chat/completions";
 
     const payload = {
-      model: this.options.model || "deepseek-chat",
+      model: this.options.model || "deepseek-flash",
       thinking: { type: "enabled" },
       reasoning_effort: "high",
       messages,

@@ -10,6 +10,8 @@ export interface ChatMessage {
 }
 
 export interface DeepSeekStreamOptions {
+  apiKey?: string;
+  baseUrl?: string;
   model?: string;
   temperature?: number;
   max_tokens?: number;
@@ -121,12 +123,11 @@ export async function createDeepSeekChatStream(
   messages: ChatMessage[],
   options?: DeepSeekStreamOptions
 ): Promise<ReadableStream<Uint8Array>> {
-  const deepseekEndpoint = process.env.DEEPSEEK_BASE_URL
-    ? `${process.env.DEEPSEEK_BASE_URL}/chat/completions`
-    : "https://api.deepseek.com/chat/completions";
+  const deepseekEndpoint = `${options?.baseUrl || 'https://api.deepseek.com/v1'}/chat/completions`;
+  const apiKey = options?.apiKey || process.env.DEEPSEEK_API_KEY;
 
-  const payload = {
-    model: options?.model || process.env.DEEPSEEK_MODEL || "deepseek-chat",
+const payload = {
+    model: options?.model || "deepseek-flash",
     messages: [
       { role: "system", content: "You are a concise, threat-analysis focused AXiM SOC operations assistant. Provide technical clarity." },
       ...messages
@@ -145,7 +146,7 @@ export async function createDeepSeekChatStream(
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+          Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify(payload),
       });

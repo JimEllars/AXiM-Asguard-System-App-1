@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { createDeepSeekChatStream, ChatMessage } from '@/utils/aiClient';
 
 export const runtime = 'edge';
@@ -14,7 +15,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!process.env.DEEPSEEK_API_KEY) {
+    let env: any = {};
+    try {
+      env = getCloudflareContext().env || {};
+    } catch {
+      env = (typeof process !== 'undefined' ? process.env : {}) || {};
+    }
+
+    const apiKey = env.DEEPSEEK_API_KEY || process?.env?.DEEPSEEK_API_KEY;
+    const baseUrl = env.DEEPSEEK_BASE_URL || process?.env?.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1';
+    const model = env.DEEPSEEK_MODEL || process?.env?.DEEPSEEK_MODEL || 'deepseek-flash';
+
+    if (!apiKey) {
       return NextResponse.json({ error: "AI service offline: DEEPSEEK_API_KEY not configured" }, { status: 503 });
     }
 
@@ -41,7 +53,9 @@ export async function POST(request: NextRequest) {
 
     const startTime = Date.now();
     const chatStream = await createDeepSeekChatStream(messages, {
-      model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
+      model,
+      apiKey,
+      baseUrl
     });
     const ttft = Date.now() - startTime;
 
@@ -56,7 +70,7 @@ export async function POST(request: NextRequest) {
           },
           body: JSON.stringify({
             event: 'chat_inference',
-            model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
+                        model,
             ttft,
             timestamp: Date.now()
           })
