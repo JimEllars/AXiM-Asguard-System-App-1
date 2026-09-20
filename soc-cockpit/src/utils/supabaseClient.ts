@@ -1,19 +1,30 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mock.supabase.co';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'mock-anon-key';
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-// Defensive initialization wrapper
 let client;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.warn(JSON.stringify({
+    level: "warn",
+    message: "Supabase credentials are empty or misconfigured. Falling back to dummy read-only client.",
+    timestamp: new Date().toISOString()
+  }));
+}
+
 try {
-  // Use options suitable for Edge environment
-  client = createClient(supabaseUrl, supabaseAnonKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false
-    }
-  });
+  if (supabaseUrl && supabaseAnonKey) {
+    client = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false
+      }
+    });
+  } else {
+    throw new Error("Missing Supabase credentials");
+  }
 } catch (e) {
   console.warn(JSON.stringify({
     level: "warn",
@@ -25,16 +36,24 @@ try {
   client = {
      channel: () => ({
         on: () => ({ subscribe: () => {} }),
-        subscribe: () => {}
+        subscribe: () => {},
+        unsubscribe: () => Promise.resolve()
      }),
      from: () => ({
         select: () => ({
            eq: () => ({
               single: () => Promise.resolve({ data: null, error: null }),
               limit: () => Promise.resolve({ data: [], error: null })
+           }),
+           order: () => ({
+              range: () => Promise.resolve({ data: [], error: null }),
+              limit: () => Promise.resolve({ data: [], error: null })
            })
         }),
-        insert: () => Promise.resolve({ data: null, error: null })
+        insert: () => Promise.resolve({ data: null, error: null }),
+        delete: () => ({
+           eq: () => Promise.resolve({ data: null, error: null })
+        })
      }),
      auth: {
         getSession: () => Promise.resolve({ data: { session: null }, error: null }),
