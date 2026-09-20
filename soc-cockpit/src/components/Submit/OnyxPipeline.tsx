@@ -328,11 +328,17 @@ clearTimeout(timeoutId);
         )}
 
         {stage === 'THREAT_ASSESSED' && (
-          <div className="bg-emerald-950/50 border border-emerald-900 text-emerald-400 px-4 py-4 rounded text-sm font-mono flex flex-col justify-center items-start shadow-[0_0_15px_rgba(16,185,129,0.1)]">
-            <span className="font-bold tracking-wider">[SUCCESS] File successfully analyzed and mitigated.</span>
-            <div className="flex gap-4 mt-2">
-                {edgeTraceId && <span className="text-xs text-emerald-600 bg-emerald-950 px-2 py-1 border border-emerald-900/50 rounded">Trace ID: {edgeTraceId}</span>}
-                {triageStatus && <span className="text-xs text-amber-500 bg-amber-950 px-2 py-1 border border-amber-900/50 rounded uppercase">Triage: {triageStatus}</span>}
+          <div className="bg-emerald-950/50 border border-emerald-900 text-emerald-400 px-4 py-4 rounded text-sm font-mono flex flex-col justify-center items-start shadow-[0_0_15px_rgba(16,185,129,0.1)] animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <span className="font-bold tracking-wider flex items-center gap-2">
+              <svg className="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+              [SUCCESS] File successfully analyzed and mitigated.
+            </span>
+            <div className="flex gap-4 mt-3">
+                {edgeTraceId && <span className="text-xs text-emerald-300 bg-emerald-900/40 px-2.5 py-1 border border-emerald-800/50 rounded-full">Trace ID: {edgeTraceId}</span>}
+                {triageStatus && <span className="text-xs text-amber-300 bg-amber-900/40 px-2.5 py-1 border border-amber-800/50 rounded-full uppercase flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                  Triage: {triageStatus}
+                </span>}
             </div>
           </div>
         )}

@@ -264,6 +264,16 @@ export default function GlobalThreatMap() {
            <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(0,240,255,0.8)]"></span> <span className="text-slate-400">Blocked Edge Probes</span></div>
            <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]"></span> <span className="text-slate-400">Quarantined Attacks</span></div>
         </div>
+        <div className="flex gap-2 mt-3 text-[10px] font-mono">
+            {streamConnected ? (
+              <span className="px-2 py-1 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-900/50">ACTIVE MONITORING</span>
+            ) : (
+              <span className="px-2 py-1 rounded bg-amber-950/80 text-amber-400 border border-amber-900/50 animate-pulse">RECONNECTING...</span>
+            )}
+            {streamedAttacks.length > 0 && (
+              <span className="px-2 py-1 rounded bg-red-950/80 text-red-400 border border-red-900/50">INTERCEPTED: {streamedAttacks.length}</span>
+            )}
+        </div>
         <div className="mt-2 text-[10px] text-slate-500 font-mono flex items-center gap-2">
             <span>PACKET LATENCY:</span>
             <span className={packetLatency > 500 ? 'text-amber-400' : 'text-emerald-400'}>{packetLatency}ms</span>
