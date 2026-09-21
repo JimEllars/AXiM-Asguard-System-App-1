@@ -124,6 +124,11 @@ export async function middleware(request: NextRequest) {
           await supabase.auth.getUser(); // This will refresh the token in the background if expired
         } catch(e: any) {
           console.warn("Supabase auth refresh failed softly in middleware", e.message);
+          // Graceful fallback for protected routes if Supabase auth fails completely
+          if (!pathname.startsWith('/api/') && !token) {
+            const redirectUrl = `https://passport.axim.us.com/login?redirect_to=https://asguard.axim.us.com`;
+            return NextResponse.redirect(redirectUrl, 307);
+          }
         }
     }
 

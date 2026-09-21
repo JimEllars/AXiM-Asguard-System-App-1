@@ -111,6 +111,8 @@ export default function LiveThreatFeed() {
   const pathname = usePathname();
 
     const [mounted, setMounted] = useState(false);
+  const [status, setStatus] = useState<'ONLINE' | 'RECONNECTING' | 'STANDBY'>('STANDBY');
+  const [esConnected, setEsConnected] = useState(false);
   useEffect(() => {
     setMounted(true);
   }, []);

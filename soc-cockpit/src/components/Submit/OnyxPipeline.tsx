@@ -1,4 +1,33 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, Component, ErrorInfo, ReactNode } from 'react';
+
+interface ErrorBoundaryProps {
+  children: ReactNode;
+}
+interface ErrorBoundaryState {
+  hasError: boolean;
+}
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError(_: Error): ErrorBoundaryState {
+    return { hasError: true };
+  }
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('OnyxPipeline caught an error:', error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-6 border border-red-500/50 bg-red-950/20 rounded font-mono text-center text-xs text-red-500">
+          Component crashed. Check console for details.
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export type PipelineStage = 'IDLE' | 'VALIDATING' | 'QUEUED_TO_ONYX' | 'EXTRACTING_FEATURES' | 'AI_INFERENCE' | 'THREAT_ASSESSED' | 'FAILED';
 
@@ -12,7 +41,7 @@ interface ToastData {
   message: string;
 }
 
-export default function OnyxPipeline() {
+function OnyxPipelineInner() {
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [stage, setStage] = useState<PipelineStage>('IDLE');
@@ -26,7 +55,13 @@ export default function OnyxPipeline() {
 
   const handleQuarantine = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
-    if (!quarantineIp) return;
+
+    // Strict client-side validation
+    const ipRegex = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/;
+    if (!quarantineIp || !ipRegex.test(quarantineIp)) {
+        setToast({ type: 'error', message: 'Invalid IPv4 address format.' });
+        return;
+    }
     setIsQuarantining(true);
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_INTERCEPTOR_URL}/api/v1/blocklist/add`, {
@@ -387,5 +422,14 @@ clearTimeout(timeoutId);
       </div>
 
     </div>
+  );
+}
+
+
+export default function OnyxPipeline() {
+  return (
+    <ErrorBoundary>
+      <OnyxPipelineInner />
+    </ErrorBoundary>
   );
 }
