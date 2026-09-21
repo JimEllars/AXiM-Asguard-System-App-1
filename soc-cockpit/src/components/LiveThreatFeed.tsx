@@ -184,9 +184,9 @@ export default function LiveThreatFeed() {
   }, []);
 
   const filteredDlq = dlqRecords.filter(record =>
-    record.originNode.toLowerCase().includes(debouncedDlqSearch.toLowerCase()) ||
-    record.droppedRoute.toLowerCase().includes(debouncedDlqSearch.toLowerCase()) ||
-    record.errorReason.toLowerCase().includes(debouncedDlqSearch.toLowerCase())
+    (record.originNode || '').toLowerCase().includes((debouncedDlqSearch || '').toLowerCase()) ||
+    (record.droppedRoute || '').toLowerCase().includes((debouncedDlqSearch || '').toLowerCase()) ||
+    (record.errorReason || '').toLowerCase().includes((debouncedDlqSearch || '').toLowerCase())
   ).slice(0, 30);
 
 
@@ -656,8 +656,8 @@ export default function LiveThreatFeed() {
       if (searchQuery.trim() !== '') {
         const query = searchQuery.toLowerCase();
         matchesSearch =
-          event.sourceIp.toLowerCase().includes(query) ||
-          getEventName(event.eventType).toLowerCase().includes(query) ||
+          (event.sourceIp || '').toLowerCase().includes(query) ||
+          (getEventName(event.eventType) || '').toLowerCase().includes(query) ||
           JSON.stringify(event.details || {}).toLowerCase().includes(query);
       }
 
@@ -676,7 +676,7 @@ export default function LiveThreatFeed() {
     if (!auditSearchQuery.trim()) return auditLog;
     const query = auditSearchQuery.toLowerCase();
     return auditLog.filter(event =>
-      event.action.toLowerCase().includes(query) ||
+      (event.action || '').toLowerCase().includes(query) ||
       (event.target && event.target.toLowerCase().includes(query)) ||
       (event.signature && event.signature.toLowerCase().includes(query))
     );

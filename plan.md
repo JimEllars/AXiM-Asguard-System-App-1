@@ -16,3 +16,10 @@
    - Show packet latency and triage status.
 7. **Pre-commit Checks**
    - Run verification and tests.
+
+
+- Added telemetry resilience (exponential backoff & timeouts) to asguard-interceptor.
+- Added schema validation to ingest routes.
+- Hardened SSE streaming with 15s keep-alive heartbeats and abort handling.
+- Implemented defensive UI fallback states and generic ErrorBoundary in Next.js Cockpit.
+- Added universal null-coalescing to all string methods in LiveThreatFeed.tsx.

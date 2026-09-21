@@ -85,3 +85,10 @@ Sprint 3.1 completed:
 - **soc-cockpit API Proxy Robustness**: Enhanced `soc-cockpit/src/app/api/asguard/[...path]/route.ts` to properly forward `Authorization`, `Content-Type`, and `X-Asguard-Request-ID` headers upstream. Wrapped upstream execution in a try/catch, intercepting gateway errors (502, 503, 504) and returning a standard JSON `{ "error": true, "code": "UPSTREAM_UNAVAILABLE", "status": 502 }` payload.
 - **soc-cockpit UI Polishing & Hydration Defense**: Enhanced `LiveThreatFeed.tsx` by wrapping `Date.now()` formatting with the `mounted` check to eliminate SSR hydration mismatches. Upgraded `GlobalThreatMap.tsx` and `OnyxPipeline.tsx` with animated visual status pills (e.g., `ACTIVE MONITORING`, `INTERCEPTED`, `RECONNECTING...`, `SUCCESS`) relying on Tailwind CSS micro-animations.
 - **Verified Builds and Tests**: Ran `npm test` successfully within `asguard-interceptor` (20 tests passed). Successfully compiled `soc-cockpit` with `npm run build` (0 fatal errors).
+
+
+- Added telemetry resilience (exponential backoff & timeouts) to asguard-interceptor.
+- Added schema validation to ingest routes.
+- Hardened SSE streaming with 15s keep-alive heartbeats and abort handling.
+- Implemented defensive UI fallback states and generic ErrorBoundary in Next.js Cockpit.
+- Added universal null-coalescing to all string methods in LiveThreatFeed.tsx.
