@@ -20,7 +20,13 @@ export default async function RootLayout({
 
   let hasAccess = false;
 
-  const jwtSecret = getCloudflareContext().env.ASGUARD_JWT_SECRET;
+  let jwtSecret: string | undefined;
+  try {
+    jwtSecret = getCloudflareContext()?.env?.ASGUARD_JWT_SECRET;
+  } catch {
+    jwtSecret = process.env.ASGUARD_JWT_SECRET;
+  }
+  jwtSecret = jwtSecret || process.env.ASGUARD_JWT_SECRET;
   if (token && jwtSecret) {
     try {
       const decoded = jwt.verify(token, jwtSecret, { algorithms: ["HS256"] }) as {
