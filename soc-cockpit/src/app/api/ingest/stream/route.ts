@@ -19,8 +19,8 @@ export async function POST(request: NextRequest) {
   const startStream = async () => {
     try {
       interval = setInterval(() => {
-        if (!isAborted) writer.write(encoder.encode(`: ping\n\n`)).catch(() => {});
-      }, 15000);
+        if (!isAborted) writer.write(encoder.encode(`: keepalive\n\n`)).catch(() => {});
+      }, 20000);
 
       const upstream = await fetch(url, {
          method: "POST",
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
 
             for (let i = 0; i < parts.length; i++) {
                const part = parts[i];
-               if (part.startsWith(': ping')) continue; // Strip SSE keep-alive comments from upstream
+               if (part.startsWith(': keepalive')) continue; // Strip SSE keep-alive comments from upstream
 
                if (part.trim() && !isAborted) {
                   await writer.write(encoder.encode(`${part}\n\n`)).catch(() => {});
@@ -111,13 +111,13 @@ export async function GET(request: NextRequest) {
         }
       };
 
-      // Heartbeat ping to prevent Cloudflare edge gateway timeouts every 15 seconds
+      // Heartbeat ping to prevent Cloudflare edge gateway timeouts every 20 seconds
       interval = setInterval(() => {
         if (!isAborted) {
-           writer.write(encoder.encode(`: ping\n\n`)).catch(() => {});
+           writer.write(encoder.encode(`: keepalive\n\n`)).catch(() => {});
            sendEvent({ type: 'ping', timestamp: new Date().toISOString() });
         }
-      }, 15000);
+      }, 20000);
 
     } catch (err) {
       console.error('Stream initialization error:', err);

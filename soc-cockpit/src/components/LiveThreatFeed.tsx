@@ -762,7 +762,7 @@ export default function LiveThreatFeed() {
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
               </span>
-              <span>CONNECTED</span>
+              <span>LIVE</span>
             </>
           )}
           {realtimeStatus === 'RECONNECTING' && (
@@ -993,12 +993,13 @@ export default function LiveThreatFeed() {
                ) : filteredData.length === 0 ? (
 
                   <div className="flex-1 flex items-center justify-center p-8">
-                     <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-6 max-w-lg w-full flex items-center gap-4">
-                        <div className="relative flex h-3 w-3">
+                     <div className="border border-slate-800/50 bg-slate-950/20 rounded font-mono p-6 text-center text-xs text-slate-500 max-w-lg w-full flex flex-col items-center gap-2">
+                        <div className="relative flex h-3 w-3 mb-2">
                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                           <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
                         </div>
-                        <div className="text-slate-400 font-mono text-sm tracking-wider uppercase">Perimeter Shield Fully Functional: Zero Threat Anomalies Detected</div>
+                        <div className="uppercase tracking-wider">Perimeter Shield Active</div>
+                        <div>Zero Edge Drop Anomalies Detected</div>
                      </div>
                   </div>
                ) : (

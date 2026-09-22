@@ -170,10 +170,12 @@ export default function GlobalThreatMap() {
       const itemsToRender = streamedAttacks.length > 0 ? streamedAttacks : MOCK_ATTACKS;
 
       itemsToRender.forEach((attack) => {
-        const x = ((attack.lng + 180) / 360) * width;
-        const y = ((90 - attack.lat) / 180) * height;
+        const lng = attack?.lng || 0;
+        const x = ((lng + 180) / 360) * width;
+        const lat = attack?.lat || 0;
+        const y = ((90 - lat) / 180) * height;
 
-        const isHighSeverity = attack.severity === 'high' || attack.severity === 'critical';
+        const isHighSeverity = attack?.severity === 'high' || attack?.severity === 'critical';
 
         ctx.beginPath();
         ctx.arc(x, y, 3, 0, Math.PI * 2);
@@ -182,7 +184,7 @@ export default function GlobalThreatMap() {
 
         ctx.fillStyle = '#94a3b8';
         ctx.font = '10px monospace';
-        ctx.fillText(attack.country || 'XX', x + 8, y + 4);
+        ctx.fillText(attack?.country || 'XX', x + 8, y + 4);
       });
 
       pulses.forEach(pulse => {

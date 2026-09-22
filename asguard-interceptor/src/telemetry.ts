@@ -275,7 +275,7 @@ export function logAIFailure(errorMsg: string, env?: any, ctx?: any) {
           appOrigin: 'axim-asguard',
           details: {
               error: errorMsg,
-              status: "unverified_flagged"
+              status: "flagged_for_review"
           }
       };
 
@@ -294,7 +294,7 @@ import { AsguardTelemetryEvent } from './telemetry_events';
 // Export shared interface for cross-repo use (or just define it here)
 export { AsguardTelemetryEvent };
 
-export async function sendTelemetryToCockpit(payload: AsguardTelemetryEvent, env: any) {
+export async function sendTelemetryToCockpit(payload: AsguardTelemetryEvent, env: any, ctx?: any) {
   const url = env.COCKPIT_INGEST_URL || 'http://localhost:3000/api/ingest';
   const token = env.INGEST_TOKEN || 'default_ingest_token';
   const MAX_RETRIES = 3;
@@ -346,7 +346,19 @@ export async function sendTelemetryToCockpit(payload: AsguardTelemetryEvent, env
   };
 
   // Run in background without blocking
-  doSend().catch(e => {
+  if (ctx && ctx.waitUntil) {
+    ctx.waitUntil(doSend().catch(e => {
+       console.error("Unhandled error in telemetry sender", e);
+       if (typeof (globalThis as any).localEdgeLoggingBuffer !== 'undefined') {
+           (globalThis as any).localEdgeLoggingBuffer.push({
+               type: 'telemetry_drop_unhandled',
+               error: String(e),
+               timestamp: Date.now()
+           });
+       }
+    }));
+  } else {
+    doSend().catch(e => {
        console.error("Unhandled error in telemetry sender", e);
        if (typeof (globalThis as any).localEdgeLoggingBuffer !== 'undefined') {
            (globalThis as any).localEdgeLoggingBuffer.push({
@@ -356,4 +368,5 @@ export async function sendTelemetryToCockpit(payload: AsguardTelemetryEvent, env
            });
        }
   });
+  }
 }

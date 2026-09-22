@@ -37,7 +37,7 @@ export class AIClient {
     const startTime = Date.now();
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 4500);
+      const timeout = setTimeout(() => controller.abort(), 4000);
 
       try {
         response = await fetch(deepseekEndpoint, {
@@ -91,7 +91,7 @@ export class AIClient {
         };
 
         const anthropicController = new AbortController();
-        const anthropicTimeout = setTimeout(() => anthropicController.abort(), 4500);
+        const anthropicTimeout = setTimeout(() => anthropicController.abort(), 4000);
 
         try {
           try {
@@ -130,7 +130,7 @@ export class AIClient {
           return {
             response: new Response(
               JSON.stringify({
-                status: "unverified_flagged",
+                status: "flagged_for_review",
                 confidence: 0.0,
                 error: fallbackError.message
               }),
@@ -146,7 +146,7 @@ export class AIClient {
       return {
         response: new Response(
           JSON.stringify({
-            status: "unverified_flagged",
+            status: "flagged_for_review",
             confidence: 0.0,
             error: e.message
           }),
