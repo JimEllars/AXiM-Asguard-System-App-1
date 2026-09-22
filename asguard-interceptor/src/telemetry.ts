@@ -297,21 +297,63 @@ export { AsguardTelemetryEvent };
 export async function sendTelemetryToCockpit(payload: AsguardTelemetryEvent, env: any) {
   const url = env.COCKPIT_INGEST_URL || 'http://localhost:3000/api/ingest';
   const token = env.INGEST_TOKEN || 'default_ingest_token';
+  const MAX_RETRIES = 3;
+  const INITIAL_BACKOFF = 500;
 
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify(payload)
-    });
+  let attempt = 0;
+  let success = false;
 
-    if (!res.ok) {
-       console.warn(`Cockpit telemetry ingest failed: ${res.status}`);
+  const doSend = async (): Promise<void> => {
+    while (attempt < MAX_RETRIES && !success) {
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (res.ok || res.status === 202) {
+          success = true;
+          return;
+        } else {
+          console.warn(`Cockpit telemetry ingest failed: ${res.status}`);
+        }
+      } catch (error: any) {
+        console.warn(`Failed to send telemetry to cockpit (Attempt ${attempt + 1}):`, error.message);
+      }
+
+      attempt++;
+      if (!success && attempt < MAX_RETRIES) {
+        const delay = INITIAL_BACKOFF * Math.pow(2, attempt - 1);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
     }
-  } catch (error) {
-     console.error("Failed to send telemetry to cockpit", error);
-  }
+
+    if (!success) {
+        console.error("Failed to send telemetry to cockpit after max retries");
+        // Push error to local buffer
+        if (typeof (globalThis as any).localEdgeLoggingBuffer !== 'undefined') {
+            (globalThis as any).localEdgeLoggingBuffer.push({
+                type: 'telemetry_drop',
+                payload: payload,
+                timestamp: Date.now()
+            });
+        }
+    }
+  };
+
+  // Run in background without blocking
+  doSend().catch(e => {
+       console.error("Unhandled error in telemetry sender", e);
+       if (typeof (globalThis as any).localEdgeLoggingBuffer !== 'undefined') {
+           (globalThis as any).localEdgeLoggingBuffer.push({
+               type: 'telemetry_drop_unhandled',
+               error: String(e),
+               timestamp: Date.now()
+           });
+       }
+  });
 }

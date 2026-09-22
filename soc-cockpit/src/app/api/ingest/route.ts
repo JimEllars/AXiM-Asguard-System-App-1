@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
       success: true,
       ingestedId: bodyData.id,
       latencyMs
-    }, { status: 200, headers: corsHeaders });
+    }, { status: 202, headers: corsHeaders });
   } catch (err: any) {
     console.error(JSON.stringify({
        level: "error",

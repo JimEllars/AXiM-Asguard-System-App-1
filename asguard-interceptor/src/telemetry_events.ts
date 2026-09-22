@@ -9,4 +9,5 @@ export interface AsguardTelemetryEvent {
   action_taken: 'DELIVER' | 'FLAG' | 'QUARANTINE';
   indicators: string[];
   raw_snippet?: string;
+  source_ip?: string;
 }
