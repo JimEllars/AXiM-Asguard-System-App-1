@@ -121,12 +121,23 @@ export default {
     ctx: ExecutionContext,
   ): Promise<Response> {
     const startTime = Date.now();
+    try {
+
     const response = await this.handle(request, env, ctx);
     const duration = Date.now() - startTime;
 
     const newResponse = new Response(response.body, response);
     newResponse.headers.set("Server-Timing", `edge-exec;dur=${duration};desc="Stateless Perimeter Check"`);
     return newResponse;
+    } catch (e: any) {
+      const duration = Date.now() - startTime;
+      const errorResponse = new Response(JSON.stringify({ error: "Internal Server Error" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+      errorResponse.headers.set("Server-Timing", `edge-exec;dur=${duration};desc="Stateless Perimeter Check"`);
+      return errorResponse;
+    }
   },
 
   async handle(
