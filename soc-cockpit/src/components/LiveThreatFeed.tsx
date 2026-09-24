@@ -142,7 +142,7 @@ export default function LiveThreatFeed() {
 
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState(false);
-  const [severityFilter, setSeverityFilter] = useState<'all' | 'high' | 'medium' | 'low'>((searchParams.get('severity') as 'all' | 'high' | 'medium' | 'low') || 'all');
+  const [severityFilter, setSeverityFilter] = useState<'all' | 'critical' | 'high' | 'info'>((searchParams.get('severity') as 'all' | 'critical' | 'high' | 'info') || 'all');
   const [appOriginFilter, setAppOriginFilter] = useState<string>(searchParams.get('origin') || 'all');
     const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
   const [localSearchQuery, setLocalSearchQuery] = useState(searchParams.get('search') || '');
@@ -296,7 +296,7 @@ export default function LiveThreatFeed() {
         const jsonBlocklistData = await blocklistRes.json();
         const jsonAuditData = await auditRes.json();
 
-        const parsedData = z.array(TelemetryPayloadSchema).parse(jsonTelemetryData).slice(0, 50);
+        const parsedData = z.array(TelemetryPayloadSchema).parse(jsonTelemetryData).slice(0, 100);
         const parsedBlocklist = z.array(z.object({ name: z.string(), expiration: z.number().optional(), note: z.string().optional() })).parse(jsonBlocklistData);
         setAnnotations(prev => {
           let updated = false;
@@ -321,13 +321,13 @@ export default function LiveThreatFeed() {
           if (prev.length > 0) {
             const newEvents = parsedData.filter(d => !prev.some(p => p.timestamp === d.timestamp && p.sourceIp === d.sourceIp));
             if (newEvents.length > 0) {
-              newData = [...newEvents, ...prev].slice(0, 50);
+              newData = [...newEvents, ...prev].slice(0, 100);
             } else {
               newData = prev; // Nothing new, keep prev to avoid unnecessary re-renders
             }
           } else {
              // Cap initial payload too
-             newData = newData.slice(0, 50);
+             newData = newData.slice(0, 100);
           }
 
           if (JSON.stringify(prev) !== JSON.stringify(newData)) {
@@ -400,7 +400,7 @@ export default function LiveThreatFeed() {
                            }
                            const newData = [...prev];
                            newData.unshift(parsed.data);
-                           return newData.slice(0, 50);
+                           return newData.slice(0, 100);
                        });
                    }
                } else {
@@ -409,7 +409,7 @@ export default function LiveThreatFeed() {
                        setAuditLog(prev => {
                            const newData = [...prev];
                            newData.unshift(parsed.data);
-                           return newData.slice(0, 50);
+                           return newData.slice(0, 100);
                        });
                    }
                }
@@ -639,10 +639,12 @@ export default function LiveThreatFeed() {
     return data.filter(event => {
       // 1. Filter by severity
       let matchesSeverity = true;
-      if (severityFilter === 'high') {
-        matchesSeverity = event.severity === 'high' || event.severity === 'critical';
-      } else if (severityFilter !== 'all') {
-        matchesSeverity = event.severity === severityFilter;
+      if (severityFilter !== 'all') {
+        if (severityFilter === 'info') {
+            matchesSeverity = event.severity === 'low' || (event.severity as any) === 'info' || (event.severity as any) === 'medium';
+        } else {
+            matchesSeverity = event.severity === severityFilter;
+        }
       }
 
       // 2. Filter by app origin
@@ -656,7 +658,7 @@ export default function LiveThreatFeed() {
       // 3. Filter by search query
       let matchesSearch = true;
       if (searchQuery.trim() !== '') {
-        const query = searchQuery.toLowerCase();
+        const query = (searchQuery || '').toLowerCase();
         matchesSearch =
           (event.sourceIp || '').toLowerCase().includes(query) ||
           (getEventName(event.eventType) || '').toLowerCase().includes(query) ||
@@ -697,7 +699,7 @@ export default function LiveThreatFeed() {
 
   const hasHighDensityAnomaly = React.useMemo(() => {
     if (data.length === 0) return { isAnomaly: false, ip: '', percentage: 0 };
-    const currentViewport = data.slice(0, 50);
+    const currentViewport = data.slice(0, 100);
     const counts: Record<string, number> = {};
     for (const event of currentViewport) {
       counts[event.sourceIp] = (counts[event.sourceIp] || 0) + 1;
@@ -907,12 +909,12 @@ export default function LiveThreatFeed() {
         <select
           className="bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-500 uppercase tracking-wider font-semibold"
           value={severityFilter}
-          onChange={(e) => setSeverityFilter(e.target.value as 'all' | 'high' | 'medium' | 'low')}
+          onChange={(e) => setSeverityFilter(e.target.value as 'all' | 'critical' | 'high' | 'info')}
         >
           <option value="all">Severity: ALL</option>
-          <option value="high">Severity: HIGH / CRITICAL</option>
-          <option value="medium">Severity: MEDIUM</option>
-          <option value="low">Severity: LOW</option>
+          <option value="critical">Severity: CRITICAL</option>
+          <option value="high">Severity: HIGH</option>
+          <option value="info">Severity: INFO</option>
         </select>
       </div>
 

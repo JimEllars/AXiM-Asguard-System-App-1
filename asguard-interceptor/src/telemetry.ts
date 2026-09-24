@@ -310,7 +310,8 @@ export async function sendTelemetryToCockpit(payload: AsguardTelemetryEvent, env
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
+            'Authorization': `Bearer ${token}`,
+            'x-asguard-internal-key': token
           },
           body: JSON.stringify(payload)
         });

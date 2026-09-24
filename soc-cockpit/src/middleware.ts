@@ -14,6 +14,7 @@ export async function middleware(request: NextRequest) {
       pathname.startsWith("/api/ingest") ||
       pathname.startsWith("/auth") ||
       pathname === "/favicon.ico" ||
+      pathname === "/login" ||
       pathname.startsWith("/public") ||
       pathname === "/stream" || // Make stream explicitly open per instructions
       pathname === "/submit" || // Make submit explicitly open per instructions

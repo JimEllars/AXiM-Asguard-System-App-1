@@ -122,3 +122,12 @@ Next Recommended Task:
 * Null-safety implemented inside mapping logic to avoid crashing global visualizations when coordinates miss payload.
 * Streamlined Next.js middleware and API integrations for `axim_session` handling across primary navigation endpoints. Tested builds completely locally.
 Tests passing, builds successful, logic updated.
+- Added telemetry resilience (exponential backoff & timeouts) to asguard-interceptor.
+- Added schema validation to ingest routes.
+- Hardened SSE streaming with 15s keep-alive heartbeats and abort handling.
+- Implemented defensive UI fallback states and generic ErrorBoundary in Next.js Cockpit.
+- Added universal null-coalescing to all string methods in LiveThreatFeed.tsx.
+- Applied exact requested 15-second SSE keepalive adjustments to ingest route.
+- Updated x-asguard-internal-key implementation in telemetry.ts as required.
+- Implemented updated severity filtering (ALL, CRITICAL, HIGH, INFO) and bounds checks in LiveThreatFeed.
+- Validated error-free typings with standard 'npm run build' across soc-cockpit and asguard-interceptor.
