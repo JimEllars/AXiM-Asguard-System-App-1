@@ -40,7 +40,41 @@ export default function Home() {
       </div>
 
       <ErrorBoundary FallbackComponent={HomeFallback}>
-        <Suspense fallback={<div className="border border-slate-800/50 bg-slate-950/20 rounded font-mono p-6 text-center text-xs text-slate-500">Loading Telemetry...</div>}>
+        <Suspense fallback={
+<div className="flex-1 flex flex-col gap-6 overflow-hidden">
+  {/* Filter Bar Skeleton */}
+  <div className="flex justify-between items-center bg-slate-900/80 backdrop-blur-sm border border-slate-800 p-4 rounded-lg relative overflow-hidden h-[74px]">
+    <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: 'linear-gradient(to right, #334155 1px, transparent 1px), linear-gradient(to bottom, #334155 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
+    <div className="flex gap-4">
+      <div className="h-8 w-64 bg-slate-800/50 rounded animate-pulse"></div>
+      <div className="h-8 w-40 bg-slate-800/50 rounded animate-pulse"></div>
+      <div className="h-8 w-48 bg-slate-800/50 rounded animate-pulse"></div>
+    </div>
+    <div className="h-8 w-32 bg-slate-800/50 rounded animate-pulse"></div>
+  </div>
+
+  <div className="flex flex-[2] gap-6 min-h-0 overflow-hidden">
+    <div className="flex-[2] bg-slate-950 border border-slate-800 rounded-lg relative overflow-hidden flex flex-col min-h-0">
+      <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: 'linear-gradient(to right, #334155 1px, transparent 1px), linear-gradient(to bottom, #334155 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
+      <div className="z-10 bg-slate-900/80 backdrop-blur-sm border-b border-slate-800 p-4 sticky top-0 h-[53px]"></div>
+      <div className="z-10 flex-1 overflow-y-auto p-2 space-y-2">
+        {Array.from({ length: 10 }).map((_, i) => (
+          <div key={i} className="grid grid-cols-6 gap-4 items-center p-3 rounded bg-slate-900/40 border border-slate-800 animate-pulse h-[46px]"></div>
+        ))}
+      </div>
+    </div>
+
+    <div className="flex-[1] bg-slate-950 border border-slate-800 rounded-lg relative overflow-hidden flex flex-col min-h-0">
+      <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: 'linear-gradient(to right, #334155 1px, transparent 1px), linear-gradient(to bottom, #334155 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
+      <div className="z-10 bg-slate-900/80 backdrop-blur-sm border-b border-slate-800 p-4 sticky top-0 h-[53px]"></div>
+      <div className="z-10 flex-1 overflow-y-auto p-2 space-y-2">
+         {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="flex flex-col gap-2 p-3 rounded bg-slate-900/40 border border-slate-800 animate-pulse h-[82px]"></div>
+        ))}
+      </div>
+    </div>
+  </div>
+</div>}>
           <LiveThreatFeed />
         </Suspense>
       </ErrorBoundary>
