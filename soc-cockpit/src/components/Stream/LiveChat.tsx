@@ -106,8 +106,6 @@ export default function LiveChat({ isAuthenticated = false }: LiveChatProps) {
 
     const startTime = Date.now();
     setIsThinking(false);
-    setIsThinking(false);
-    setIsThinking(false);
 
     try {
       const response = await fetch('/api/chat', {
@@ -235,10 +233,6 @@ export default function LiveChat({ isAuthenticated = false }: LiveChatProps) {
               <span className="text-amber-500 animate-pulse">Reconnecting...</span>
                         ) : hasError === 'Session Expired' ? (
                <span className="text-rose-500 border border-rose-500/50 bg-rose-950/30 px-2 py-0.5 rounded">Session Expired</span>
-                        ) : hasError === 'Session Expired' ? (
-               <span className="text-rose-500 border border-rose-500/50 bg-rose-950/30 px-2 py-0.5 rounded">Session Expired</span>
-                        ) : hasError === 'Session Expired' ? (
-               <span className="text-rose-500 border border-rose-500/50 bg-rose-950/30 px-2 py-0.5 rounded">Session Expired</span>
             ) : hasError === 'Config Required' ? (
                <span className="text-amber-400 border border-amber-400/50 bg-amber-950/30 px-2 py-0.5 rounded">Config Required</span>
             ) : hasError ? (
@@ -250,7 +244,7 @@ export default function LiveChat({ isAuthenticated = false }: LiveChatProps) {
                   <span className={`relative inline-flex rounded-full h-2 w-2 ${isGenerating ? 'bg-blue-500' : 'bg-emerald-500'}`}></span>
                 </span>
                 <span className={isThinking ? "text-purple-400" : isGenerating ? "text-blue-400" : "text-emerald-400"}>
-                  {isThinking ? "DeepSeek Reasoning..." : isThinking ? "DeepSeek Reasoning..." : isThinking ? "DeepSeek Reasoning..." : isGenerating ? "DeepSeek Computing..." : "DeepSeek Online"}
+                  {isThinking ? "DeepSeek Reasoning..." : isGenerating ? "DeepSeek Computing..." : "DeepSeek Online"}
                 </span>
               </>
             )}
@@ -283,16 +277,6 @@ export default function LiveChat({ isAuthenticated = false }: LiveChatProps) {
             )}
           </div>
         ))}
-                {hasError === 'Session Expired' && (
-           <div className="text-center bg-rose-950/20 border border-rose-900/50 p-2 rounded text-xs text-rose-500 my-2">
-             ⚠️ Session expired. Please re-authenticate.
-           </div>
-        )}
-        {hasError === 'Session Expired' && (
-           <div className="text-center bg-rose-950/20 border border-rose-900/50 p-2 rounded text-xs text-rose-500 my-2">
-             ⚠️ Session expired. Please re-authenticate.
-           </div>
-        )}
         {hasError === 'Session Expired' && (
            <div className="text-center bg-rose-950/20 border border-rose-900/50 p-2 rounded text-xs text-rose-500 my-2">
              ⚠️ Session expired. Please re-authenticate.
@@ -307,7 +291,7 @@ export default function LiveChat({ isAuthenticated = false }: LiveChatProps) {
       </div>
 
       {/* Input Area */}
-      <div className="p-4 bg-slate-900 border-t border-slate-800">
+      <div className="sticky bottom-0 p-3 bg-slate-950/90 backdrop-blur border-t border-slate-800">
         {isAuthenticated ? (
           <form onSubmit={handleSubmit} className="flex gap-2">
             <input

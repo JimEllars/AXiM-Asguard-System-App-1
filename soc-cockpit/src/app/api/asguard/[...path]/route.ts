@@ -5,6 +5,13 @@ import jwt from "jsonwebtoken";
 
 const permittedPaths = new Set(["telemetry", "audit", "blocklist", "analysis"]);
 
+function unavailableResponse() {
+  return NextResponse.json(
+    { status: "degraded", error: "upstream_unreachable", data: [] },
+    { status: 503 },
+  );
+}
+
 async function proxy(request: Request, context: { params: Promise<{ path: string[] }> }) {
   const { path } = await context.params;
   const targetPath = path.join("/");
@@ -65,38 +72,38 @@ async function proxy(request: Request, context: { params: Promise<{ path: string
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
 
-    let response;
-    const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer();
+    try {
+      let response;
+      const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer();
 
-    if (asguardBinding) {
-      response = await asguardBinding.fetch(
-        new Request(`https://asguard.internal/${targetPath}`, {
+      if (asguardBinding) {
+        response = await asguardBinding.fetch(
+          new Request(`https://asguard.internal/${targetPath}`, {
+            method: request.method,
+            headers,
+            body,
+            signal: controller.signal as any,
+          })
+        );
+      } else {
+        response = await fetch(`${interceptorUrl}/${targetPath}`, {
           method: request.method,
           headers,
           body,
           signal: controller.signal as any,
-        })
-      );
-    } else {
-      // Local node fallback
-      response = await fetch(`${interceptorUrl}/${targetPath}`, {
-        method: request.method,
-        headers,
-        body,
-        signal: controller.signal as any,
+        });
+      }
+
+      return new NextResponse(response.body, {
+        status: response.status,
+        headers: { "Content-Type": response.headers.get("Content-Type") || "text/plain" },
       });
+    } finally {
+      clearTimeout(timeout);
     }
-    clearTimeout(timeout);
-    return new NextResponse(response.body, {
-      status: response.status,
-      headers: { "Content-Type": response.headers.get("Content-Type") || "text/plain" },
-    });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Asguard service request failed", error);
-    if (error.name === 'AbortError' || error.message?.includes('timeout')) {
-      return NextResponse.json({ error: "Gateway Timeout" }, { status: 504 });
-    }
-    return NextResponse.json({ error: "Bad Gateway" }, { status: 502 });
+    return unavailableResponse();
   }
 }
 
