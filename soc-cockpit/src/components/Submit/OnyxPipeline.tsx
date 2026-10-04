@@ -1,5 +1,8 @@
 import React, { useState, useRef, Component, ErrorInfo, ReactNode } from 'react';
 
+const IPV4_REGEX = /^(25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)){3}$/;
+const IPV6_REGEX = /^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$/;
+
 interface ErrorBoundaryProps {
   children: ReactNode;
 }
@@ -56,11 +59,10 @@ function OnyxPipelineInner() {
   const handleQuarantine = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
 
-    // Strict client-side validation
-    const ipRegex = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/;
-    if (!quarantineIp || !ipRegex.test(quarantineIp)) {
-        setToast({ type: 'error', message: 'Invalid IPv4 address format.' });
-        return;
+    const targetIp = quarantineIp.trim();
+    if (!IPV4_REGEX.test(targetIp) && !IPV6_REGEX.test(targetIp)) {
+      setToast({ type: 'error', message: 'Invalid target IP format.' });
+      return;
     }
     setIsQuarantining(true);
     try {
@@ -70,10 +72,10 @@ function OnyxPipelineInner() {
           'Content-Type': 'application/json',
           'X-Asguard-Auth': process.env.NEXT_PUBLIC_ASGUARD_API_KEY || ''
         },
-        body: JSON.stringify({ ip: quarantineIp, reason: "Manual 1-Click Quarantine from SOC Cockpit", duration_hours: 24 })
+        body: JSON.stringify({ ip: targetIp, reason: "Manual 1-Click Quarantine from SOC Cockpit", duration_hours: 24 })
       });
       if (res.ok) {
-        setToast({ type: 'success', message: `[ IP ${quarantineIp} QUARANTINED FOR 24H ]` });
+        setToast({ type: 'success', message: `[ IP ${targetIp} QUARANTINED FOR 24H ]` });
         setQuarantineIp('');
       } else {
         throw new Error('Failed to quarantine IP');
@@ -137,32 +139,28 @@ function OnyxPipelineInner() {
       return;
     }
 
-
-      setStage('VALIDATING');
-
+    setStage('VALIDATING');
+    setError(null);
+    try {
       const allowedMimeTypes = ['image/png', 'image/jpeg', 'image/gif', 'video/mp4', 'video/webm', 'text/plain', 'text/csv'];
       const allowedExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.mp4', '.webm', '.txt', '.csv'];
 
       if (!allowedMimeTypes.includes(file.type)) {
-          throw new Error("Invalid file type: Unsupported MIME type.");
+        throw new Error("Invalid file type: Unsupported MIME type.");
       }
 
       const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
       if (!allowedExtensions.includes(ext)) {
-          throw new Error("Invalid file extension.");
+        throw new Error("Invalid file extension.");
       }
 
-      // Calculate SHA-256 Mock
+      setStage('EXTRACTING_FEATURES');
       const arrayBuffer = await file.arrayBuffer();
       const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
       const hashArray = Array.from(new Uint8Array(hashBuffer));
       const sha256Hex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
       setStage('QUEUED_TO_ONYX');
-
-    setError(null);
-
-    try {
       // Capture Geolocation
       if (!navigator.geolocation) {
          throw new Error('Geolocation is not supported by your browser.');
@@ -197,9 +195,6 @@ function OnyxPipelineInner() {
         })
       }).catch(console.error);
 
-      setStage('EXTRACTING_FEATURES');
-      setTimeout(() => setStage('AI_INFERENCE'), 1000);
-
       // Payload construction
       if (file.size > 50 * 1024 * 1024) throw new Error("File size exceeds 50MB limit");
       const payload = {
@@ -209,28 +204,31 @@ function OnyxPipelineInner() {
         metadata: {
            lat: latitude,
            lng: longitude,
-           timestamp: Date.now()
+           timestamp: Date.now(),
+           sha256: sha256Hex
         }
       };
 
       console.log('Onyx Pipeline Payload:', payload);
 
-
       // Dispatch the payload to the Onyx Mk3 triage endpoint
-
+      setStage('AI_INFERENCE');
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
-      const onyxRes = await fetch('https://edge-bridge.axim.us.com/api/v1/onyx/summon', {
-        signal: controller.signal as any,
-
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Axim-Signature': process.env.NEXT_PUBLIC_ONYX_PIPELINE_SECRET || ''
-        },
-        body: JSON.stringify(payload)
-      });
-clearTimeout(timeoutId);
+      let onyxRes: Response;
+      try {
+        onyxRes = await fetch('https://edge-bridge.axim.us.com/api/v1/onyx/summon', {
+          signal: controller.signal,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Axim-Signature': process.env.NEXT_PUBLIC_ONYX_PIPELINE_SECRET || ''
+          },
+          body: JSON.stringify(payload)
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
       if (!onyxRes.ok) {
          throw new Error("Pipeline rejected payload");
       }
@@ -271,9 +269,10 @@ clearTimeout(timeoutId);
         })
       }).catch(console.error);
 
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to capture location or upload file.';
       setStage('FAILED');
-      setError(err.message || 'Failed to capture location or upload file.');
+      setError(message);
 
       if (file) {
         // Dispatch failure telemetry
@@ -290,13 +289,13 @@ clearTimeout(timeoutId);
               location: null,
               status: 'failed',
               timestamp: Date.now(),
-              errorReason: err.message
+              errorReason: message
             }
           })
         }).catch(console.error);
       }
 
-      setToast({ type: 'error', message: `[ ERROR ] ${err.message || 'Failed to upload'}` });
+      setToast({ type: 'error', message: `[ ERROR ] ${message}` });
       setTimeout(() => setToast(null), 5000);
     }
   };
@@ -405,7 +404,7 @@ clearTimeout(timeoutId);
         <div className="flex gap-2">
           <input
             type="text"
-            placeholder="Enter IP (e.g. 203.0.113.1)"
+            placeholder="Enter IPv4 or full IPv6 address"
             value={quarantineIp}
             onChange={(e) => setQuarantineIp(e.target.value)}
             className="flex-1 bg-slate-950/50 border border-slate-700 rounded px-4 py-2 text-sm text-slate-300 focus:outline-none focus:border-red-500 font-mono"

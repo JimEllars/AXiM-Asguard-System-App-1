@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import "./globals.css";
 import { ThirdwebProvider } from "thirdweb/react";
+import HeaderBadge from "@/components/HeaderBadge";
 
 export const metadata: Metadata = {
   title: "AXiM Asguard SOC Cockpit",
@@ -71,10 +72,7 @@ export default async function RootLayout({
               <a href="#" className="text-sm font-medium text-slate-400 hover:text-blue-400 transition-colors">Alerts</a>
               <a href="#" className="text-sm font-medium text-slate-400 hover:text-blue-400 transition-colors">Settings</a>
             </nav>
-            <div className="flex items-center gap-2 text-sm">
-              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-              <span>System Online</span>
-            </div>
+            <HeaderBadge />
           </header>
           <main className="flex-1 overflow-hidden">
             {children}

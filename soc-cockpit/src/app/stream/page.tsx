@@ -71,7 +71,7 @@ export default function StreamPage() {
         </div>
       </div>
 
-      <div className="flex flex-col lg:flex-row gap-6 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8">
+      <div className="flex flex-col xl:flex-row gap-6 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8">
         <div className="flex-1">
           <div className="w-full max-w-5xl mx-auto">
             <div className="relative aspect-video rounded-xl overflow-hidden border-2 border-slate-700 bg-black/50 backdrop-blur-md shadow-2xl">
@@ -97,7 +97,7 @@ export default function StreamPage() {
             </div>
           </div>
         </div>
-        <div className="w-full lg:w-96 h-[600px] lg:h-auto">
+        <div className="w-full xl:w-96 h-[400px] xl:h-[calc(100vh-220px)] shrink-0">
           <Suspense fallback={<div className="h-full bg-slate-900 border border-slate-700 rounded-xl">Loading Chat...</div>}>
             <LiveChat isAuthenticated={true} />
           </Suspense>
@@ -153,12 +153,19 @@ export default function StreamPage() {
         </div>
       </div>
 
-      <div className="w-full max-w-7xl mx-auto h-[400px] mt-6">
+      <div className="w-full max-w-7xl mx-auto grid grid-cols-1 xl:grid-cols-3 gap-4 mt-6">
+        <div className="col-span-1 xl:col-span-2 h-[380px] md:h-[460px] xl:h-[540px]">
         <ErrorBoundary FallbackComponent={ThreatMapFallback}>
           <Suspense fallback={<div className="h-full bg-slate-900 border border-slate-700 rounded-xl">Loading Map...</div>}>
             <GlobalThreatMap />
           </Suspense>
         </ErrorBoundary>
+        </div>
+        <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-6 shadow-xl">
+          <h4 className="text-slate-500 uppercase tracking-widest text-xs mb-4">Map Telemetry</h4>
+          <p className="text-sm text-slate-300">Regional threat events and edge telemetry remain visible alongside the global map on wide screens.</p>
+          <p className="mt-4 text-xs font-mono text-slate-500">Panels stack below the map at widths under 1280px.</p>
+        </div>
       </div>
 
       <div className="w-full max-w-7xl mx-auto mt-8">

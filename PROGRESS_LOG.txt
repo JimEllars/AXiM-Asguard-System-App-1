@@ -131,3 +131,9 @@ Tests passing, builds successful, logic updated.
 - Updated x-asguard-internal-key implementation in telemetry.ts as required.
 - Implemented updated severity filtering (ALL, CRITICAL, HIGH, INFO) and bounds checks in LiveThreatFeed.
 - Validated error-free typings with standard 'npm run build' across soc-cockpit and asguard-interceptor.
+
+### Production hardening completion
+- Corrected `/api/asguard/[...path]` failures to return the documented `503` degraded payload after the 8-second upstream timeout.
+- Replaced Onyx's simulated stage timer with real validation, feature extraction, queue, and inference transitions; tightened quarantine target validation to strict IPv4 and full IPv6 formats.
+- Added the cockpit header edge-health badge, including `/api/health` and `/api/ready` checks, measured latency, and CF-Ray display when available.
+- Updated stream layouts to stack below `xl`, bounded the map canvas, constrained chat height, and anchored the chat input dock.
