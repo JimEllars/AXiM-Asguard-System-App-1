@@ -130,9 +130,7 @@ export class AIClient {
           return {
             response: new Response(
               JSON.stringify({
-                status: "flagged_for_review",
-                confidence: 0.0,
-                error: fallbackError.message
+                risk: "medium", summary: "Automated heuristic fallback triggered", recommendedActions: ["Monitor IP", "Review Logs"], rationale: fallbackError.message
               }),
               { headers: { "Content-Type": "application/json" } }
             ),
@@ -146,9 +144,7 @@ export class AIClient {
       return {
         response: new Response(
           JSON.stringify({
-            status: "flagged_for_review",
-            confidence: 0.0,
-            error: e.message
+            risk: "medium", summary: "Automated heuristic fallback triggered", recommendedActions: ["Monitor IP", "Review Logs"], rationale: e.message
           }),
           { headers: { "Content-Type": "application/json" } }
         ),

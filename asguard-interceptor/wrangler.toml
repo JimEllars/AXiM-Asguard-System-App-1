@@ -12,3 +12,14 @@ kv_namespaces = [
 [observability]
 enabled = true
 head_sampling_rate = 1
+
+[vars]
+# Ensure environment variable placeholders exist
+ASGUARD_API_KEY = ""
+ASGUARD_SERVICE_TOKEN = ""
+TELEMETRY_INGEST_KEY = ""
+DEEPSEEK_API_KEY = ""
+ANTHROPIC_API_KEY = ""
+DEEPSEEK_BASE_URL = ""
+DEEPSEEK_MODEL = ""
+AXIM_SERVICE_ROLE_KEY = ""
