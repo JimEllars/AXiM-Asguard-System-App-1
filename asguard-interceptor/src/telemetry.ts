@@ -107,36 +107,42 @@ export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: a
       }
 
 
+
       // Add abort controller for 1500ms timeout
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 1500);
 
-      const resPromise = fetch(`${supabaseUrl}/rest/v1/telemetry_events`, {
+      const aximServiceRoleKey = env.AXIM_SERVICE_ROLE_KEY || supabaseKey;
+      const dbUrl = 'https://db.axim.us.com/rest/v1/telemetry_events';
+
+      const eventPayload = {
+          event_id: payload.requestId || `evt_${Date.now()}`,
+          timestamp: ts,
+          client_ip: payload.sourceIp || 'unknown',
+          geo_country: payload.originCountry || payload.country || 'UNKNOWN',
+          geo_city: payload.details?.city || 'UNKNOWN',
+          geo_lat: payload.details?.lat || 0,
+          geo_lon: payload.details?.lon || 0,
+          request_method: payload.requestMethod || 'UNKNOWN',
+          request_path: payload.targetResource || 'UNKNOWN',
+          threat_category: payload.targetVector || 'NONE',
+          action_taken: payload.actionTaken || (payload.details?.action_taken as string) || 'FLAGGED',
+          severity: payload.severity ? payload.severity.toUpperCase() : 'LOW'
+      };
+
+      const resPromise = fetch(dbUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`,
+          'apikey': aximServiceRoleKey,
+          'Authorization': `Bearer ${aximServiceRoleKey}`,
           'Prefer': 'return=minimal'
         },
-        body: JSON.stringify({
-          source_ip: payload.sourceIp,
-          timestamp: ts,
-          event_type: payload.eventType,
-          severity: payload.severity,
-          country: payload.originCountry || payload.country,
-          action_taken: payload.actionTaken || (payload.details?.action_taken as string) || 'logged',
-          threat_score: payload.threatScore || payload.edgeBotScore || payload.botScore || 0,
-          request_id: payload.requestId,
-          execution_duration: payload.executionDuration,
-          payload_details: {
-            ...payload.details,
-            threatLevel: payload.threatLevel,
-            targetVector: payload.targetVector
-          }
-        }),
+        body: JSON.stringify(eventPayload),
         signal: controller.signal as any
       }).finally(() => clearTimeout(timeoutId));
+
+
 
 
       const [resSettled, _] = await Promise.allSettled([resPromise, fallbackRes]);
@@ -153,8 +159,8 @@ export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: a
                  timestamp: new Date().toISOString()
              }));
              // Buffer locally on failure
-             if (env.ASGUARD_TELEMETRY) {
-                 env.ASGUARD_TELEMETRY.put(`audit:${Date.now()}`, JSON.stringify(structuredPayload)).catch((e: any) => console.error("KV Put Error", e));
+             if (env.TELEMETRY_FALLBACK_QUEUE) {
+                 env.TELEMETRY_FALLBACK_QUEUE.put(`audit:${Date.now()}`, JSON.stringify(eventPayload)).catch((e: any) => console.error("KV Put Error", e));
              }
           }
       } else {
@@ -165,10 +171,11 @@ export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: a
              timestamp: new Date().toISOString()
           }));
           // Buffer locally on failure
-          if (env.ASGUARD_TELEMETRY) {
-              env.ASGUARD_TELEMETRY.put(`audit:${Date.now()}`, JSON.stringify(structuredPayload)).catch((e: any) => console.error("KV Put Error", e));
+          if (env.TELEMETRY_FALLBACK_QUEUE) {
+              env.TELEMETRY_FALLBACK_QUEUE.put(`audit:${Date.now()}`, JSON.stringify(eventPayload)).catch((e: any) => console.error("KV Put Error", e));
           }
       }
+
     } catch (error: any) {
        console.error(JSON.stringify({
            level: "error",

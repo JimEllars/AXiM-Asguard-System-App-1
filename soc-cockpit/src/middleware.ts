@@ -34,7 +34,7 @@ export async function middleware(request: NextRequest) {
       if (pathname.startsWith('/api/')) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
       }
-      const redirectUrl = `https://passport.axim.us.com/login?redirect_to=https://asguard.axim.us.com`;
+      const redirectUrl = `https://passport.axim.us.com/login?redirect_url=https://asguard.axim.us.com`;
       return NextResponse.redirect(redirectUrl, 307);
     }
 
@@ -67,7 +67,7 @@ export async function middleware(request: NextRequest) {
         // Explicitly recognize Super Users
         if (
           userEmail === "james.ellars@axim.us.com" ||
-          userEmail === "jrellars@gmail.com"
+          userEmail === "jrellars@gmail.com" || userEmail === "jrellars@gmail.com" // Just ensuring logic matches exactly
         ) {
           isSuperUser = true;
         } else if (data.role === "super_user") {
@@ -77,7 +77,7 @@ export async function middleware(request: NextRequest) {
         if (pathname.startsWith('/api/')) {
           return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
-        const redirectUrl = `https://passport.axim.us.com/login?redirect_to=https://asguard.axim.us.com`;
+        const redirectUrl = `https://passport.axim.us.com/login?redirect_url=https://asguard.axim.us.com`;
         return NextResponse.redirect(redirectUrl, 307);
       }
     } catch (e: any) {
@@ -127,7 +127,7 @@ export async function middleware(request: NextRequest) {
           console.warn("Supabase auth refresh failed softly in middleware", e.message);
           // Graceful fallback for protected routes if Supabase auth fails completely
           if (!pathname.startsWith('/api/') && !token) {
-            const redirectUrl = `https://passport.axim.us.com/login?redirect_to=https://asguard.axim.us.com`;
+            const redirectUrl = `https://passport.axim.us.com/login?redirect_url=https://asguard.axim.us.com`;
             return NextResponse.redirect(redirectUrl, 307);
           }
         }

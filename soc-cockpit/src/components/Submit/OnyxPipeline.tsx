@@ -396,11 +396,51 @@ function OnyxPipelineInner() {
         </button>
       </form>
 
+
+      <div className="mt-8 pt-6 border-t border-slate-800">
+        <h4 className="text-md font-semibold text-slate-200 mb-4 flex items-center gap-2">
+          <svg className="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+          Autonomous Coding Lab / Onyx Triage
+        </h4>
+        <div className="flex flex-col gap-2">
+           <button
+             type="button"
+             onClick={async (e) => {
+               const btn = e.currentTarget;
+               const origText = btn.innerText;
+               btn.innerText = "Dispatching...";
+               btn.disabled = true;
+               try {
+                 const res = await fetch('/api/v1/triage/dispatch', {
+                   method: 'POST',
+                   headers: { 'Content-Type': 'application/json' },
+                   body: JSON.stringify({
+                     threat_signature: "Zero-Day-Malware-Heuristic",
+                     target_paths: ["/api/v1/auth", "/public/upload"],
+                     sample_payload: "union select * from users--"
+                   })
+                 });
+                 const data = await res.json();
+                 btn.innerText = data.task_id ? `Dispatched (Task ${data.task_id})` : "Failed";
+                 btn.classList.add("bg-emerald-900", "text-emerald-200");
+                 btn.classList.remove("bg-amber-900/80", "text-amber-100");
+               } catch(err) {
+                 btn.innerText = "Error";
+               }
+             }}
+             className="w-full bg-amber-900/80 hover:bg-amber-800 text-amber-100 px-4 py-3 rounded font-mono text-sm font-bold tracking-wider transition-colors flex items-center justify-center gap-2"
+           >
+             Dispatch to Coding Lab (Zero-Day Triage)
+           </button>
+        </div>
+      </div>
+
       <div className="mt-8 pt-6 border-t border-slate-800">
         <h4 className="text-md font-semibold text-slate-200 mb-4 flex items-center gap-2">
           <svg className="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
           1-Click IP Quarantine
         </h4>
+
         <div className="flex gap-2">
           <input
             type="text"

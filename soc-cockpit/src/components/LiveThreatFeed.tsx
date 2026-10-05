@@ -223,7 +223,7 @@ export default function LiveThreatFeed() {
   const [telemetryPage, setTelemetryPage] = useState(0);
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [auditPage, setAuditPage] = useState(0);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
   const tempAuditPageFix = setAuditPage; // just to prevent the linter from warning about unused setAuditPage until I use it.
   const itemsPerPage = 10;
 
@@ -733,8 +733,16 @@ export default function LiveThreatFeed() {
             key={toast.id}
             className={`px-4 py-3 rounded shadow-lg font-mono text-sm border pointer-events-auto transition-all transform slide-in-right ${
               toast.type === 'success'
-                ? 'bg-emerald-950/90 border-emerald-500 text-emerald-200'
-                : 'bg-red-950/90 border-red-500 text-red-200'
+
+
+
+
+         ? 'bg-emerald-950/90 border-emerald-500 text-emerald-200'
+         : 'bg-red-950/90 border-red-500 text-red-200'
+
+
+
+
             }`}
           >
             {toast.message}

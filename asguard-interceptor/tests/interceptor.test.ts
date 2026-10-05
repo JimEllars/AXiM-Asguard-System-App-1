@@ -1,3 +1,4 @@
+import { Env } from "../src/index";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const originalFetch = global.fetch;
@@ -53,12 +54,12 @@ describe("Asguard Interceptor", () => {
 
     for (let i = 0; i < 5; i++) {
        const req = createReq();
-       const res = await worker.fetch(req, env, ctx);
+       const res = await worker.fetch(req, env as any as Env, ctx);
        expect(res.status).not.toBe(429);
     }
 
     const req = createReq();
-    const res = await worker.fetch(req, env, ctx);
+    const res = await worker.fetch(req, env as any as Env, ctx);
     expect(res.status).toBe(429);
   });
 
@@ -79,7 +80,7 @@ describe("Asguard Interceptor", () => {
     const ctx = { waitUntil: vi.fn() } as any;
 
     const startTime = Date.now();
-    const response = await worker.fetch(request, env, ctx);
+    const response = await worker.fetch(request, env as any as Env, ctx);
     const duration = Date.now() - startTime;
 
     expect(response.status).toBe(403);
@@ -100,7 +101,7 @@ describe("Asguard Interceptor", () => {
     };
     const ctx = { waitUntil: vi.fn() } as any;
 
-    const response = await worker.fetch(request, env, ctx);
+    const response = await worker.fetch(request, env as any as Env, ctx);
     expect(response.status).toBe(204);
     expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
     expect(response.headers.get("Access-Control-Allow-Methods")).toBe(
@@ -122,7 +123,7 @@ describe("Asguard Interceptor", () => {
     };
     const ctx = { waitUntil: vi.fn() } as any;
 
-    const response = await worker.fetch(request, env, ctx);
+    const response = await worker.fetch(request, env as any as Env, ctx);
     expect(response.status).toBe(403);
     expect(mockKV.get).toHaveBeenCalledWith("ip:1.2.3.4");
     expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
@@ -142,7 +143,7 @@ describe("Asguard Interceptor", () => {
     };
     const ctx = { waitUntil: vi.fn() } as any;
 
-    const response = await worker.fetch(request, env, ctx);
+    const response = await worker.fetch(request, env as any as Env, ctx);
     expect(response.status).toBe(200);
     expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
   });
@@ -172,7 +173,7 @@ describe("Asguard Interceptor", () => {
     };
     const ctx = { waitUntil: vi.fn() } as any;
 
-    const response = await worker.fetch(request, env, ctx);
+    const response = await worker.fetch(request, env as any as Env, ctx);
     expect(response.status).toBe(202);
     expect(ctx.waitUntil).toHaveBeenCalled();
     expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
@@ -206,7 +207,7 @@ describe("Asguard Interceptor", () => {
     };
     const ctx = { waitUntil: vi.fn() } as any;
 
-    const response = await worker.fetch(request, env, ctx);
+    const response = await worker.fetch(request, env as any as Env, ctx);
     expect(response.status).toBe(202);
     expect(ctx.waitUntil).toHaveBeenCalled();
   });
@@ -234,7 +235,7 @@ describe("Asguard Interceptor", () => {
     };
     const ctx = { waitUntil: vi.fn() } as any;
 
-    const response = await worker.fetch(request, env, ctx);
+    const response = await worker.fetch(request, env as any as Env, ctx);
     expect(response.status).toBe(400);
     expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
   });
@@ -248,7 +249,7 @@ describe("Asguard Interceptor", () => {
     };
     const ctx = { waitUntil: vi.fn() } as any;
 
-    const response = await worker.fetch(request, env, ctx);
+    const response = await worker.fetch(request, env as any as Env, ctx);
     expect(response.status).toBe(401);
   });
 
@@ -265,7 +266,7 @@ describe("Asguard Interceptor", () => {
     };
     const ctx = { waitUntil: vi.fn() } as any;
 
-    const response = await worker.fetch(request, env, ctx);
+    const response = await worker.fetch(request, env as any as Env, ctx);
     expect(response.status).toBe(200);
   });
 
@@ -279,7 +280,7 @@ describe("Asguard Interceptor", () => {
     };
     const ctx = { waitUntil: vi.fn() } as any;
 
-    const response = await worker.fetch(request, env, ctx);
+    const response = await worker.fetch(request, env as any as Env, ctx);
     expect(response.status).toBe(401);
   });
 
@@ -300,7 +301,7 @@ describe("Asguard Interceptor", () => {
     };
     const ctx = { waitUntil: vi.fn() } as any;
 
-    const response = await worker.fetch(request, env, ctx);
+    const response = await worker.fetch(request, env as any as Env, ctx);
     expect(response.status).toBe(200);
     const data = (await response.json()) as any;
     expect(data).toEqual([{ name: "ip:1.2.3.4", expiration: 1234567890 }, { name: "token:abc" }]);
@@ -323,7 +324,7 @@ describe("Asguard Interceptor", () => {
     };
     const ctx = { waitUntil: vi.fn() } as any;
 
-    const response = await worker.fetch(request, env, ctx);
+    const response = await worker.fetch(request, env as any as Env, ctx);
     expect(response.status).toBe(200);
     expect(mockKV.put).toHaveBeenCalledWith("ip:10.0.0.1", "1", {
       expirationTtl: 86400,
@@ -347,7 +348,7 @@ describe("Asguard Interceptor", () => {
     };
     const ctx = { waitUntil: vi.fn() } as any;
 
-    const response = await worker.fetch(request, env, ctx);
+    const response = await worker.fetch(request, env as any as Env, ctx);
     expect(response.status).toBe(200);
     expect(mockKV.delete).toHaveBeenCalledWith("ip:10.0.0.1");
   });
@@ -369,7 +370,7 @@ describe("Asguard Interceptor", () => {
     };
     const ctx = { waitUntil: vi.fn() } as any;
 
-    const response = await worker.fetch(request, env, ctx);
+    const response = await worker.fetch(request, env as any as Env, ctx);
     expect(response.status).toBe(200);
     expect(mockKV.put).toHaveBeenCalledWith("ip:10.0.0.2", "1", {
       expirationTtl: 3600,
@@ -403,7 +404,7 @@ describe("Asguard Interceptor", () => {
     };
     const ctx = { waitUntil: vi.fn() } as any;
 
-    const response = await worker.fetch(request, env, ctx);
+    const response = await worker.fetch(request, env as any as Env, ctx);
     expect(response.status).toBe(401);
     expect(mockKV.put).not.toHaveBeenCalled();
     // we also want to test that telemetry put wasn't called for audit
@@ -427,7 +428,7 @@ describe("Asguard Interceptor", () => {
     };
     const ctx = { waitUntil: vi.fn() } as any;
 
-    const responseGet = await worker.fetch(requestGet, env, ctx);
+    const responseGet = await worker.fetch(requestGet, env as any as Env, ctx);
     expect(responseGet.status).toBe(200);
     const serverTimingGet = responseGet.headers.get("Server-Timing");
     expect(serverTimingGet).toBeDefined();
@@ -448,7 +449,7 @@ describe("Asguard Interceptor", () => {
     // @ts-ignore
     requestPost.cf = { country: "US", colo: "DFW" };
 
-    const responsePost = await worker.fetch(requestPost, env, ctx);
+    const responsePost = await worker.fetch(requestPost, env as any as Env, ctx);
     expect(responsePost.status).toBe(202);
     const serverTimingPost = responsePost.headers.get("Server-Timing");
     expect(serverTimingPost).toBeDefined();
@@ -479,7 +480,7 @@ describe("Asguard Interceptor", () => {
     };
     const ctx = { waitUntil: vi.fn() } as any;
 
-    const response = await worker.fetch(request, env, ctx);
+    const response = await worker.fetch(request, env as any as Env, ctx);
     expect(response.status).toBe(202);
     expect(ctx.waitUntil).toHaveBeenCalled();
   });
@@ -519,7 +520,7 @@ describe("Asguard Interceptor", () => {
     };
     const ctx = { waitUntil: vi.fn() } as any;
 
-    const response = await worker.fetch(request, env, ctx);
+    const response = await worker.fetch(request, env as any as Env, ctx);
     expect(response.status).toBe(200);
     const data = (await response.json()) as any;
     expect(data.risk).toBe("high");
@@ -561,7 +562,7 @@ describe("Asguard Interceptor", () => {
     };
     const ctx = { waitUntil: vi.fn() } as any;
 
-    const response = await worker.fetch(request, env, ctx);
+    const response = await worker.fetch(request, env as any as Env, ctx);
     expect(response.status).toBe(200);
     const data = (await response.json()) as any;
     expect(data.risk).toBe("critical");
