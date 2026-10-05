@@ -33,9 +33,12 @@ function pruneRateLimitMap() {
   }
 }
 
+import { inspectRequest } from "./threatEngine";
 export interface Env {
   ASGUARD_BLACKLIST: KVNamespace;
   ASGUARD_TELEMETRY: KVNamespace;
+  THREAT_CACHE: KVNamespace;
+  TELEMETRY_FALLBACK_QUEUE: KVNamespace;
   ASGUARD_API_KEY: string;
   ASGUARD_SERVICE_TOKEN?: string;
   TELEMETRY_INGEST_KEY?: string;
@@ -43,6 +46,7 @@ export interface Env {
   ANTHROPIC_API_KEY?: string;
   DEEPSEEK_BASE_URL?: string;
   DEEPSEEK_MODEL?: string;
+  AXIM_SERVICE_ROLE_KEY?: string;
 }
 
 const corsHeaders = {
@@ -150,7 +154,38 @@ export default {
     }
 
 
+
     const clientIp = request.headers.get("cf-connecting-ip") || "unknown";
+
+    if (clientIp !== "unknown" && env.THREAT_CACHE) {
+      const isThreatCached = await env.THREAT_CACHE.get(`ip:${clientIp}`);
+      if (isThreatCached === 'BLOCKED') {
+        return new Response("Forbidden", {
+          status: 403,
+          headers: {
+            ...corsHeaders,
+            "X-Asguard-Protection": "active",
+            "X-Asguard-Action": "blocked-edge-kv"
+          }
+        });
+      }
+    }
+
+    if (clientIp !== "unknown") {
+      const threatCheck = inspectRequest(request, clientIp);
+      if (threatCheck.isThreat && threatCheck.severity === 'CRITICAL' && env.THREAT_CACHE) {
+         await env.THREAT_CACHE.put(`ip:${clientIp}`, 'BLOCKED', { expirationTtl: 86400 });
+         return new Response("Forbidden", {
+           status: 403,
+           headers: {
+             ...corsHeaders,
+             "X-Asguard-Protection": "active",
+             "X-Asguard-Action": "blocked-edge-kv"
+           }
+         });
+      }
+    }
+
 
     // Fast check against KV for blocked IP
     if (clientIp !== "unknown") {
@@ -178,6 +213,7 @@ export default {
 
       let currentCount = record.count;
 
+
       if (currentCount > 10) {
         let penalty = penaltyLedger.get(clientIp);
         if (penalty && now - penalty.timestamp <= 60000) {
@@ -190,10 +226,26 @@ export default {
 
         if (penalty.consecutive > 3) {
           await env.ASGUARD_BLACKLIST.put(`ip:${clientIp}`, "1", { expirationTtl: 86400 });
+          if (env.THREAT_CACHE) {
+            await env.THREAT_CACHE.put(`ip:${clientIp}`, 'BLOCKED', { expirationTtl: 86400 });
+          }
+        } else {
+          if (env.THREAT_CACHE) {
+             await env.THREAT_CACHE.put(`ip:${clientIp}`, 'BLOCKED', { expirationTtl: 3600 });
+          }
         }
 
-        return new Response("Too Many Requests", { status: 429, headers: corsHeaders });
-      } else {
+        return new Response("Too Many Requests", {
+          status: 429,
+          headers: {
+            ...corsHeaders,
+            "Retry-After": "3600",
+            "X-RateLimit-Limit": "10",
+            "X-RateLimit-Remaining": "0"
+          }
+        });
+      }
+ else {
         penaltyLedger.delete(clientIp);
       }
     }
