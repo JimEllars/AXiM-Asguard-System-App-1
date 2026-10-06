@@ -1,3 +1,4 @@
+
 "use client";
 import React, { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
@@ -17,14 +18,16 @@ export default function GlobalThreatMap() {
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-  const supabase = createClient(supabaseUrl, supabaseKey);
+
+  const supabaseRef = useRef<any>(null);
 
   useEffect(() => {
+    supabaseRef.current = createClient(supabaseUrl || 'https://mock.supabase.co', supabaseKey || 'mock-key');
     setMounted(true);
-  }, []);
+  }, [supabaseUrl, supabaseKey]);
 
   useEffect(() => {
-    if (!mounted) return;
+    if (!mounted || !supabaseRef.current) return;
 
     if (process.env.NEXT_PUBLIC_DEMO_MODE === 'true' || !supabaseUrl || !supabaseKey) {
         setStreamConnected(true);
@@ -37,7 +40,7 @@ export default function GlobalThreatMap() {
         return () => clearInterval(interval);
     }
 
-    const channel = supabase
+    const channel = supabaseRef.current
       .channel('schema-db-changes-map')
       .on(
         'postgres_changes',
@@ -46,15 +49,19 @@ export default function GlobalThreatMap() {
           schema: 'public',
           table: 'threat_events',
         },
-        (payload) => {
-          // Attempt to extract lat/lng from metadata or use dummy values for visual
-          const lat = payload.new.metadata?.geo_lat || MOCK_ATTACKS[Math.floor(Math.random() * MOCK_ATTACKS.length)].lat;
-          const lng = payload.new.metadata?.geo_lon || MOCK_ATTACKS[Math.floor(Math.random() * MOCK_ATTACKS.length)].lng;
+        (payload: any) => {
+          // Use actual coordinates if they exist, otherwise fallback
+          let lat = payload.new.metadata?.geo_lat;
+          let lng = payload.new.metadata?.geo_lon;
+          if (lat == null || lng == null) {
+              lat = MOCK_ATTACKS[Math.floor(Math.random() * MOCK_ATTACKS.length)].lat;
+              lng = MOCK_ATTACKS[Math.floor(Math.random() * MOCK_ATTACKS.length)].lng;
+          }
 
           setStreamedAttacks((prev) => [{...payload.new, lat, lng, timestamp: Date.now()}, ...prev].slice(0, 100));
         }
       )
-      .subscribe((status) => {
+      .subscribe((status: any) => {
          if (status === 'SUBSCRIBED') {
             setStreamConnected(true);
          } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
@@ -63,7 +70,9 @@ export default function GlobalThreatMap() {
       });
 
     return () => {
-      supabase.removeChannel(channel);
+      if (supabaseRef.current) {
+        supabaseRef.current.removeChannel(channel);
+      }
     };
   }, [mounted, supabaseUrl, supabaseKey]);
 
@@ -105,19 +114,21 @@ export default function GlobalThreatMap() {
 
       const itemsToRender = streamedAttacks.length > 0 ? streamedAttacks : MOCK_ATTACKS;
 
-      itemsToRender.forEach((attack) => {
-        const lng = attack?.lng || 0;
-        const x = ((lng + 180) / 360) * width;
-        const lat = attack?.lat || 0;
-        const y = ((90 - lat) / 180) * height;
+      if (Array.isArray(itemsToRender)) {
+          itemsToRender.forEach((attack) => {
+            const lng = attack?.lng || 0;
+            const x = ((lng + 180) / 360) * width;
+            const lat = attack?.lat || 0;
+            const y = ((90 - lat) / 180) * height;
 
-        const isHighSeverity = attack?.verdict === 'block' || attack?.severity === 'high';
+            const isHighSeverity = attack?.verdict === 'block' || attack?.severity === 'high';
 
-        ctx.beginPath();
-        ctx.arc(x, y, 3, 0, Math.PI * 2);
-        ctx.fillStyle = isHighSeverity ? '#ef4444' : '#00f0ff';
-        ctx.fill();
-      });
+            ctx.beginPath();
+            ctx.arc(x, y, 3, 0, Math.PI * 2);
+            ctx.fillStyle = isHighSeverity ? '#ef4444' : '#00f0ff';
+            ctx.fill();
+          });
+      }
 
       animationFrameId = requestAnimationFrame(render);
     };
@@ -132,10 +143,10 @@ export default function GlobalThreatMap() {
   if (!mounted) return null;
 
   return (
-    <div ref={containerRef} className="w-full h-full relative bg-slate-950 rounded-xl border border-slate-800 overflow-hidden flex items-center justify-center">
+    <div ref={containerRef} className="w-full h-full relative bg-[#0B0F19] rounded-xl border border-slate-800 overflow-hidden flex items-center justify-center">
       <div className="absolute top-4 left-4 z-10 pointer-events-none">
         <h3 className="text-sm font-bold text-slate-300 flex items-center gap-2">
-          <span className={`w-2 h-2 rounded-full ${streamConnected ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`}></span>
+          <span className={"w-2 h-2 rounded-full " + (streamConnected ? 'bg-emerald-500 animate-pulse' : 'bg-red-500')}></span>
           Global Threat Map
         </h3>
       </div>
