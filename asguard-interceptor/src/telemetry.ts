@@ -113,21 +113,32 @@ export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: a
       const timeoutId = setTimeout(() => controller.abort(), 1500);
 
       const aximServiceRoleKey = env.AXIM_SERVICE_ROLE_KEY || supabaseKey;
-      const dbUrl = 'https://db.axim.us.com/rest/v1/telemetry_events';
+      const dbUrl = `${env.SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL || 'https://db.axim.us.com'}/rest/v1/threat_events`;
+
+      const mappedVerdict = payload.actionTaken === 'DROPPED' ? 'block' : payload.actionTaken === 'QUARANTINED' ? 'quarantine' : 'allow';
 
       const eventPayload = {
-          event_id: payload.requestId || `evt_${Date.now()}`,
+          id: crypto.randomUUID(),
           timestamp: ts,
-          client_ip: payload.sourceIp || 'unknown',
-          geo_country: payload.originCountry || payload.country || 'UNKNOWN',
-          geo_city: payload.details?.city || 'UNKNOWN',
-          geo_lat: payload.details?.lat || 0,
-          geo_lon: payload.details?.lon || 0,
-          request_method: payload.requestMethod || 'UNKNOWN',
-          request_path: payload.targetResource || 'UNKNOWN',
-          threat_category: payload.targetVector || 'NONE',
-          action_taken: payload.actionTaken || (payload.details?.action_taken as string) || 'FLAGGED',
-          severity: payload.severity ? payload.severity.toUpperCase() : 'LOW'
+          source_ip: payload.sourceIp || 'unknown',
+          sender_email: payload.details?.sender_email || null,
+          recipient: payload.details?.recipient || null,
+          subject: payload.details?.subject || null,
+          verdict: mappedVerdict,
+          threat_score: payload.threatScore || payload.edgeBotScore || 0,
+          threat_type: payload.targetVector || payload.eventType || 'unknown',
+          indicators: payload.details?.ruleMatches || [],
+          raw_headers: {},
+          metadata: {
+              geo_lat: (ctx && (ctx as any).request && ((ctx as any).request as any).cf?.latitude) ?? null,
+              geo_lon: (ctx && (ctx as any).request && ((ctx as any).request as any).cf?.longitude) ?? null,
+              geo_city: (ctx && (ctx as any).request && ((ctx as any).request as any).cf?.city) ?? 'UNKNOWN',
+              geo_country: (ctx && (ctx as any).request && ((ctx as any).request as any).cf?.country) ?? 'UNKNOWN',
+              colo: (ctx && (ctx as any).request && ((ctx as any).request as any).cf?.colo) ?? 'UNKNOWN',
+              request_method: payload.requestMethod,
+              target_resource: payload.targetResource,
+              correlation_id: payload.correlationId
+          }
       };
 
       const resPromise = fetch(dbUrl, {
