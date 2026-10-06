@@ -1,5 +1,5 @@
 import React from 'react';
-import LiveThreatFeed from '@/components/LiveThreatFeed';
+import { LiveThreatFeed } from '@/components/LiveThreatFeed';
 import { Suspense } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 

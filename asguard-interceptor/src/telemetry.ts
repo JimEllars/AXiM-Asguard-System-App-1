@@ -303,7 +303,7 @@ export { AsguardTelemetryEvent };
 
 export async function sendTelemetryToCockpit(payload: AsguardTelemetryEvent, env: any, ctx?: any) {
   const url = env.COCKPIT_INGEST_URL || 'http://localhost:3000/api/ingest';
-  const token = env.INGEST_TOKEN || 'default_ingest_token';
+  const token = env.ASGUARD_API_KEY || 'default_ingest_token';
   const MAX_RETRIES = 3;
   const INITIAL_BACKOFF = 500;
 
@@ -342,6 +342,14 @@ export async function sendTelemetryToCockpit(payload: AsguardTelemetryEvent, env
 
     if (!success) {
         console.error("Failed to send telemetry to cockpit after max retries");
+        // Buffer locally in KV on failure
+        if (env.ASGUARD_KV_BUFFER) {
+            env.ASGUARD_KV_BUFFER.put(`audit:${Date.now()}`, JSON.stringify({
+               type: 'telemetry_drop',
+               payload: payload,
+               timestamp: Date.now()
+            })).catch((e: any) => console.error("KV Buffer Put Error", e));
+        }
         // Push error to local buffer
         if (typeof (globalThis as any).localEdgeLoggingBuffer !== 'undefined') {
             (globalThis as any).localEdgeLoggingBuffer.push({
@@ -357,6 +365,22 @@ export async function sendTelemetryToCockpit(payload: AsguardTelemetryEvent, env
   if (ctx && ctx.waitUntil) {
     ctx.waitUntil(doSend().catch(e => {
        console.error("Unhandled error in telemetry sender", e);
+       if (env.ASGUARD_KV_BUFFER) {
+            env.ASGUARD_KV_BUFFER.put(`audit:${Date.now()}`, JSON.stringify({
+               type: 'telemetry_drop_unhandled',
+               error: String(e),
+               payload: payload,
+               timestamp: Date.now()
+            })).catch((e2: any) => console.error("KV Buffer Put Error", e2));
+       }
+       if (env.ASGUARD_KV_BUFFER) {
+            env.ASGUARD_KV_BUFFER.put(`audit:${Date.now()}`, JSON.stringify({
+               type: 'telemetry_drop_unhandled',
+               error: String(e),
+               payload: payload,
+               timestamp: Date.now()
+            })).catch((e2: any) => console.error("KV Buffer Put Error", e2));
+       }
        if (typeof (globalThis as any).localEdgeLoggingBuffer !== 'undefined') {
            (globalThis as any).localEdgeLoggingBuffer.push({
                type: 'telemetry_drop_unhandled',

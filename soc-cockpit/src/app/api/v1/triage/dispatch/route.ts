@@ -1,23 +1,52 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
+import { z } from 'zod';
+import { createClient } from '@supabase/supabase-js';
+
+const TriageDispatchSchema = z.object({
+    threatId: z.string().uuid(),
+    action: z.enum(['quarantine_user', 'block_ip', 'revoke_session', 'isolate_host']),
+    severity: z.string().optional(),
+    analystNotes: z.string().optional(),
+    targetValue: z.string()
+});
+
+function getSupabaseClient() {
+  const supabaseUrl = process.env.SUPABASE_URL || 'http://localhost:54321';
+  const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.AXIM_SERVICE_ROLE_KEY || 'dummy_key_for_build';
+  return createClient(supabaseUrl, supabaseServiceRoleKey, { auth: { persistSession: false } });
+}
 
 export async function POST(req: Request) {
     try {
         const body = await req.json();
 
+        const parseResult = TriageDispatchSchema.safeParse(body);
+        if (!parseResult.success) {
+            return NextResponse.json({ error: "Invalid payload schema", details: parseResult.error }, { status: 400 });
+        }
+
+        const validatedData = parseResult.data;
+
         // Construct OnyxDispatchPayload
+        let targetType = "IP";
+        if (validatedData.action === 'quarantine_user' || validatedData.action === 'revoke_session') targetType = "USER_ACCOUNT";
+        if (validatedData.targetValue.includes('@')) targetType = "EMAIL_SENDER";
+
         const payload = {
-            source: "axim-asguard-system",
-            task_type: "FIREWALL_RULE_GENERATION",
-            priority: "HIGH",
-            details: {
-                threat_signature: body.threat_signature || 'Unknown',
-                target_paths: body.target_paths || [],
-                sample_payload: body.sample_payload || '',
-                recommended_action: "BLOCK_PATTERN",
-                origin_metadata: body.origin_metadata || {},
-                severity: body.severity || 'HIGH',
-            }
+            specVersion: "1.0",
+            source: "axim.asguard.cockpit",
+            actionType: "SECURITY_MITIGATION",
+            target: {
+               type: targetType,
+               value: validatedData.targetValue
+            },
+            threatContext: {
+               eventId: validatedData.threatId,
+               score: validatedData.severity === 'HIGH' ? 90 : 50,
+               category: validatedData.action
+            },
+            dispatchTimestamp: new Date().toISOString()
         };
 
         const stringifiedPayload = JSON.stringify(payload);
@@ -32,17 +61,43 @@ export async function POST(req: Request) {
 
         const agentEndpoint = process.env.ONYX_AGENT_ENDPOINT || 'https://coding-lab.axim.us.com/api/v1/tasks/dispatch';
 
-        const res = await fetch(agentEndpoint, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Axim-Signature': signature
-            },
-            body: stringifiedPayload,
-            signal: controller.signal as any
-        }).finally(() => clearTimeout(timeout));
+        let res;
+        let dispatchStatus = 'failed';
+        try {
+           res = await fetch(agentEndpoint, {
+               method: 'POST',
+               headers: {
+                   'Content-Type': 'application/json',
+                   'X-Axim-Signature': signature
+               },
+               body: stringifiedPayload,
+               signal: controller.signal as any
+           });
 
-        if (!res.ok) {
+           if (res.ok) dispatchStatus = 'acknowledged';
+        } catch(e) {
+           console.error("Agent dispatch failed, moving on to audit log");
+        } finally {
+           clearTimeout(timeout);
+        }
+
+        // Record action to Supabase
+        const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.AXIM_SERVICE_ROLE_KEY || '';
+        if (supabaseServiceRoleKey && supabaseServiceRoleKey !== 'dummy_key_for_build') {
+           const supabase = getSupabaseClient();
+           await supabase
+             .from('triage_actions')
+             .insert([{
+                event_id: validatedData.threatId,
+                analyst_id: 'system_analyst', // Replace with actual user ID from auth context if available
+                agent_id: 'onyx_agent_1',
+                action_taken: validatedData.action,
+                onyx_dispatch_status: dispatchStatus,
+                dispatch_payload: payload
+             }]);
+        }
+
+        if (res && !res.ok) {
            let errorDetail = 'Unknown Error';
            try {
              const errorBody = await res.text();
@@ -56,10 +111,10 @@ export async function POST(req: Request) {
            }, { status: 502 });
         }
 
-        const data = await res.json();
         return NextResponse.json({
             success: true,
-            task_id: data.task_id || `task_${Date.now()}`,
+            task_id: `task_${Date.now()}`,
+            status: dispatchStatus,
             audit_trace: {
                 dispatched_at: new Date().toISOString(),
                 endpoint: agentEndpoint,

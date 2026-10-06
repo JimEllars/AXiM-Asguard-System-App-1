@@ -5,6 +5,7 @@ compatibility_flags = ["nodejs_compat"]
 
 # Bind a KV Namespace for the Global Blocklist
 kv_namespaces = [
+  { binding = "ASGUARD_KV_BUFFER", id = "new_buffer_id_here" },
   { binding = "ASGUARD_BLACKLIST", id = "53ed082bcd0f465c94f08626c97160ca" },
   { binding = "ASGUARD_TELEMETRY", id = "9141c0fd3eb44d3c84375f418c716495" }
 ]
@@ -14,6 +15,10 @@ enabled = true
 head_sampling_rate = 1
 
 [vars]
+SUPABASE_URL = ""
+SUPABASE_SERVICE_ROLE_KEY = ""
+ASGUARD_API_KEY = ""
+COCKPIT_INGEST_URL = ""
 # Ensure environment variable placeholders exist
 ASGUARD_API_KEY = ""
 ASGUARD_SERVICE_TOKEN = ""
