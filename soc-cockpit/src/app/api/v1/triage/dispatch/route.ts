@@ -26,7 +26,32 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Invalid payload schema", details: parseResult.error }, { status: 400 });
         }
 
-        const validatedData = parseResult.data;
+const validatedData = parseResult.data;
+
+        if (validatedData.action === 'block_ip') {
+             const interceptorUrl = process.env.ASGUARD_INTERCEPTOR_URL || process.env.NEXT_PUBLIC_INTERCEPTOR_URL;
+             const asguardApiKey = process.env.ASGUARD_API_KEY;
+
+             if (interceptorUrl && asguardApiKey) {
+               try {
+                 await fetch(`${interceptorUrl}/blocklist`, {
+                   method: 'POST',
+                   headers: {
+                     'Content-Type': 'application/json',
+                     'X-Asguard-Auth': asguardApiKey
+                   },
+                   body: JSON.stringify({
+                     key: `ip:${validatedData.targetValue}`,
+                     action: 'block',
+                     ttl: 86400,
+                     note: `Blocked via SOC Cockpit by ${validatedData.analystNotes || 'analyst'}`
+                   })
+                 });
+               } catch (err) {
+                 console.error('Failed to trigger edge blocklist update:', err);
+               }
+             }
+        }
 
         // Construct OnyxDispatchPayload
         let targetType = "IP";

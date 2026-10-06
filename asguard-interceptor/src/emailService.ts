@@ -3,7 +3,7 @@ export interface Env {
   THREAT_DLQ_KV?: any;
 }
 
-export async function sendEmailItMessage(env: Env, to: string | string[], bcc: string | string[], subject: string, html: string) {
+export async function sendEmailItMessage(env: Env, to: string | string[], bcc: string | string[], subject: string, html: string, cooldownKey?: string) {
   const payload = {
     from: "System Alerts <alerts@axim.us.com>",
     to: Array.isArray(to) ? to : [to],
@@ -11,6 +11,14 @@ export async function sendEmailItMessage(env: Env, to: string | string[], bcc: s
     subject,
     html,
   };
+
+  if (cooldownKey && env.THREAT_DLQ_KV) {
+      const isCooldown = await env.THREAT_DLQ_KV.get(cooldownKey);
+      if (isCooldown) {
+          console.log(`Email suppressed due to cooldown: ${cooldownKey}`);
+          return true; // Pretend success to avoid DLQ loop
+      }
+  }
 
   try {
     const response = await fetch("https://api.emailit.com/v1/email/send", {
@@ -26,6 +34,10 @@ export async function sendEmailItMessage(env: Env, to: string | string[], bcc: s
       if (response.status >= 500 || response.status === 408) {
          throw new Error(`EmailIt HTTP Error: ${response.status}`);
       }
+    }
+
+    if (cooldownKey && env.THREAT_DLQ_KV) {
+       await env.THREAT_DLQ_KV.put(cooldownKey, "1", { expirationTtl: 900 });
     }
     return true;
   } catch (error: any) {

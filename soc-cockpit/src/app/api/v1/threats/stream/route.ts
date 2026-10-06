@@ -1,54 +1,99 @@
 import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 
 export const runtime = 'edge';
+
+function getSupabaseClient() {
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || 'http://localhost:54321';
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.AXIM_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || 'dummy_key_for_build';
+  return createClient(supabaseUrl, supabaseKey, {
+      auth: { persistSession: false }
+  });
+}
 
 export async function GET(req: Request) {
     const encoder = new TextEncoder();
     const stream = new TransformStream();
     const writer = stream.writable.getWriter();
+    const supabase = getSupabaseClient();
+
+    let isClosed = false;
+
+    const safeWrite = async (data: string) => {
+        if (isClosed) return;
+        try {
+            await writer.write(encoder.encode(data));
+        } catch (e) {
+            console.error('Stream write error', e);
+            cleanup();
+        }
+    };
 
     const sendKeepAlive = async () => {
-        try {
-            await writer.write(encoder.encode('event: ping\ndata: {}\n\n'));
-        } catch (e) {
-            console.error('Keep-alive write failed', e);
-        }
+        await safeWrite(': keep-alive\n\n');
     };
 
     const intervalId = setInterval(sendKeepAlive, 15000);
 
-    const generateMockThreat = async () => {
-        try {
-            const mockEvent = {
-                event_id: `evt_${Date.now()}`,
-                timestamp: new Date().toISOString(),
-                client_ip: `${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`,
-                geo_country: ['US', 'CN', 'RU', 'BR', 'DE'][Math.floor(Math.random() * 5)],
-                geo_city: 'Mock City',
-                geo_lat: (Math.random() * 180) - 90,
-                geo_lon: (Math.random() * 360) - 180,
-                request_method: ['GET', 'POST', 'PUT', 'DELETE'][Math.floor(Math.random() * 4)],
-                request_path: '/api/v1/data',
-                threat_category: ['SQL_INJECTION', 'PATH_TRAVERSAL', 'ANOMALOUS_USER_AGENT', 'RATE_LIMIT_EXCEEDED'][Math.floor(Math.random() * 4)],
-                action_taken: ['BLOCKED', 'CHALLENGED', 'FLAGGED'][Math.floor(Math.random() * 3)],
-                severity: ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'][Math.floor(Math.random() * 4)]
-            };
+    let channel: ReturnType<typeof supabase.channel> | null = null;
 
-            const payload = `data: ${JSON.stringify(mockEvent)}\n\n`;
-            await writer.write(encoder.encode(payload));
+    const cleanup = async () => {
+        if (isClosed) return;
+        isClosed = true;
+        clearInterval(intervalId);
+        if (channel) {
+            supabase.removeChannel(channel).catch(console.error);
+        }
+        try {
+            await writer.close();
+        } catch(e) {}
+    };
+
+    req.signal.addEventListener('abort', cleanup);
+
+    // Initial hydration
+    const hydrate = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('threat_events')
+                .select('*')
+                .gte('timestamp', new Date(Date.now() - 60 * 60 * 1000).toISOString())
+                .order('timestamp', { ascending: false })
+                .limit(50);
+
+            if (error) {
+                console.error("Error fetching initial threats:", error);
+                return;
+            }
+
+            if (data) {
+                for (const event of [...data].reverse()) {
+                    await safeWrite(`data: ${JSON.stringify(event)}\n\n`);
+                }
+            }
         } catch (e) {
-            clearInterval(intervalId);
-            clearInterval(threatInterval);
+            console.error("Hydration failed", e);
         }
     };
 
-    const threatInterval = setInterval(generateMockThreat, 1500);
+    const subscribe = () => {
+        channel = supabase.channel('public:threat_events')
+            .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'threat_events' },
+                (payload) => {
+                    safeWrite(`data: ${JSON.stringify(payload.new)}\n\n`).catch(console.error);
+                }
+            )
+            .subscribe((status) => {
+                if (status === 'SUBSCRIBED') {
+                    console.log('Successfully subscribed to threat_events');
+                }
+            });
+    };
 
-    req.signal.addEventListener('abort', () => {
-        clearInterval(intervalId);
-        clearInterval(threatInterval);
-        writer.close();
-    });
+    // Run hydration then subscribe
+    hydrate().then(subscribe).catch(console.error);
 
     return new Response(stream.readable, {
         headers: {

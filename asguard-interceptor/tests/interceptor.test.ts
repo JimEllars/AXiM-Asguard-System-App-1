@@ -486,6 +486,75 @@ describe("Asguard Interceptor", () => {
   });
 
 
+
+  it("asserts logToSupabase formats payload correctly and includes geo coords", async () => {
+    const { logToSupabase } = await import('../src/telemetry.js');
+
+    const payload = {
+      sourceIp: "192.168.1.1",
+      timestamp: Date.now(),
+      eventType: "threat.blocked",
+      severity: "critical" as any,
+      actionTaken: "DROPPED" as any,
+      targetVector: "API" as any,
+      requestMethod: "POST",
+      targetResource: "/api/login",
+      correlationId: "corr-123",
+      appOrigin: "axim-asguard" as any,
+      details: {
+        ruleMatches: ["SQLi"]
+      }
+    };
+
+    const env = {
+      SUPABASE_URL: "https://db.axim.us.com",
+      AXIM_SERVICE_ROLE_KEY: "secret",
+      TELEMETRY_FALLBACK_QUEUE: { put: vi.fn().mockResolvedValue(undefined) }
+    };
+
+    const ctx = {
+      waitUntil: vi.fn(),
+      request: {
+        cf: {
+          latitude: 37.7749,
+          longitude: -122.4194,
+          city: "San Francisco",
+          country: "US",
+          colo: "SFO"
+        }
+      }
+    };
+
+    let fetchBody = "";
+    let fetchUrl = "";
+
+    global.fetch = vi.fn().mockImplementation((url, options) => {
+        fetchUrl = url;
+        if (options && options.body) {
+            fetchBody = options.body;
+        }
+        return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }));
+    });
+
+    await logToSupabase(payload, env, ctx);
+
+    // Allow promises to resolve
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(fetchUrl).toBe("https://db.axim.us.com/rest/v1/threat_events");
+    const parsed = JSON.parse(fetchBody);
+
+    expect(parsed.source_ip).toBeDefined();
+    expect(parsed.verdict).toBe("block");
+    expect(parsed.threat_type).toBe("API");
+    expect(parsed.indicators).toEqual(["SQLi"]);
+    expect(parsed.metadata.geo_lat).toBe(37.7749);
+    expect(parsed.metadata.geo_lon).toBe(-122.4194);
+    expect(parsed.metadata.geo_city).toBe("San Francisco");
+  });
+
+
+
   it("executes POST /analysis successfully and returns 200 JSON", async () => {
     const payload = {
       sourceIp: "192.168.1.1",
