@@ -9,7 +9,7 @@ export async function GET(req: Request) {
 
     const sendKeepAlive = async () => {
         try {
-            await writer.write(encoder.encode(': keep-alive\n\n'));
+            await writer.write(encoder.encode('event: ping\ndata: {}\n\n'));
         } catch (e) {
             console.error('Keep-alive write failed', e);
         }

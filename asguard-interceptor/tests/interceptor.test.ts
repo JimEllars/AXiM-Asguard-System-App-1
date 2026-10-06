@@ -568,4 +568,69 @@ describe("Asguard Interceptor", () => {
     expect(data.risk).toBe("critical");
     expect(response.headers.get("X-Asguard-Analysis-Provider")).toBe("anthropic");
   });
+
+
+  it("handles obfuscated XSS payloads correctly via threatEngine fallback", async () => {
+    const payload = {
+      sourceIp: "192.168.1.3",
+      timestamp: Date.now(),
+      eventType: "suspicious_activity",
+      severity: "high",
+      payload: "<script>alert(1)</script>"
+    };
+
+    global.fetch = vi.fn()
+      .mockResolvedValueOnce(new Response("Gateway Timeout", { status: 504 }))
+      .mockResolvedValueOnce(new Response("Gateway Timeout", { status: 504 }));
+
+    const request = new Request("https://example.com/analysis", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      headers: { "X-Asguard-Auth": "secret-key", "Content-Type": "application/json" }
+    });
+
+    const env = {
+      ASGUARD_API_KEY: "secret-key",
+      DEEPSEEK_API_KEY: "ds-key",
+      ANTHROPIC_API_KEY: "anth-key",
+      ASGUARD_BLACKLIST: mockKV as any,
+      ASGUARD_TELEMETRY: mockTelemetryKV as any,
+    };
+    const ctx = { waitUntil: vi.fn() } as any;
+
+    const response = await worker.fetch(request, env as any as Env, ctx);
+
+    expect(response.status).toBe(200);
+    const data = (await response.json()) as any;
+    expect(data.risk).toBe("medium"); // Fallback defaults to medium
+    expect(data.summary).toBe("Automated heuristic fallback triggered");
+    expect(data.recommendedActions).toContain("Monitor IP");
+  });
+
+  it("enforces rate limiting behavior during sudden request spikes", async () => {
+    const env = {
+      ASGUARD_API_KEY: "secret-key",
+      TELEMETRY_INGEST_KEY: "ingest-key",
+      ASGUARD_BLACKLIST: mockKV as any,
+      ASGUARD_TELEMETRY: mockTelemetryKV as any,
+    };
+    const ctx = { waitUntil: vi.fn() } as any;
+
+    let response;
+    for (let i = 0; i < 7; i++) {
+      const request = new Request("https://example.com/telemetry/client-error", {
+        method: "POST",
+        body: JSON.stringify({ message: "test", timestamp: Date.now() }),
+        headers: { "cf-connecting-ip": "1.2.3.99", "X-Asguard-Ingest-Key": "ingest-key" },
+      });
+      // @ts-ignore
+      request.cf = { country: "US", colo: "DFW" };
+
+      response = await worker.fetch(request, env as any as Env, ctx);
+    }
+
+    expect(response?.status).toBe(429);
+    expect(await response?.text()).toBe("Too Many Requests");
+  });
+
 });

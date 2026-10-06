@@ -12,6 +12,17 @@ function unavailableResponse() {
   );
 }
 
+// Fallback handlers
+async function fallbackProxy(request: Request, targetPath: string, env: any) {
+  if (targetPath === "telemetry") {
+    return NextResponse.json({ status: "mocked", message: "Telemetry accepted (mock)" }, { status: 202 });
+  } else if (targetPath === "blocklist") {
+    return NextResponse.json({ status: "mocked", message: "Blocklist updated (mock)" }, { status: 200 });
+  } else if (targetPath === "analysis") {
+    return NextResponse.json({ risk: "low", summary: "Mocked analysis", recommendedActions: [], rationale: "Upstream unavailable, using mock" }, { status: 200 });
+  }
+  return unavailableResponse();
+}
 async function proxy(request: Request, context: { params: Promise<{ path: string[] }> }) {
   const { path } = await context.params;
   const targetPath = path.join("/");
@@ -56,56 +67,67 @@ async function proxy(request: Request, context: { params: Promise<{ path: string
   const headers = new Headers();
   headers.set("X-Asguard-Service-Token", serviceToken);
   const contentType = request.headers.get("Content-Type");
-  if (contentType) {
-    headers.set("Content-Type", contentType);
-  }
+  if (contentType) headers.set("Content-Type", contentType);
+
   const authHeader = request.headers.get("Authorization");
-  if (authHeader) {
-    headers.set("Authorization", authHeader);
-  }
+  if (authHeader) headers.set("Authorization", authHeader);
+
+  const threatSig = request.headers.get("X-Threat-Signature");
+  if (threatSig) headers.set("X-Threat-Signature", threatSig);
+
+  const xForwardedFor = request.headers.get("X-Forwarded-For");
+  if (xForwardedFor) headers.set("X-Forwarded-For", xForwardedFor);
+
   const requestIdHeader = request.headers.get("X-Asguard-Request-ID");
-  if (requestIdHeader) {
-    headers.set("X-Asguard-Request-ID", requestIdHeader);
-  }
+  if (requestIdHeader) headers.set("X-Asguard-Request-ID", requestIdHeader);
 
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+  const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer();
 
+  const maxRetries = 2;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      let response;
-      const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer();
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 4000);
 
-      if (asguardBinding) {
-        response = await asguardBinding.fetch(
-          new Request(`https://asguard.internal/${targetPath}`, {
+      try {
+        let response;
+        if (asguardBinding) {
+          response = await asguardBinding.fetch(
+            new Request(`https://asguard.internal/${targetPath}`, {
+              method: request.method,
+              headers,
+              body,
+              signal: controller.signal as any,
+            })
+          );
+        } else {
+          response = await fetch(`${interceptorUrl}/${targetPath}`, {
             method: request.method,
             headers,
             body,
             signal: controller.signal as any,
-          })
-        );
-      } else {
-        response = await fetch(`${interceptorUrl}/${targetPath}`, {
-          method: request.method,
-          headers,
-          body,
-          signal: controller.signal as any,
-        });
-      }
+          });
+        }
 
-      return new NextResponse(response.body, {
-        status: response.status,
-        headers: { "Content-Type": response.headers.get("Content-Type") || "text/plain" },
-      });
-    } finally {
-      clearTimeout(timeout);
+        return new NextResponse(response.body, {
+          status: response.status,
+          headers: { "Content-Type": response.headers.get("Content-Type") || "text/plain" },
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
+    } catch (error: unknown) {
+      if (attempt < maxRetries) {
+        // Exponential backoff
+        await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 500));
+        continue;
+      }
+      console.error("Asguard service request failed after retries", error);
+      return fallbackProxy(request, targetPath, env);
     }
-  } catch (error: unknown) {
-    console.error("Asguard service request failed", error);
-    return unavailableResponse();
   }
-}
+
+  return fallbackProxy(request, targetPath, env);}
 
 export const GET = proxy;
 export const POST = proxy;

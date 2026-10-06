@@ -143,3 +143,9 @@ Tests passing, builds successful, logic updated.
 - Created Real-Time SSE Stream for Threat Visualizations in `soc-cockpit/src/app/api/v1/threats/stream/route.ts` and connected UI.
 - Hardened Wildcard SSO Super-User Hydration in `soc-cockpit/src/middleware.ts`.
 - Implemented Autonomous Coding Lab Interlock for Onyx Triage.
+[2026-10-05]
+- Hardened Interceptor Gateway (`soc-cockpit/src/app/api/asguard/[...path]/route.ts`) with bidirectional header propagation, exponential backoff (2 retries max), 4000ms timeout budget, and local fallback mock handlers.
+- Hardened SSE Stream Lifecycle in `soc-cockpit/src/app/api/v1/threats/stream/route.ts` (added 15s active ping packets) and updated `LiveThreatFeed.tsx` and `GlobalThreatMap.tsx` with exponential backoff reconnection logic and 100-item stream bounds.
+- Integrated Onyx Agent Action Pipeline in `soc-cockpit/src/app/api/v1/triage/dispatch/route.ts` to output an `OnyxDispatchPayload` to `process.env.ONYX_AGENT_ENDPOINT` with standard audit traces, and connected the UI logic in `OnyxPipeline.tsx`.
+- Implemented comprehensive Edge Threat Engine Regression test coverage in `asguard-interceptor/tests/interceptor.test.ts` for obfuscated payload fallback and sudden request spike rate limiting logic. Fixed test assumptions by updating fallback output schemas natively.
+- Added variable placeholders to `asguard-interceptor/wrangler.toml` and `soc-cockpit/wrangler.toml`.

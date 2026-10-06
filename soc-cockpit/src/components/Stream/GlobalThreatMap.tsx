@@ -52,8 +52,8 @@ export default function GlobalThreatMap() {
           try {
             const data = JSON.parse(event.data);
 
-            if (data.type === 'ping') {
-               const latency = Date.now() - new Date(data.timestamp).getTime();
+            if (data.type === 'ping' || event.type === 'ping') {
+               const latency = data.timestamp ? Date.now() - new Date(data.timestamp).getTime() : 0;
                setPacketLatency(latency);
                return;
             }
@@ -66,7 +66,7 @@ export default function GlobalThreatMap() {
 
             setPulses(prev => {
               const now = Date.now();
-              const active = prev.filter(p => now - p.timestamp < 2000);
+              const active = prev.filter(p => now - p.timestamp < 2000).slice(0, 99);
               return [...active, {
                 id: data.id || Math.random().toString(36).substr(2, 9),
                 lat: data.lat || 0,
@@ -80,13 +80,23 @@ export default function GlobalThreatMap() {
           }
         };
 
+        // Also add explicit listener for ping events since standard EventSource triggers onmessage only for unnamed events.
+        eventSource.addEventListener('ping', (event: any) => {
+            try {
+               const data = JSON.parse(event.data);
+               const latency = data.timestamp ? Date.now() - new Date(data.timestamp).getTime() : 0;
+               setPacketLatency(latency);
+            } catch (err) {}
+        });
+
         eventSource.onerror = (e) => {
           console.error("Stream map connection error", e);
           if (eventSource) {
             eventSource.close();
           }
           setStreamConnected(false);
-          const delay = Math.min(1000 * Math.pow(2, retryCount), 10000);
+          const delays = [1000, 2000, 5000, 10000];
+          const delay = delays[Math.min(retryCount, delays.length - 1)];
           retryCount++;
           reconnectTimeout = setTimeout(connectStream, delay);
         };
