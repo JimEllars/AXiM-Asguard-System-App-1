@@ -115,7 +115,8 @@ export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: a
       const aximServiceRoleKey = env.AXIM_SERVICE_ROLE_KEY || supabaseKey;
       const dbUrl = `${env.SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL || 'https://db.axim.us.com'}/rest/v1/threat_events`;
 
-      const mappedVerdict = payload.actionTaken === 'DROPPED' ? 'block' : payload.actionTaken === 'QUARANTINED' ? 'quarantine' : 'allow';
+      const verdictAction = payload.actionTaken || (payload.details?.action_taken as string) || 'logged';
+      const mappedVerdict = verdictAction === 'DROPPED' || verdictAction === 'block' ? 'block' : verdictAction === 'QUARANTINED' ? 'quarantine' : 'allow';
 
       const eventPayload = {
           id: crypto.randomUUID(),
