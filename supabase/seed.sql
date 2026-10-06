@@ -1,0 +1,7 @@
+INSERT INTO threat_events (id, timestamp, source_ip, sender_email, recipient, subject, verdict, threat_score, threat_type, indicators, raw_headers, metadata) VALUES
+('11111111-1111-1111-1111-111111111111', NOW() - INTERVAL '1 hour', '192.168.1.5', 'admin@example.com', 'user@company.com', 'Urgent: Password Reset', 'block', 95.5, 'phishing', '["malicious_link", "spoofed_domain"]'::jsonb, '{"X-Mailer": "Unknown"}'::jsonb, '{"geo": "US"}'::jsonb),
+('22222222-2222-2222-2222-222222222222', NOW() - INTERVAL '2 hours', '10.0.0.8', 'ceo@company.com', 'finance@company.com', 'Wire Transfer Request', 'quarantine', 80.0, 'bec', '["unusual_sender_location", "high_urgency_language"]'::jsonb, '{"X-Mailer": "MailApp"}'::jsonb, '{"geo": "UK"}'::jsonb),
+('33333333-3333-3333-3333-333333333333', NOW() - INTERVAL '3 hours', '172.16.0.4', 'info@newsletter.com', 'marketing@company.com', 'Weekly Update', 'allow', 10.0, 'clean', '[]'::jsonb, '{"X-Mailer": "NewsletterApp"}'::jsonb, '{"geo": "CA"}'::jsonb);
+
+INSERT INTO triage_actions (id, event_id, analyst_id, action_taken, onyx_dispatch_status, dispatch_payload) VALUES
+(gen_random_uuid(), '11111111-1111-1111-1111-111111111111', 'analyst_01', 'quarantine_user', 'acknowledged', '{"specVersion": "1.0", "source": "axim.asguard.cockpit", "actionType": "SECURITY_MITIGATION", "target": {"type": "EMAIL_SENDER", "value": "admin@example.com"}, "threatContext": {"eventId": "11111111-1111-1111-1111-111111111111", "score": 95.5, "category": "phishing"}}'::jsonb);
