@@ -64,13 +64,14 @@ export default function OnyxPipeline() {
 
      setDispatchState('pending');
      try {
-         const res = await fetch(process.env.NEXT_PUBLIC_INTERCEPTOR_URL + '/blocklist', {
+         const res = await fetch((process.env.NEXT_PUBLIC_INTERCEPTOR_URL || '/api/asguard') + '/blocklist', {
              method: 'POST',
              headers: { 'Content-Type': 'application/json' },
              body: JSON.stringify({
+                 key: `ip:${targetValue}`,
                  action: 'block',
-                 ip: targetValue,
-                 ttl: 86400
+                 ttl: 86400,
+                 note: '1-Click Quarantine via Onyx Pipeline'
              })
          });
          const data = await res.json();
