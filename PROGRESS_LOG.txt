@@ -154,3 +154,7 @@ Completed Tasks:\n- DDL Schema `supabase/migrations/20261005000000_asguard_core_
 - Restored Onyx Pipeline Media Upload & 1-Click Quarantine in OnyxPipeline.tsx
 - Verified Map Geolocation Coordinates in GlobalThreatMap.tsx
 - Completed task: AXiM Asguard System — Restore SOC Cockpit Dashboard UI, Harden Media Pipeline & Connect Realtime Telemetry
+- Wrote logic for edge blocklist integration in `soc-cockpit/src/components/LiveThreatFeed.tsx` (fetchBlocklist, handleDropIp, handleUnblockIp).
+- Added logic for dynamic analytics mapping colos and countries from streamed data.
+- Added audit trail list view and JSON export functionality.
+- Fixed 1-Click Quarantine payload schema in `soc-cockpit/src/components/Submit/OnyxPipeline.tsx` to match interceptor endpoint schema.

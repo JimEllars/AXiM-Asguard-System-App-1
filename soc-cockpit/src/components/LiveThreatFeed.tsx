@@ -14,6 +14,7 @@ export function LiveThreatFeed() {
   const [appOrigin, setAppOrigin] = useState('ALL');
   const [severityFilter, setSeverityFilter] = useState('ALL');
   const [blocklist, setBlocklist] = useState<any[]>([]);
+  const [auditEvents, setAuditEvents] = useState<any[]>([]);
 
   const itemsPerPage = 5;
 
@@ -50,6 +51,33 @@ export function LiveThreatFeed() {
         return () => clearInterval(interval);
     }
 
+    const fetchBlocklist = async () => {
+      try {
+        const res = await fetch('/api/asguard/blocklist');
+        if (res.ok) {
+          const data = await res.json();
+          setBlocklist(Array.isArray(data) ? data : []);
+        }
+      } catch (err) {
+        console.warn('Failed to fetch edge blocklist:', err);
+      }
+    };
+
+    const fetchAuditEvents = async () => {
+      try {
+        const res = await fetch('/api/asguard/audit');
+        if (res.ok) {
+          const data = await res.json();
+          setAuditEvents(Array.isArray(data) ? data : []);
+        }
+      } catch (err) {
+        console.warn('Failed to fetch edge audit logs:', err);
+      }
+    };
+
+    fetchBlocklist();
+    fetchAuditEvents();
+
     const channel = supabaseRef.current
       .channel('schema-db-changes')
       .on(
@@ -78,12 +106,55 @@ export function LiveThreatFeed() {
     };
   }, [mounted, supabaseUrl, supabaseKey]);
 
-  const handleDropIp = async (ip: string) => {
-     // call /api/asguard/blocklist
+  const handleDropIp = async (ip: string, reason?: string) => {
+    if (!ip) return;
+    try {
+      const res = await fetch('/api/asguard/blocklist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          key: `ip:${ip}`,
+          action: 'block',
+          ttl: 86400,
+          note: reason || 'Manual drop from SOC Cockpit'
+        })
+      });
+      if (res.ok) {
+        try {
+          const bRes = await fetch('/api/asguard/blocklist');
+          if (bRes.ok) {
+            const data = await bRes.json();
+            setBlocklist(Array.isArray(data) ? data : []);
+          }
+        } catch(e) {}
+      }
+    } catch (err) {
+      console.error('Failed to block IP at edge:', err);
+    }
   };
 
-  const handleUnblockIp = async (ip: string) => {
-     // unblock
+  const handleUnblockIp = async (key: string) => {
+    try {
+      const res = await fetch('/api/asguard/blocklist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          key: key.startsWith('ip:') ? key : `ip:${key}`,
+          action: 'unblock'
+        })
+      });
+      if (res.ok) {
+        try {
+          const bRes = await fetch('/api/asguard/blocklist');
+          if (bRes.ok) {
+            const data = await bRes.json();
+            setBlocklist(Array.isArray(data) ? data : []);
+          }
+        } catch(e) {}
+      }
+    } catch (err) {
+      console.error('Failed to lift block at edge:', err);
+    }
   };
 
   if (!mounted) {
@@ -98,6 +169,33 @@ export function LiveThreatFeed() {
      // Add origin filtering if available on model
      return matchesSearch && matchesSeverity;
   });
+
+  const coloCounts = streamedAttacks.reduce((acc, curr) => {
+      const c = curr.metadata?.colo || 'EDGE';
+      acc[c] = (acc[c] || 0) + 1;
+      return acc;
+  }, {} as Record<string, number>);
+  const sortedColos = Object.entries(coloCounts).sort((a, b) => (b[1] as number) - (a[1] as number)).slice(0, 2);
+  const totalColoCount = streamedAttacks.length || 1;
+
+  const countryCounts = streamedAttacks.reduce((acc, curr) => {
+      const c = curr.metadata?.geo_country || curr.country || 'US';
+      acc[c] = (acc[c] || 0) + 1;
+      return acc;
+  }, {} as Record<string, number>);
+  const sortedCountries = Object.entries(countryCounts).sort((a, b) => (b[1] as number) - (a[1] as number)).slice(0, 2);
+  const totalCountryCount = streamedAttacks.length || 1;
+
+  const handleExportAudit = () => {
+      const blob = new Blob([JSON.stringify(auditEvents, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'asguard-audit-export.json';
+      a.click();
+      URL.revokeObjectURL(url);
+  };
+
 
   return (
     <div className="bg-[#0B0F19] border border-slate-800 rounded p-4 text-slate-300 font-mono flex flex-col h-full overflow-hidden">
@@ -125,13 +223,19 @@ export function LiveThreatFeed() {
         <div className="grid grid-cols-2 gap-4 mb-4 text-xs">
            <div className="bg-[#111827] border border-slate-800 p-2 rounded">
               <div className="font-bold text-slate-400 mb-2">Top Datacenters</div>
-              <div>SFO - 45%</div>
-              <div>FRA - 25%</div>
+              {sortedColos.length > 0 ? sortedColos.map(([colo, count]) => (
+                  <div key={colo} className="cursor-pointer hover:text-white" onClick={() => setSearchTerm(colo)}>
+                      {colo} - {Math.round(((count as number) / totalColoCount) * 100)}%
+                  </div>
+              )) : <div>No data</div>}
            </div>
            <div className="bg-[#111827] border border-slate-800 p-2 rounded">
               <div className="font-bold text-slate-400 mb-2">Top Regional Sources</div>
-              <div>US - 50%</div>
-              <div>DE - 20%</div>
+              {sortedCountries.length > 0 ? sortedCountries.map(([country, count]) => (
+                  <div key={country} className="cursor-pointer hover:text-white" onClick={() => setSearchTerm(country)}>
+                      {country} - {Math.round(((count as number) / totalCountryCount) * 100)}%
+                  </div>
+              )) : <div>No data</div>}
            </div>
         </div>
 
@@ -233,9 +337,28 @@ export function LiveThreatFeed() {
            <div className="w-1/3 bg-[#111827] border border-slate-800 rounded flex flex-col overflow-hidden">
               <div className="p-2 border-b border-slate-800 font-bold text-sm">Active Perimeter Blocks</div>
               <div className="flex-1 overflow-y-auto p-2">
+                  {blocklist.length === 0 ? (
                   <div className="border border-slate-800/50 bg-slate-950/20 rounded font-mono p-6 text-center text-xs text-slate-500 flex flex-col h-full items-center justify-center">
                       No active perimeter blocks.
                   </div>
+                  ) : (
+                      <div className="space-y-2">
+                          {blocklist.map((block, idx) => (
+                              <div key={idx} className="bg-slate-900 border border-slate-700 p-2 rounded text-xs flex flex-col gap-1">
+                                  <div className="flex justify-between items-center">
+                                      <span className="font-bold text-slate-200">{block.key || block.ip || 'Unknown'}</span>
+                                      <button onClick={() => handleUnblockIp(block.key || block.ip)} className="bg-slate-800 text-xs px-2 py-1 rounded hover:bg-slate-700">
+                                          Lift Block
+                                      </button>
+                                  </div>
+                                  <div className="text-slate-500 text-[10px]">
+                                      Expires: {block.expiration ? new Date(block.expiration).toLocaleString() : 'Never'}
+                                  </div>
+                                  {block.note && <div className="text-amber-500 text-[10px]">Note: {block.note}</div>}
+                              </div>
+                          ))}
+                      </div>
+                  )}
               </div>
            </div>
 
@@ -245,10 +368,22 @@ export function LiveThreatFeed() {
         <div className="h-32 bg-[#111827] border border-slate-800 rounded flex flex-col">
            <div className="p-2 border-b border-slate-800 font-bold text-sm flex justify-between">
               Audit Trail
-              <button className="text-xs text-[#FDD023] hover:underline">Export JSON</button>
+              <button onClick={handleExportAudit} className="text-xs text-[#FDD023] hover:underline">Export JSON</button>
            </div>
            <div className="flex-1 overflow-y-auto p-2 text-xs text-slate-400 text-center flex items-center justify-center">
-              End of audit trail.
+               {auditEvents.length === 0 ? (
+                  <span>End of audit trail.</span>
+               ) : (
+                  <div className="w-full h-full space-y-1 text-left">
+                     {auditEvents.map((evt, idx) => (
+                         <div key={idx} className="border-b border-slate-800/50 pb-1">
+                             <span className="text-slate-500">{new Date(evt.timestamp || Date.now()).toLocaleString()}</span> -
+                             <span className={"font-bold mx-1 " + (evt.action === 'block' ? 'text-red-500' : 'text-emerald-500')}>{evt.action?.toUpperCase()}</span> -
+                             <span className="text-slate-200">{evt.target || evt.key}</span>
+                         </div>
+                     ))}
+                  </div>
+               )}
            </div>
         </div>
 
