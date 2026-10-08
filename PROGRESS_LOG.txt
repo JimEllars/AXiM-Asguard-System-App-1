@@ -158,3 +158,19 @@ Completed Tasks:\n- DDL Schema `supabase/migrations/20261005000000_asguard_core_
 - Added logic for dynamic analytics mapping colos and countries from streamed data.
 - Added audit trail list view and JSON export functionality.
 - Fixed 1-Click Quarantine payload schema in `soc-cockpit/src/components/Submit/OnyxPipeline.tsx` to match interceptor endpoint schema.
+Verification Appendix:
+
+Target File & Line Range:
+asguard-interceptor/src/threatEngine.ts:5-29
+
+Exact Change Snippet:
+```typescript
+    // SQL Injection (SQLi)
+    const sqliPatterns = /union\s+select|exec\(|waitfor\s+delay|sleep\(|benchmark\(|'\s+or\s+'1'='1|;\s*drop\s+table/i;
+    if (sqliPatterns.test(path) || sqliPatterns.test(decodedSearch)) {
+         return { isThreat: true, category: 'SQL_INJECTION', severity: 'CRITICAL' };
+    }
+```
+
+Proving Test Name:
+`tests/interceptor.test.ts > Asguard Interceptor > threatEngine catches SQLi and prompt injection`
