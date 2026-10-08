@@ -308,10 +308,10 @@ export function logAIFailure(errorMsg: string, env?: any, ctx?: any) {
 
   return logEntry;
 }
-import { AsguardTelemetryEvent } from './telemetry_events';
+import type { AsguardTelemetryEvent } from './telemetry_events.js';
 
 // Export shared interface for cross-repo use (or just define it here)
-export { AsguardTelemetryEvent };
+export type { AsguardTelemetryEvent };
 
 export async function sendTelemetryToCockpit(payload: AsguardTelemetryEvent, env: any, ctx?: any) {
   const url = env.COCKPIT_INGEST_URL || 'http://localhost:3000/api/ingest';
