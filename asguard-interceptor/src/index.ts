@@ -1,4 +1,4 @@
-import { TelemetryPayloadSchema, logToSupabase, logAIInference } from "./telemetry";
+import { TelemetryPayloadSchema, logToSupabase, logAIInference, flushBufferedTelemetry } from "./telemetry";
 import { AIClient } from "./aiService";
 
 const rateLimitMap = new Map<string, { count: number; timestamp: number }>();
@@ -119,6 +119,9 @@ async function analyzeThreat(payload: unknown, env: Env): Promise<Response> {
 
 
 export default {
+  async scheduled(event: any, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(flushBufferedTelemetry(env));
+  },
   async fetch(
     request: Request,
     env: Env,
@@ -550,6 +553,7 @@ export default {
 
 
     if (request.method === "GET" && url.pathname === "/health") {
+      ctx.waitUntil(flushBufferedTelemetry(env));
       return new Response(JSON.stringify({ status: "OK", timestamp: Date.now() }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

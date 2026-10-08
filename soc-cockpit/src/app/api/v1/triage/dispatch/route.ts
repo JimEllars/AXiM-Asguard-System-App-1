@@ -118,7 +118,8 @@ const validatedData = parseResult.data;
                 agent_id: 'onyx_agent_1',
                 action_taken: validatedData.action,
                 onyx_dispatch_status: dispatchStatus,
-                dispatch_payload: payload
+                dispatch_payload: payload,
+                resolved_at: new Date().toISOString()
              }]);
         }
 
