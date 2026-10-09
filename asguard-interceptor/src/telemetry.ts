@@ -172,7 +172,7 @@ export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: a
              }));
              // Buffer locally on failure
              if (env.TELEMETRY_FALLBACK_QUEUE) {
-                 env.TELEMETRY_FALLBACK_QUEUE.put(`audit:${Date.now()}`, JSON.stringify(eventPayload)).catch((e: any) => console.error("KV Put Error", e));
+                 env.TELEMETRY_FALLBACK_QUEUE.put(`fallback_evt:${Date.now()}`, JSON.stringify(eventPayload)).catch((e: any) => console.error("KV Put Error", e));
              }
           }
       } else {
@@ -184,7 +184,7 @@ export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: a
           }));
           // Buffer locally on failure
           if (env.TELEMETRY_FALLBACK_QUEUE) {
-              env.TELEMETRY_FALLBACK_QUEUE.put(`audit:${Date.now()}`, JSON.stringify(eventPayload)).catch((e: any) => console.error("KV Put Error", e));
+              env.TELEMETRY_FALLBACK_QUEUE.put(`fallback_evt:${Date.now()}`, JSON.stringify(eventPayload)).catch((e: any) => console.error("KV Put Error", e));
           }
       }
 
@@ -356,7 +356,7 @@ export async function sendTelemetryToCockpit(payload: AsguardTelemetryEvent, env
         console.error("Failed to send telemetry to cockpit after max retries");
         // Buffer locally in KV on failure
         if (env.ASGUARD_KV_BUFFER) {
-            env.ASGUARD_KV_BUFFER.put(`audit:${Date.now()}`, JSON.stringify({
+            env.ASGUARD_KV_BUFFER.put(`fallback_evt:${Date.now()}`, JSON.stringify({
                type: 'telemetry_drop',
                payload: payload,
                timestamp: Date.now()
@@ -378,7 +378,7 @@ export async function sendTelemetryToCockpit(payload: AsguardTelemetryEvent, env
     ctx.waitUntil(doSend().catch(e => {
        console.error("Unhandled error in telemetry sender", e);
        if (env.ASGUARD_KV_BUFFER) {
-            env.ASGUARD_KV_BUFFER.put(`audit:${Date.now()}`, JSON.stringify({
+            env.ASGUARD_KV_BUFFER.put(`fallback_evt:${Date.now()}`, JSON.stringify({
                type: 'telemetry_drop_unhandled',
                error: String(e),
                payload: payload,
@@ -386,7 +386,7 @@ export async function sendTelemetryToCockpit(payload: AsguardTelemetryEvent, env
             })).catch((e2: any) => console.error("KV Buffer Put Error", e2));
        }
        if (env.ASGUARD_KV_BUFFER) {
-            env.ASGUARD_KV_BUFFER.put(`audit:${Date.now()}`, JSON.stringify({
+            env.ASGUARD_KV_BUFFER.put(`fallback_evt:${Date.now()}`, JSON.stringify({
                type: 'telemetry_drop_unhandled',
                error: String(e),
                payload: payload,
@@ -412,5 +412,61 @@ export async function sendTelemetryToCockpit(payload: AsguardTelemetryEvent, env
            });
        }
   });
+  }
+}
+
+export async function flushBufferedTelemetry(env: any) {
+  if (!env.TELEMETRY_FALLBACK_QUEUE && !env.ASGUARD_TELEMETRY) return;
+  const queue = env.TELEMETRY_FALLBACK_QUEUE || env.ASGUARD_TELEMETRY;
+
+  try {
+    const listResult = await queue.list({ prefix: 'fallback_evt:' });
+    if (!listResult.keys || listResult.keys.length === 0) return;
+
+    const payloads: any[] = [];
+    const keysToDelete: string[] = [];
+
+    for (const key of listResult.keys) {
+      const data = await queue.get(key.name);
+      if (data) {
+        try {
+          payloads.push(JSON.parse(data));
+          keysToDelete.push(key.name);
+        } catch (e) {
+          // invalid json, schedule for deletion anyway
+          keysToDelete.push(key.name);
+        }
+      }
+    }
+
+    if (payloads.length === 0) {
+      for (const key of keysToDelete) {
+        await queue.delete(key).catch(() => {});
+      }
+      return;
+    }
+
+    const dbUrl = env.SUPABASE_URL ? `${env.SUPABASE_URL}/rest/v1/threat_events` : 'http://localhost:54321/rest/v1/threat_events';
+    const aximServiceRoleKey = env.AXIM_SERVICE_ROLE_KEY || env.SUPABASE_SERVICE_ROLE_KEY || 'dummy_key';
+
+    const res = await fetch(dbUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': aximServiceRoleKey,
+        'Authorization': `Bearer ${aximServiceRoleKey}`,
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify(payloads)
+    });
+
+    if (res.ok || res.status === 201 || res.status === 200) {
+      // successfully flushed, delete keys
+      await Promise.allSettled(keysToDelete.map(key => queue.delete(key)));
+    } else {
+      console.error(`Failed to flush buffered telemetry: ${res.status}`);
+    }
+  } catch (err: any) {
+    console.error(`Error flushing buffered telemetry: ${err.message}`);
   }
 }

@@ -8,6 +8,9 @@ export function LiveThreatFeed() {
   const [streamConnected, setStreamConnected] = useState(false);
   const [packetLatency, setPacketLatency] = useState(0);
   const [streamedAttacks, setStreamedAttacks] = useState<any[]>([]);
+  const [eventsPerSecond, setEventsPerSecond] = useState(0);
+  const eventsInLastSecond = useRef(0);
+  const autoRefreshRef = useRef(false);
   const [telemetryPage, setTelemetryPage] = useState(0);
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -88,6 +91,7 @@ export function LiveThreatFeed() {
           table: 'threat_events',
         },
         (payload: any) => {
+          eventsInLastSecond.current += 1;
           setStreamedAttacks((prev) => [payload.new, ...prev].slice(0, 100));
         }
       )
@@ -99,7 +103,13 @@ export function LiveThreatFeed() {
          }
       });
 
+    const epsInterval = setInterval(() => {
+      setEventsPerSecond(eventsInLastSecond.current);
+      eventsInLastSecond.current = 0;
+    }, 1000);
+
     return () => {
+      clearInterval(epsInterval);
       if (supabaseRef.current) {
         supabaseRef.current.removeChannel(channel);
       }
@@ -221,6 +231,10 @@ export function LiveThreatFeed() {
 
         {/* Edge Trend Analytics Placeholder */}
         <div className="grid grid-cols-2 gap-4 mb-4 text-xs">
+           <div className="bg-[#111827] border border-slate-800 p-2 rounded flex flex-col justify-center items-center">
+               <div className="text-2xl font-bold text-[#FDD023]">{eventsPerSecond}</div>
+               <div className="text-xs text-slate-500">EPS</div>
+           </div>
            <div className="bg-[#111827] border border-slate-800 p-2 rounded">
               <div className="font-bold text-slate-400 mb-2">Top Datacenters</div>
               {sortedColos.length > 0 ? sortedColos.map(([colo, count]) => (
@@ -305,6 +319,14 @@ export function LiveThreatFeed() {
                               <summary className="hover:text-slate-200">Inspect JSON</summary>
                               <div className="mt-2 bg-black p-2 rounded overflow-auto max-h-32 border border-slate-800 relative">
                                  <button className="absolute top-2 right-2 text-slate-500 hover:text-white" onClick={() => navigator.clipboard.writeText(JSON.stringify(attack, null, 2))}>Copy</button>
+                                 <div className="text-[10px] text-slate-400 mb-2">
+                                     {attack.details?.prompt_cache_hit_tokens !== undefined && (
+                                       <>
+                                          <span className="text-[#FDD023]">Prompt Cache Tokens:</span> {attack.details.prompt_cache_hit_tokens} |
+                                          <span className="text-[#FDD023]"> Cache Hit Ratio:</span> {attack.details.prompt_cache_hit_ratio ? attack.details.prompt_cache_hit_ratio.toFixed(2) : 0}%
+                                       </>
+                                     )}
+                                 </div>
                                  <pre className="text-[10px]">
                                     {JSON.stringify({...attack, authorization: '[ REDACTED_FOR_COMPLIANCE ]'}, null, 2)}
                                  </pre>

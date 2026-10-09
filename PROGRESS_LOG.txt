@@ -174,3 +174,13 @@ Exact Change Snippet:
 
 Proving Test Name:
 `tests/interceptor.test.ts > Asguard Interceptor > threatEngine catches SQLi and prompt injection`
+[feat] Implemented KV Telemetry Auto-Flush
+- Added flushBufferedTelemetry in telemetry.ts.
+- Triggered flush in /health route and scheduled events in index.ts.
+
+[feat] Added Realtime Mitigation Broadcast
+- Updated triage action insertion to include resolved_at field in /api/v1/triage/dispatch/route.ts.
+
+[feat] Surfaced UI Performance Telemetry
+- Added EPS metric tracking and display in LiveThreatFeed component.
+- Displayed prompt cache hit tokens and ratio in JSON inspector.
