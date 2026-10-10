@@ -230,10 +230,10 @@ export function LiveThreatFeed() {
         </div>
 
         {/* Edge Trend Analytics Placeholder */}
-        <div className="grid grid-cols-2 gap-4 mb-4 text-xs">
+        <div className="grid grid-cols-3 gap-4 mb-4 text-xs">
            <div className="bg-[#111827] border border-slate-800 p-2 rounded flex flex-col justify-center items-center">
                <div className="text-2xl font-bold text-[#FDD023]">{eventsPerSecond}</div>
-               <div className="text-xs text-slate-500">EPS</div>
+               <div className="text-xs text-slate-500">events/sec</div>
            </div>
            <div className="bg-[#111827] border border-slate-800 p-2 rounded">
               <div className="font-bold text-slate-400 mb-2">Top Datacenters</div>
