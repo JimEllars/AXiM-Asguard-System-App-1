@@ -178,6 +178,19 @@ export default {
       const threatCheck = inspectRequest(request, clientIp);
       if (threatCheck.isThreat && threatCheck.severity === 'CRITICAL' && env.THREAT_CACHE) {
          await env.THREAT_CACHE.put(`ip:${clientIp}`, 'BLOCKED', { expirationTtl: 86400 });
+         ctx.waitUntil(logTelemetry({
+           sourceIp: clientIp,
+           timestamp: Date.now(),
+           eventType: 'threat.blocked',
+           severity: 'critical',
+           threatLevel: 'CRITICAL',
+           targetVector: threatCheck.category as any,
+           actionTaken: 'DROPPED',
+           threatScore: 99,
+           requestMethod: request.method,
+           targetResource: new URL(request.url).pathname,
+           details: { ruleMatches: [threatCheck.category], path: new URL(request.url).pathname }
+         }, env, ctx));
          return new Response("Forbidden", {
            status: 403,
            headers: {
@@ -237,6 +250,19 @@ export default {
              await env.THREAT_CACHE.put(`ip:${clientIp}`, 'BLOCKED', { expirationTtl: 3600 });
           }
         }
+
+        ctx.waitUntil(logTelemetry({
+          sourceIp: clientIp,
+          timestamp: Date.now(),
+          eventType: 'rate_limit.exceeded',
+          severity: 'high',
+          threatLevel: 'HIGH',
+          actionTaken: 'DROPPED',
+          threatScore: 85,
+          requestMethod: request.method,
+          targetResource: new URL(request.url).pathname,
+          details: { consecutive_violations: penalty.consecutive }
+        }, env, ctx));
 
         return new Response("Too Many Requests", {
           status: 429,

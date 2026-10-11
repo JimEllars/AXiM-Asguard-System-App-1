@@ -4,7 +4,7 @@ export function inspectRequest(request: Request, clientIp: string): { isThreat: 
     const decodedSearch = decodeURIComponent(url.search);
 
     // Path Traversal & LFI
-    if (path.includes('../') || path.includes('..\\') || path.includes('/etc/passwd') || path.includes('boot.ini') || path.includes('proc/self/environ') || path.includes('php://')) {
+    if (path.includes('../') || path.includes('..\\') || path.includes('/etc/passwd') || path.includes('boot.ini') || path.includes('proc/self/environ') || path.includes('php://') || decodedSearch.includes('../') || decodedSearch.includes('..\\') || decodedSearch.includes('/etc/passwd') || decodedSearch.includes('boot.ini') || decodedSearch.includes('proc/self/environ') || decodedSearch.includes('php://')) {
         return { isThreat: true, category: 'PATH_TRAVERSAL', severity: 'CRITICAL' };
     }
 
