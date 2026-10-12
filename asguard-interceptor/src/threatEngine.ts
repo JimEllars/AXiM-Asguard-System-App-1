@@ -1,7 +1,12 @@
 export function inspectRequest(request: Request, clientIp: string): { isThreat: boolean; category: string; severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' | 'NONE' } {
     const url = new URL(request.url);
     const path = url.pathname;
-    const decodedSearch = decodeURIComponent(url.search);
+    let decodedSearch = url.search;
+    try {
+      decodedSearch = decodeURIComponent(url.search);
+    } catch {
+      // Malformed encoding: inspect raw search query directly
+    }
 
     // Path Traversal & LFI
     if (path.includes('../') || path.includes('..\\') || path.includes('/etc/passwd') || path.includes('boot.ini') || path.includes('proc/self/environ') || path.includes('php://') || decodedSearch.includes('../') || decodedSearch.includes('..\\') || decodedSearch.includes('/etc/passwd') || decodedSearch.includes('boot.ini') || decodedSearch.includes('proc/self/environ') || decodedSearch.includes('php://')) {

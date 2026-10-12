@@ -185,3 +185,11 @@ Proving Test Name:
 - Added EPS metric tracking and display in LiveThreatFeed component.
 - Displayed prompt cache hit tokens and ratio in JSON inspector.
 [feat] Checked Task A, B, C logic. All are currently implemented.
+[feat/asguard-edge-drop-telemetry-and-proxy-sso]
+- Wired edge drops to telemetry: added ctx.waitUntil(logToSupabase(...)) for CRITICAL WAF blocks and flood control 429 drops in asguard-interceptor/src/index.ts.
+- Hardened URI decoding in threatEngine.ts to prevent worker crashes from malformed payloads.
+- Added support for request object parameter and geo_lat/geo_lon parsing in telemetry.ts.
+- Bridged Proxy SSO in soc-cockpit/src/app/api/asguard/[...path]/route.ts to allow NEXT_PUBLIC_DEMO_MODE to pass through if credentials absent or fallback triggered, while forwarding X-Asguard-Auth context securely.
+- Hooked up dynamic 24H Attack Vector Telemetry in soc-cockpit/src/app/stream/page.tsx replacing static placeholders.
+- Ran tests in interceptor: all 25 tests pass.
+- Ran build in soc-cockpit: Next.js build succeeded.

@@ -178,7 +178,20 @@ export default {
       const threatCheck = inspectRequest(request, clientIp);
       if (threatCheck.isThreat && threatCheck.severity === 'CRITICAL' && env.THREAT_CACHE) {
          await env.THREAT_CACHE.put(`ip:${clientIp}`, 'BLOCKED', { expirationTtl: 86400 });
-         ctx.waitUntil(logTelemetry({
+         ctx.waitUntil(logToSupabase({
+           sourceIp: clientIp,
+           timestamp: Date.now(),
+           threatLevel: 'CRITICAL',
+           eventType: 'threat.blocked',
+           severity: 'critical',
+           actionTaken: 'DROPPED',
+           targetVector: threatCheck.category as any,
+           requestMethod: request.method,
+           targetResource: new URL(request.url).pathname,
+           appOrigin: 'axim-asguard',
+           details: { reason: threatCheck.category, clientIp }
+         }, env, ctx, request));
+         /* ctx.waitUntil(logTelemetry({
            sourceIp: clientIp,
            timestamp: Date.now(),
            eventType: 'threat.blocked',
@@ -190,7 +203,7 @@ export default {
            requestMethod: request.method,
            targetResource: new URL(request.url).pathname,
            details: { ruleMatches: [threatCheck.category], path: new URL(request.url).pathname }
-         }, env, ctx));
+         }, env, ctx)); */
          return new Response("Forbidden", {
            status: 403,
            headers: {
@@ -251,7 +264,20 @@ export default {
           }
         }
 
-        ctx.waitUntil(logTelemetry({
+        ctx.waitUntil(logToSupabase({
+          sourceIp: clientIp,
+          timestamp: Date.now(),
+          threatLevel: 'HIGH',
+          eventType: 'rate_limit.exceeded',
+          severity: 'high',
+          actionTaken: 'DROPPED',
+          targetVector: 'API',
+          requestMethod: request.method,
+          targetResource: new URL(request.url).pathname,
+          appOrigin: 'axim-asguard',
+          details: { penaltyConsecutive: penalty.consecutive }
+        }, env, ctx, request));
+        /* ctx.waitUntil(logTelemetry({
           sourceIp: clientIp,
           timestamp: Date.now(),
           eventType: 'rate_limit.exceeded',
@@ -262,7 +288,7 @@ export default {
           requestMethod: request.method,
           targetResource: new URL(request.url).pathname,
           details: { consecutive_violations: penalty.consecutive }
-        }, env, ctx));
+        }, env, ctx)); */
 
         return new Response("Too Many Requests", {
           status: 429,
