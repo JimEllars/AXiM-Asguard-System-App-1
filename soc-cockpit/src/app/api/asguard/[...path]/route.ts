@@ -45,28 +45,36 @@ async function proxy(request: Request, context: { params: Promise<{ path: string
   const jwtSecret = env.ASGUARD_JWT_SECRET || process?.env?.ASGUARD_JWT_SECRET;
   const serviceToken = env.AXIM_SERVICE_TOKEN || process?.env?.AXIM_SERVICE_TOKEN;
 
-  if (!isSuperUser && (!token || !jwtSecret)) {
-    return new NextResponse("Unauthorized", { status: 401 });
-  }
-  if (!serviceToken) {
+
+  const isDemoMode = env.NEXT_PUBLIC_DEMO_MODE === 'true' || process?.env?.NEXT_PUBLIC_DEMO_MODE === 'true' || env.NODE_ENV === 'development' || process?.env?.NODE_ENV === 'development';
+
+  const hasValidAuth = isSuperUser || (token && jwtSecret) || serviceToken;
+
+  if (!hasValidAuth) {
+    if (isDemoMode) {
+      return fallbackProxy(request, targetPath, env);
+    }
     return new NextResponse("Unauthorized", { status: 401 });
   }
 
-  if (!isSuperUser) {
-    if (!token || !jwtSecret) {
-      return new NextResponse("Unauthorized", { status: 401 });
-    }
+  if (!isSuperUser && token && jwtSecret) {
     try {
       const claims = jwt.verify(token, jwtSecret, { algorithms: ["HS256"] }) as {
         axim_internal_admin?: boolean;
       };
       if (!claims.axim_internal_admin) {
+        if (isDemoMode) return fallbackProxy(request, targetPath, env);
         return new NextResponse("Forbidden", { status: 403 });
       }
     } catch {
+      if (isDemoMode) return fallbackProxy(request, targetPath, env);
       return new NextResponse("Unauthorized", { status: 401 });
     }
+  } else if (!isSuperUser && !serviceToken && !token) {
+     if (isDemoMode) return fallbackProxy(request, targetPath, env);
+     return new NextResponse("Unauthorized", { status: 401 });
   }
+
 
   const asguardBinding = env.ASGUARD;
   const interceptorUrl = env.NEXT_PUBLIC_INTERCEPTOR_URL || process?.env?.NEXT_PUBLIC_INTERCEPTOR_URL;
@@ -91,6 +99,10 @@ async function proxy(request: Request, context: { params: Promise<{ path: string
 
   const requestIdHeader = request.headers.get("X-Asguard-Request-ID");
   if (requestIdHeader) headers.set("X-Asguard-Request-ID", requestIdHeader);
+
+  const asguardApiKey = env.ASGUARD_API_KEY || process?.env?.ASGUARD_API_KEY;
+  if (asguardApiKey) headers.set("X-Asguard-Auth", asguardApiKey);
+
 
   const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer();
 

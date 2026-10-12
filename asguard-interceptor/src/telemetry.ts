@@ -62,7 +62,7 @@ async function hashClientIp(ip: string): Promise<string> {
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
 }
 
-export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: any) {
+export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: any, request?: Request) {
   const executeLog = async () => {
     try {
       const supabaseUrl = env.SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL || 'https://mock.supabase.co';
@@ -115,6 +115,17 @@ export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: a
       const aximServiceRoleKey = env.AXIM_SERVICE_ROLE_KEY || supabaseKey;
       const dbUrl = `${env.SUPABASE_URL}/rest/v1/threat_events`;
 
+            const cf = (request as any)?.cf || (ctx as any)?.request?.cf;
+      const metadata = {
+          geo_lat: cf?.latitude ?? payload.details?.geo_lat ?? null,
+          geo_lon: cf?.longitude ?? payload.details?.geo_lon ?? null,
+          geo_city: cf?.city ?? payload.details?.geo_city ?? 'UNKNOWN',
+          geo_country: cf?.country ?? payload.country ?? 'UNKNOWN',
+          colo: cf?.colo ?? payload.colo ?? 'UNKNOWN',
+          request_method: payload.requestMethod,
+          target_resource: payload.targetResource,
+          correlation_id: payload.correlationId
+      };
       const verdictAction = payload.actionTaken || (payload.details?.action_taken as string) || 'logged';
       const mappedVerdict = verdictAction === 'DROPPED' || verdictAction === 'block' ? 'block' : verdictAction === 'QUARANTINED' ? 'quarantine' : 'allow';
 
@@ -130,16 +141,7 @@ export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: a
           threat_type: payload.targetVector || payload.eventType || 'unknown',
           indicators: payload.details?.ruleMatches || [],
           raw_headers: {},
-          metadata: {
-              geo_lat: (ctx && (ctx as any).request && ((ctx as any).request as any).cf?.latitude) ?? null,
-              geo_lon: (ctx && (ctx as any).request && ((ctx as any).request as any).cf?.longitude) ?? null,
-              geo_city: (ctx && (ctx as any).request && ((ctx as any).request as any).cf?.city) ?? 'UNKNOWN',
-              geo_country: (ctx && (ctx as any).request && ((ctx as any).request as any).cf?.country) ?? 'UNKNOWN',
-              colo: (ctx && (ctx as any).request && ((ctx as any).request as any).cf?.colo) ?? 'UNKNOWN',
-              request_method: payload.requestMethod,
-              target_resource: payload.targetResource,
-              correlation_id: payload.correlationId
-          }
+          metadata: metadata
       };
 
       const resPromise = fetch(dbUrl, {
