@@ -719,3 +719,19 @@ describe("Asguard Interceptor", () => {
     expect(resPI.isThreat).toBe(true);
     expect(resPI.category).toBe("AI_PROMPT_INJECTION");
   });
+
+  it("threatEngine catches Path Traversal and XSS", () => {
+    const { inspectRequest } = require("../src/threatEngine.ts");
+
+    // Check Path Traversal
+    const reqPT = new Request("https://example.com/api?file=../../../etc/passwd", { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const resPT = inspectRequest(reqPT, "1.2.3.4");
+    expect(resPT.isThreat).toBe(true);
+    expect(resPT.category).toBe("PATH_TRAVERSAL");
+
+    // Check XSS
+    const reqXSS = new Request("https://example.com/api?q=<script>alert(1)</script>", { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const resXSS = inspectRequest(reqXSS, "1.2.3.4");
+    expect(resXSS.isThreat).toBe(true);
+    expect(resXSS.category).toBe("CROSS_SITE_SCRIPTING");
+  });

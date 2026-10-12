@@ -38,23 +38,34 @@ async function proxy(request: Request, context: { params: Promise<{ path: string
     // Fallback to process.env in local Node environment
     env = process?.env || {};
   }
+  const userRole = request.headers.get("x-user-role");
+  const isSuperUser = userRole === "super_user";
+
   const token = (await cookies()).get("asguard_auth_token")?.value;
   const jwtSecret = env.ASGUARD_JWT_SECRET || process?.env?.ASGUARD_JWT_SECRET;
   const serviceToken = env.AXIM_SERVICE_TOKEN || process?.env?.AXIM_SERVICE_TOKEN;
 
-  if (!token || !jwtSecret || !serviceToken) {
+  if (!isSuperUser && (!token || !jwtSecret)) {
+    return new NextResponse("Unauthorized", { status: 401 });
+  }
+  if (!serviceToken) {
     return new NextResponse("Unauthorized", { status: 401 });
   }
 
-  try {
-    const claims = jwt.verify(token, jwtSecret, { algorithms: ["HS256"] }) as {
-      axim_internal_admin?: boolean;
-    };
-    if (!claims.axim_internal_admin) {
-      return new NextResponse("Forbidden", { status: 403 });
+  if (!isSuperUser) {
+    if (!token || !jwtSecret) {
+      return new NextResponse("Unauthorized", { status: 401 });
     }
-  } catch {
-    return new NextResponse("Unauthorized", { status: 401 });
+    try {
+      const claims = jwt.verify(token, jwtSecret, { algorithms: ["HS256"] }) as {
+        axim_internal_admin?: boolean;
+      };
+      if (!claims.axim_internal_admin) {
+        return new NextResponse("Forbidden", { status: 403 });
+      }
+    } catch {
+      return new NextResponse("Unauthorized", { status: 401 });
+    }
   }
 
   const asguardBinding = env.ASGUARD;

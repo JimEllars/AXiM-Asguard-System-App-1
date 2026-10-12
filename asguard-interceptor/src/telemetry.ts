@@ -113,7 +113,7 @@ export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: a
       const timeoutId = setTimeout(() => controller.abort(), 1500);
 
       const aximServiceRoleKey = env.AXIM_SERVICE_ROLE_KEY || supabaseKey;
-      const dbUrl = `${env.SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL || 'https://db.axim.us.com'}/rest/v1/threat_events`;
+      const dbUrl = `${env.SUPABASE_URL}/rest/v1/threat_events`;
 
       const verdictAction = payload.actionTaken || (payload.details?.action_taken as string) || 'logged';
       const mappedVerdict = verdictAction === 'DROPPED' || verdictAction === 'block' ? 'block' : verdictAction === 'QUARANTINED' ? 'quarantine' : 'allow';
@@ -125,7 +125,7 @@ export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: a
           sender_email: payload.details?.sender_email || null,
           recipient: payload.details?.recipient || null,
           subject: payload.details?.subject || null,
-          verdict: mappedVerdict,
+          verdict: payload.actionTaken === 'DROPPED' ? 'block' : payload.actionTaken === 'QUARANTINED' ? 'quarantine' : 'allow',
           threat_score: payload.threatScore || payload.edgeBotScore || 0,
           threat_type: payload.targetVector || payload.eventType || 'unknown',
           indicators: payload.details?.ruleMatches || [],
