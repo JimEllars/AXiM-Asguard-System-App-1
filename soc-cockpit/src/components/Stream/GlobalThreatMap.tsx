@@ -20,6 +20,7 @@ export default function GlobalThreatMap() {
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
   const supabaseRef = useRef<any>(null);
+  const lastEventTimestamp = useRef<number | null>(null);
 
   useEffect(() => {
     supabaseRef.current = createClient(supabaseUrl || 'https://mock.supabase.co', supabaseKey || 'mock-key');
@@ -34,6 +35,7 @@ export default function GlobalThreatMap() {
         const interval = setInterval(() => {
             setStreamedAttacks(prev => {
                 const randomAttack = MOCK_ATTACKS[Math.floor(Math.random() * MOCK_ATTACKS.length)];
+                lastEventTimestamp.current = Date.now();
                 return [{ ...randomAttack, timestamp: Date.now() }, ...prev].slice(0, 100);
             });
         }, 2000);
@@ -58,12 +60,34 @@ export default function GlobalThreatMap() {
               lng = MOCK_ATTACKS[Math.floor(Math.random() * MOCK_ATTACKS.length)].lng;
           }
 
+          lastEventTimestamp.current = Date.now();
           setStreamedAttacks((prev) => [{...payload.new, lat, lng, timestamp: Date.now()}, ...prev].slice(0, 100));
         }
       )
-      .subscribe((status: any) => {
+      \.subscribe(async (status: any) => {
          if (status === 'SUBSCRIBED') {
             setStreamConnected(true);
+            const fetchMissedEvents = async () => {
+              if (!lastEventTimestamp.current) return;
+              try {
+                const { data } = await supabaseRef.current
+                  .from('threat_events')
+                  .select('*')
+                  .gt('timestamp', lastEventTimestamp.current)
+                  .order('timestamp', { ascending: false })
+                  .limit(50);
+                if (data && data.length > 0) {
+                  setStreamedAttacks(prev => {
+                    const existingIds = new Set(prev.map(item => item.id));
+                    const uniqueNew = data.filter((item: any) => !existingIds.has(item.id));
+                    return [...uniqueNew, ...prev].slice(0, 100);
+                  });
+                }
+              } catch (e) {
+                console.warn("Gap recovery fetch failed softly:", e);
+              }
+            };
+            fetchMissedEvents();
          } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
             setStreamConnected(false);
          }

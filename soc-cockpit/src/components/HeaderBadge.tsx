@@ -14,10 +14,12 @@ export default function HeaderBadge() {
 
     const checkEdge = async () => {
       const startedAt = performance.now();
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 1500);
       try {
         const [health, ready] = await Promise.all([
-          fetch("/api/health", { cache: "no-store" }),
-          fetch("/api/ready", { cache: "no-store" }),
+          fetch("/api/health", { cache: "no-store", signal: controller.signal }),
+          fetch("/api/ready", { cache: "no-store", signal: controller.signal }),
         ]);
         if (!health.ok || !ready.ok) {
           throw new Error("Health endpoint unavailable");
@@ -35,25 +37,27 @@ export default function HeaderBadge() {
           setLatency(null);
           setRayId(null);
         }
+      } finally {
+        clearTimeout(timeout);
       }
     };
 
     void checkEdge();
-    const interval = window.setInterval(() => void checkEdge(), 30_000);
+    const interval = window.setInterval(() => void checkEdge(), 10_000);
     return () => {
       cancelled = true;
       window.clearInterval(interval);
     };
   }, []);
 
-  const label = status === "online" ? "Online" : status === "reconnecting" ? "Reconnecting" : "Offline";
+  const label = status === "online" ? "ONLINE" : status === "reconnecting" ? "DEGRADED" : "OFFLINE";
   const color = status === "online" ? "bg-emerald-500" : status === "reconnecting" ? "bg-amber-500" : "bg-red-500";
 
   return (
     <div className="flex items-center gap-2 text-xs font-mono text-slate-300" aria-live="polite">
       <span className={`h-2 w-2 rounded-full ${color} ${status !== "offline" ? "animate-pulse" : ""}`} />
       <span>Edge: {label}</span>
-      {latency !== null && <span className="text-slate-500">{latency}ms</span>}
+      {latency !== null && <span className="text-slate-500">LATENCY: {latency}ms</span>}
       {rayId && <span className="hidden text-slate-500 lg:inline">CF-Ray {rayId}</span>}
     </div>
   );
