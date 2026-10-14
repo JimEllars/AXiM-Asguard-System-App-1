@@ -25,6 +25,7 @@ export function LiveThreatFeed() {
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
   const supabaseRef = useRef<any>(null);
+  const lastEventTimestamp = useRef<number | null>(null);
 
   useEffect(() => {
     supabaseRef.current = createClient(supabaseUrl || 'https://mock.supabase.co', supabaseKey || 'mock-key');
@@ -95,9 +96,30 @@ export function LiveThreatFeed() {
           setStreamedAttacks((prev) => [payload.new, ...prev].slice(0, 100));
         }
       )
-      .subscribe((status: any) => {
+      \.subscribe(async (status: any) => {
          if (status === 'SUBSCRIBED') {
             setStreamConnected(true);
+            const fetchMissedEvents = async () => {
+              if (!lastEventTimestamp.current) return;
+              try {
+                const { data } = await supabaseRef.current
+                  .from('threat_events')
+                  .select('*')
+                  .gt('timestamp', lastEventTimestamp.current)
+                  .order('timestamp', { ascending: false })
+                  .limit(50);
+                if (data && data.length > 0) {
+                  setStreamedAttacks(prev => {
+                    const existingIds = new Set(prev.map(item => item.id));
+                    const uniqueNew = data.filter((item: any) => !existingIds.has(item.id));
+                    return [...uniqueNew, ...prev].slice(0, 100);
+                  });
+                }
+              } catch (e) {
+                console.warn("Gap recovery fetch failed softly:", e);
+              }
+            };
+            fetchMissedEvents();
          } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
             setStreamConnected(false);
          }
@@ -164,6 +186,28 @@ export function LiveThreatFeed() {
       }
     } catch (err) {
       console.error('Failed to lift block at edge:', err);
+    }
+  };
+
+
+  const handlePurgeExpired = async () => {
+    try {
+      const res = await fetch('/api/asguard/blocklist', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'purge_expired' })
+      });
+      if (res.ok) {
+        try {
+          const bRes = await fetch('/api/asguard/blocklist');
+          if (bRes.ok) {
+            const data = await bRes.json();
+            setBlocklist(data.data || []);
+          }
+        } catch (err) {}
+      }
+    } catch (err) {
+      console.error('Failed to purge expired blocks:', err);
     }
   };
 

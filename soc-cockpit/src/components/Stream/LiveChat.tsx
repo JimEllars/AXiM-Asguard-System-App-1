@@ -13,6 +13,7 @@ export interface UserMessage {
   time: string;
   isSystem?: false;
   metadata?: ChatMetadata;
+  reasoning?: string;
 }
 
 export interface SystemAlert {
@@ -22,6 +23,7 @@ export interface SystemAlert {
   isSystem: true;
   user?: string;
   metadata?: ChatMetadata;
+  reasoning?: string;
 }
 
 export type ChatMessage = UserMessage | SystemAlert;
@@ -81,6 +83,7 @@ export default function LiveChat({ isAuthenticated = false }: LiveChatProps) {
     setHasError(null);
     setLatency(null);
     activeStreamContent.current = '';
+    activeReasoningContent.current = '';
 
     const newAiMessageId = Date.now() + 1;
 
@@ -90,6 +93,7 @@ export default function LiveChat({ isAuthenticated = false }: LiveChatProps) {
         id: newAiMessageId,
         user: 'DeepSeek',
         text: '',
+        reasoning: '',
         time: new Date().toISOString().substring(11, 16) + ' UTC',
         isSystem: false
       }
@@ -150,14 +154,17 @@ export default function LiveChat({ isAuthenticated = false }: LiveChatProps) {
               try {
                 const data = JSON.parse(line.slice(6));
 
-                if (data.choices[0]?.delta?.reasoning_content) {
-                  setIsThinking(true);
-                } else if (data.choices[0]?.delta?.content) {
-                  setIsThinking(false);
-                }
-
+                const reasoningContent = data.choices[0]?.delta?.reasoning_content || '';
                 const content = data.choices[0]?.delta?.content || '';
-                if (content) {
+
+                if (reasoningContent) {
+                  setIsThinking(true);
+                  activeReasoningContent.current += reasoningContent;
+                  setMessages(prev => prev.map(m =>
+                    m.id === newAiMessageId ? { ...m, reasoning: activeReasoningContent.current } : m
+                  ));
+                } else if (content) {
+                  setIsThinking(false);
                   activeStreamContent.current += content;
                   setMessages(prev => prev.map(m =>
                     m.id === newAiMessageId ? { ...m, text: activeStreamContent.current } : m
@@ -189,6 +196,7 @@ export default function LiveChat({ isAuthenticated = false }: LiveChatProps) {
       id: Date.now(),
       user: 'You',
       text: sanitizedText,
+      reasoning: '',
       time: new Date().toISOString().substring(11, 16) + ' UTC',
       isSystem: false
     }]);
@@ -204,6 +212,7 @@ export default function LiveChat({ isAuthenticated = false }: LiveChatProps) {
       id: Date.now(),
       user: 'You',
       text: prompt,
+      reasoning: '',
       time: new Date().toISOString().substring(11, 16) + ' UTC',
       isSystem: false
     }]);
@@ -272,6 +281,19 @@ export default function LiveChat({ isAuthenticated = false }: LiveChatProps) {
                 <span className={`font-semibold mr-2 ${msg.user === 'DeepSeek' ? 'text-indigo-400' : 'text-blue-400'}`}>
                   {msg.user}:
                 </span>
+                {msg.reasoning && (
+                  <details className="mt-2 mb-2 group cursor-pointer">
+                    <summary className="text-indigo-400 text-xs font-mono font-bold select-none hover:text-indigo-300 flex items-center gap-1">
+                      <svg className="w-3 h-3 transition-transform group-open:rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                      AI Thought Process
+                    </summary>
+                    <div className="mt-2 p-3 bg-indigo-950/30 border border-indigo-900/50 rounded-lg text-slate-400 text-xs whitespace-pre-wrap font-mono leading-relaxed ml-4">
+                      {msg.reasoning}
+                    </div>
+                  </details>
+                )}
                 <span className="text-slate-300 whitespace-pre-wrap leading-relaxed">{msg.text}</span>
               </div>
             )}
