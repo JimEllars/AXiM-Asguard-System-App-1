@@ -64,7 +64,7 @@ export default function GlobalThreatMap() {
           setStreamedAttacks((prev) => [{...payload.new, lat, lng, timestamp: Date.now()}, ...prev].slice(0, 100));
         }
       )
-      \.subscribe(async (status: any) => {
+      .subscribe(async (status: any) => {
          if (status === 'SUBSCRIBED') {
             setStreamConnected(true);
             const fetchMissedEvents = async () => {

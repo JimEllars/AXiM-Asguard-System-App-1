@@ -18,6 +18,7 @@ export function LiveThreatFeed() {
   const [severityFilter, setSeverityFilter] = useState('ALL');
   const [blocklist, setBlocklist] = useState<any[]>([]);
   const [auditEvents, setAuditEvents] = useState<any[]>([]);
+  const [selectedThreat, setSelectedThreat] = useState<any | null>(null);
 
   const itemsPerPage = 5;
 
@@ -96,7 +97,7 @@ export function LiveThreatFeed() {
           setStreamedAttacks((prev) => [payload.new, ...prev].slice(0, 100));
         }
       )
-      \.subscribe(async (status: any) => {
+      .subscribe(async (status: any) => {
          if (status === 'SUBSCRIBED') {
             setStreamConnected(true);
             const fetchMissedEvents = async () => {
@@ -344,7 +345,7 @@ export function LiveThreatFeed() {
                      <div className="text-slate-500 text-sm text-center mt-10">No recent threats detected.</div>
                   ) : (
                      filteredAttacks.slice(telemetryPage * itemsPerPage, (telemetryPage + 1) * itemsPerPage).map((attack, idx) => (
-                        <div key={idx} className="bg-slate-900 border border-slate-700 p-2 rounded text-xs flex flex-col gap-2">
+                        <div key={idx} className="bg-slate-900 border border-slate-700 p-2 rounded text-xs flex flex-col gap-2 cursor-pointer hover:border-slate-500 transition-colors" onClick={() => setSelectedThreat(attack)}>
                            <div className="flex justify-between items-center">
                               <div>
                                  <div className="font-bold text-slate-200">{((attack.subject || "") || (attack.threat_type || "") || 'Unknown Threat').toUpperCase()}</div>
@@ -359,23 +360,7 @@ export function LiveThreatFeed() {
                                  </button>
                               </div>
                            </div>
-                           <details className="cursor-pointer text-slate-400 mt-1">
-                              <summary className="hover:text-slate-200">Inspect JSON</summary>
-                              <div className="mt-2 bg-black p-2 rounded overflow-auto max-h-32 border border-slate-800 relative">
-                                 <button className="absolute top-2 right-2 text-slate-500 hover:text-white" onClick={() => navigator.clipboard.writeText(JSON.stringify(attack, null, 2))}>Copy</button>
-                                 <div className="text-[10px] text-slate-400 mb-2">
-                                     {attack.details?.prompt_cache_hit_tokens !== undefined && (
-                                       <>
-                                          <span className="text-[#FDD023]">Prompt Cache Tokens:</span> {attack.details.prompt_cache_hit_tokens} |
-                                          <span className="text-[#FDD023]"> Cache Hit Ratio:</span> {attack.details.prompt_cache_hit_ratio ? attack.details.prompt_cache_hit_ratio.toFixed(2) : 0}%
-                                       </>
-                                     )}
-                                 </div>
-                                 <pre className="text-[10px]">
-                                    {JSON.stringify({...attack, authorization: '[ REDACTED_FOR_COMPLIANCE ]'}, null, 2)}
-                                 </pre>
-                              </div>
-                           </details>
+
                         </div>
                      ))
                   )}
@@ -453,6 +438,119 @@ export function LiveThreatFeed() {
            </div>
         </div>
 
-    </div>
+
+        {/* Threat Triage Slide-Out Panel */}
+        {selectedThreat && (
+          <div className="absolute top-0 right-0 w-[400px] h-full bg-[#111827] border-l border-slate-700 shadow-2xl flex flex-col z-50 animate-in slide-in-from-right">
+            {/* Header */}
+            <div className="flex justify-between items-center p-4 border-b border-slate-800 bg-[#0B0F19]">
+              <div className="flex items-center gap-3">
+                <div className={`px-2 py-1 rounded text-[10px] font-bold text-white ${selectedThreat.severity === 'CRITICAL' ? 'bg-red-600' : selectedThreat.severity === 'HIGH' ? 'bg-orange-500' : 'bg-slate-600'}`}>
+                  {(selectedThreat.severity || 'INFO').toUpperCase()}
+                </div>
+                <h2 className="font-bold text-slate-200 text-sm truncate max-w-[200px]">
+                  {((selectedThreat.subject || "") || (selectedThreat.threat_type || "") || 'Unknown Threat').toUpperCase()}
+                </h2>
+              </div>
+              <button onClick={() => setSelectedThreat(null)} className="text-slate-400 hover:text-white p-1">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-6">
+
+              {/* Overview */}
+              <div>
+                <h3 className="text-[#FDD023] text-xs font-bold mb-2 uppercase tracking-wider">Overview</h3>
+                <div className="bg-slate-900 border border-slate-800 rounded p-3 text-xs space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Timestamp</span>
+                    <span className="text-slate-300">{new Date(selectedThreat.timestamp).toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Source IP</span>
+                    <span className="text-slate-300 font-mono">{selectedThreat.source_ip}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Destination</span>
+                    <span className="text-slate-300">{selectedThreat.target_path || selectedThreat.host || 'Unknown'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Verdict</span>
+                    <span className="text-slate-300 capitalize">{selectedThreat.verdict || 'Unknown'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Geolocation */}
+              <div>
+                <h3 className="text-[#FDD023] text-xs font-bold mb-2 uppercase tracking-wider">Geolocation</h3>
+                <div className="bg-slate-900 border border-slate-800 rounded p-3 text-xs space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Location</span>
+                    <span className="text-slate-300">
+                      {((selectedThreat.metadata?.geo_city || '') + (selectedThreat.metadata?.geo_city && selectedThreat.metadata?.geo_country ? ', ' : '') + (selectedThreat.metadata?.geo_country || '') + (selectedThreat.metadata?.colo ? ` (${selectedThreat.metadata.colo})` : '')) || 'Unknown'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Signatures & Indicators */}
+              <div>
+                <h3 className="text-[#FDD023] text-xs font-bold mb-2 uppercase tracking-wider">Signatures & Indicators</h3>
+                <div className="bg-slate-900 border border-slate-800 rounded p-3 text-xs">
+                  {selectedThreat.details?.ruleMatches?.length > 0 || selectedThreat.indicators?.length > 0 ? (
+                    <ul className="list-disc list-inside text-slate-300 space-y-1">
+                      {(selectedThreat.details?.ruleMatches || selectedThreat.indicators || []).map((rule: string, i: number) => (
+                        <li key={i}>{rule}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <span className="text-slate-500">No specific signatures matched.</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Token Usage (if applicable) */}
+              {selectedThreat.details?.prompt_cache_hit_tokens !== undefined && (
+                <div>
+                   <h3 className="text-[#FDD023] text-xs font-bold mb-2 uppercase tracking-wider">AI Analysis Details</h3>
+                   <div className="bg-slate-900 border border-slate-800 rounded p-3 text-xs space-y-2">
+                     <div className="flex justify-between">
+                       <span className="text-slate-500">Prompt Cache Tokens</span>
+                       <span className="text-slate-300">{selectedThreat.details.prompt_cache_hit_tokens}</span>
+                     </div>
+                     <div className="flex justify-between">
+                       <span className="text-slate-500">Cache Hit Ratio</span>
+                       <span className="text-slate-300">{selectedThreat.details.prompt_cache_hit_ratio ? selectedThreat.details.prompt_cache_hit_ratio.toFixed(2) : 0}%</span>
+                     </div>
+                   </div>
+                </div>
+              )}
+
+            </div>
+
+            {/* Action Bar */}
+            <div className="p-4 border-t border-slate-800 bg-[#0B0F19] flex gap-3">
+              <button
+                onClick={() => {
+                  handleDropIp(selectedThreat.source_ip);
+                  setSelectedThreat(null);
+                }}
+                className="flex-1 bg-[#FDD023] text-black text-xs font-bold py-2 rounded hover:bg-yellow-400 transition-colors"
+              >
+                Drop IP
+              </button>
+              <button
+                onClick={() => navigator.clipboard.writeText(JSON.stringify({...selectedThreat, authorization: '[ REDACTED_FOR_COMPLIANCE ]'}, null, 2))}
+                className="flex-1 bg-slate-800 text-white text-xs font-bold py-2 rounded border border-slate-700 hover:bg-slate-700 transition-colors"
+              >
+                Copy Raw JSON
+              </button>
+            </div>
+          </div>
+        )}
+</div>
   );
 }
