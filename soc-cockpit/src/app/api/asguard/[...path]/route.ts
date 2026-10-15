@@ -132,9 +132,19 @@ async function proxy(request: Request, context: { params: Promise<{ path: string
           });
         }
 
+        const isGetAndCacheable = request.method === "GET" && (targetPath === "blocklist" || targetPath === "audit");
+
+        const responseHeaders: HeadersInit = {
+            "Content-Type": response.headers.get("Content-Type") || "application/json"
+        };
+
+        if (isGetAndCacheable) {
+            responseHeaders["Cache-Control"] = "public, s-maxage=5, stale-while-revalidate=15";
+        }
+
         return new NextResponse(response.body, {
           status: response.status,
-          headers: { "Content-Type": response.headers.get("Content-Type") || "text/plain" },
+          headers: responseHeaders,
         });
       } finally {
         clearTimeout(timeout);

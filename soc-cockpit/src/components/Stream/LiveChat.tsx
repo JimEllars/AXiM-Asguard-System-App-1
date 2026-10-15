@@ -33,9 +33,28 @@ interface LiveChatProps {
 }
 
 export default function LiveChat({ isAuthenticated = false }: LiveChatProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    { id: 1, user: 'System', text: 'Chat active. Awaiting broadcast.', time: new Date().toISOString().substring(11, 16) + ' UTC', isSystem: true },
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    if (typeof window !== 'undefined') {
+        const saved = sessionStorage.getItem('asguard_chat_history');
+        if (saved) {
+            try {
+                return JSON.parse(saved);
+            } catch (e) {
+                console.error('Failed to parse chat history', e);
+            }
+        }
+    }
+    return [
+      { id: 1, user: 'System', text: 'Chat active. Awaiting broadcast.', time: new Date().toISOString().substring(11, 16) + ' UTC', isSystem: true },
+    ];
+  });
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('asguard_chat_history', JSON.stringify(messages));
+    }
+  }, [messages]);
+
   const [inputValue, setInputValue] = useState('');
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -44,6 +63,7 @@ export default function LiveChat({ isAuthenticated = false }: LiveChatProps) {
   const [hasError, setHasError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const activeStreamContent = useRef<string>('');
+  const activeReasoningContent = useRef<string>('');
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
