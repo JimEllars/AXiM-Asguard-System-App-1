@@ -2,7 +2,7 @@ import { Env } from "../src/index";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const originalFetch = global.fetch;
-import worker from "../src/index";
+import worker, { __resetEdgeStateForTests } from "../src/index";
 
 const mockKV = {
   get: vi.fn(),
@@ -27,6 +27,7 @@ describe("Asguard Interceptor", () => {
     };
   });
   beforeEach(() => {
+    __resetEdgeStateForTests();
     vi.clearAllMocks();
   });
 
@@ -525,24 +526,35 @@ describe("Asguard Interceptor", () => {
       }
     };
 
-    let fetchBody = "";
-    let fetchUrl = "";
+    // Other tests in this file launch backgrounded logToSupabase tasks through a
+    // mocked ctx.waitUntil(). Those can still be in flight when this test swaps
+    // global.fetch, so capture every call and select the one we care about
+    // instead of letting the last writer win.
+    const fetchCalls: Array<{ url: string; body: string }> = [];
 
     global.fetch = vi.fn().mockImplementation((url, options) => {
-        fetchUrl = url;
-        if (options && options.body) {
-            fetchBody = options.body;
-        }
+        fetchCalls.push({ url: String(url), body: options?.body ? String(options.body) : "" });
         return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }));
     });
 
     await logToSupabase(payload, env, ctx);
 
-    // Allow promises to resolve
-    await new Promise(resolve => setTimeout(resolve, 0));
+    // executeLog is backgrounded and awaits crypto.subtle.digest before issuing
+    // the request, so a single macrotask tick is not always enough. Poll for the
+    // call rather than assuming a fixed number of ticks.
+    const deadline = Date.now() + 5000;
+    let threatEventCall = fetchCalls.find(
+      (call) => call.url === "https://db.axim.us.com/rest/v1/threat_events",
+    );
+    while (!threatEventCall && Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 10));
+      threatEventCall = fetchCalls.find(
+        (call) => call.url === "https://db.axim.us.com/rest/v1/threat_events",
+      );
+    }
 
-    expect(fetchUrl).toBe("https://db.axim.us.com/rest/v1/threat_events");
-    const parsed = JSON.parse(fetchBody);
+    expect(threatEventCall).toBeDefined();
+    const parsed = JSON.parse(threatEventCall!.body);
 
     expect(parsed.source_ip).toBeDefined();
     expect(parsed.verdict).toBe("block");

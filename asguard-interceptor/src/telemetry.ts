@@ -113,7 +113,10 @@ export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: a
       const timeoutId = setTimeout(() => controller.abort(), 1500);
 
       const aximServiceRoleKey = env.AXIM_SERVICE_ROLE_KEY || supabaseKey;
-      const dbUrl = `${env.SUPABASE_URL}/rest/v1/threat_events`;
+      // Use the already-resolved URL. Reading env.SUPABASE_URL directly here
+      // produced `undefined/rest/v1/threat_events` whenever only
+      // NEXT_PUBLIC_SUPABASE_URL was configured.
+      const dbUrl = `${supabaseUrl.replace(/\/$/, '')}/rest/v1/threat_events`;
 
             const cf = (request as any)?.cf || (ctx as any)?.request?.cf;
       const metadata = {
@@ -379,14 +382,6 @@ export async function sendTelemetryToCockpit(payload: AsguardTelemetryEvent, env
   if (ctx && ctx.waitUntil) {
     ctx.waitUntil(doSend().catch(e => {
        console.error("Unhandled error in telemetry sender", e);
-       if (env.ASGUARD_KV_BUFFER) {
-            env.ASGUARD_KV_BUFFER.put(`fallback_evt:${Date.now()}`, JSON.stringify({
-               type: 'telemetry_drop_unhandled',
-               error: String(e),
-               payload: payload,
-               timestamp: Date.now()
-            })).catch((e2: any) => console.error("KV Buffer Put Error", e2));
-       }
        if (env.ASGUARD_KV_BUFFER) {
             env.ASGUARD_KV_BUFFER.put(`fallback_evt:${Date.now()}`, JSON.stringify({
                type: 'telemetry_drop_unhandled',

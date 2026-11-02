@@ -5,6 +5,18 @@ const rateLimitMap = new Map<string, { count: number; timestamp: number }>();
 const penaltyLedger = new Map<string, { consecutive: number; timestamp: number }>();
 const clientErrorThrottleMap = new Map<string, number[]>();
 
+/**
+ * Test-only hook. The limiter state is module-level and therefore survives
+ * between cases in the same suite, which made tests order- and timing-dependent
+ * (a test could trip the 10-req/10s window opened by an earlier test).
+ * Never call this from production code.
+ */
+export function __resetEdgeStateForTests() {
+  rateLimitMap.clear();
+  penaltyLedger.clear();
+  clientErrorThrottleMap.clear();
+}
+
 function pruneRateLimitMap() {
   const now = Date.now();
   if (rateLimitMap.size > 10000) {
@@ -76,7 +88,7 @@ function isAdminRequest(request: Request, env: Env) {
   );
 }
 
-async function analyzeThreat(payload: unknown, env: Env): Promise<Response> {
+async function analyzeThreat(payload: unknown, env: Env, ctx?: ExecutionContext): Promise<Response> {
   const parsedPayload = TelemetryPayloadSchema.safeParse(payload);
   if (!parsedPayload.success) {
     return new Response("Invalid analysis payload", { status: 400, headers: corsHeaders });
@@ -96,8 +108,9 @@ async function analyzeThreat(payload: unknown, env: Env): Promise<Response> {
     model: env.DEEPSEEK_MODEL,
     anthropicApiKey: env.ANTHROPIC_API_KEY,
     onTelemetry: (usage, provider, ttft, failover) => {
-       // Using an empty context block since we don't have ctx directly in this function
-       logAIInference(usage, provider, ttft, failover, env);
+       // Route inference telemetry through ctx.waitUntil so the analysis
+       // response is never blocked on a Supabase round-trip.
+       logAIInference(usage, provider, ttft, failover, env, ctx);
     }
   });
 
@@ -160,24 +173,37 @@ export default {
 
     const clientIp = request.headers.get("cf-connecting-ip") || "unknown";
 
-    if (clientIp !== "unknown" && env.THREAT_CACHE) {
-      const isThreatCached = await env.THREAT_CACHE.get(`ip:${clientIp}`);
-      if (isThreatCached === 'BLOCKED') {
+    // ---------------------------------------------------------------------
+    // GLOBAL BLOCKLIST INTERLOCK
+    // Runs before any routing, rate limiting or body parsing. Both the
+    // short-lived threat cache and the durable ASGUARD_BLACKLIST namespace
+    // must clear, otherwise the request is dropped with 403.
+    // ---------------------------------------------------------------------
+    if (clientIp !== "unknown") {
+      const [cachedVerdict, blacklisted] = await Promise.all([
+        env.THREAT_CACHE ? env.THREAT_CACHE.get(`ip:${clientIp}`) : Promise.resolve(null),
+        env.ASGUARD_BLACKLIST ? env.ASGUARD_BLACKLIST.get(`ip:${clientIp}`) : Promise.resolve(null),
+      ]);
+
+      const blockedBy = cachedVerdict === "BLOCKED" ? "blocked-edge-kv" : blacklisted ? "blocked-blacklist" : null;
+      if (blockedBy) {
         return new Response("Forbidden", {
           status: 403,
           headers: {
             ...corsHeaders,
             "X-Asguard-Protection": "active",
-            "X-Asguard-Action": "blocked-edge-kv"
-          }
+            "X-Asguard-Action": blockedBy,
+          },
         });
       }
     }
 
     if (clientIp !== "unknown") {
       const threatCheck = inspectRequest(request, clientIp);
-      if (threatCheck.isThreat && threatCheck.severity === 'CRITICAL' && env.THREAT_CACHE) {
-         await env.THREAT_CACHE.put(`ip:${clientIp}`, 'BLOCKED', { expirationTtl: 86400 });
+      if (threatCheck.isThreat && threatCheck.severity === 'CRITICAL') {
+         if (env.THREAT_CACHE) {
+            await env.THREAT_CACHE.put(`ip:${clientIp}`, 'BLOCKED', { expirationTtl: 86400 });
+         }
          ctx.waitUntil(logToSupabase({
            sourceIp: clientIp,
            timestamp: Date.now(),
@@ -191,38 +217,15 @@ export default {
            appOrigin: 'axim-asguard',
            details: { reason: threatCheck.category, clientIp }
          }, env, ctx, request));
-         /* ctx.waitUntil(logTelemetry({
-           sourceIp: clientIp,
-           timestamp: Date.now(),
-           eventType: 'threat.blocked',
-           severity: 'critical',
-           threatLevel: 'CRITICAL',
-           targetVector: threatCheck.category as any,
-           actionTaken: 'DROPPED',
-           threatScore: 99,
-           requestMethod: request.method,
-           targetResource: new URL(request.url).pathname,
-           details: { ruleMatches: [threatCheck.category], path: new URL(request.url).pathname }
-         }, env, ctx)); */
          return new Response("Forbidden", {
            status: 403,
            headers: {
              ...corsHeaders,
              "X-Asguard-Protection": "active",
-             "X-Asguard-Action": "blocked-edge-kv"
+             "X-Asguard-Action": "blocked-threat-engine",
+             "X-Asguard-Threat-Category": threatCheck.category,
            }
          });
-      }
-    }
-
-
-    // Fast check against KV for blocked IP
-    if (clientIp !== "unknown") {
-      const isBlocked = await env.ASGUARD_BLACKLIST.get(
-        `ip:${clientIp}`,
-      );
-      if (isBlocked) {
-        return new Response("Forbidden", { status: 403, headers: corsHeaders });
       }
     }
 
@@ -597,7 +600,7 @@ export default {
       }
 
       try {
-        return await analyzeThreat(await request.json(), env);
+        return await analyzeThreat(await request.json(), env, ctx);
       } catch {
         return new Response("Bad Request", { status: 400, headers: corsHeaders });
       }
