@@ -12,6 +12,20 @@ scripts/
 video/
 dist/
 .next/
+.open-next/
+
+# Local runtime state — never commit
+*.pid
+dev_pid.txt
+nextjs.pid
+test-results/
+playwright-report/
+blob-report/
+
+# Environment files
+.env
+.env.local
+.env.*.local
 
 .venv/
 *.pyc

@@ -1,3 +1,67 @@
+### 2026-11-02 08:35 EST — Sprint 28: SSE Hardening, AI Timeout Isolation & Blocklist Interlock
+Branch: feat/asguard-sprint-28-ssse-hardening-blacklist-interlock (base 9aa2c5f)
+
+- **asguard-interceptor/src/threatEngine.ts**: added CGI argument injection detection (CVE-2024-4577
+  family: `?-d`, `-r`, `auto_prepend_file`, `auto_append_file`, `allow_url_include`,
+  `disable_functions`, `safe_mode`, `open_basedir`, incl. `%2d` / `%AD` soft-hyphen encodings) as a
+  new CRITICAL `CGI_INJECTION` category evaluated ahead of traversal. Added `PHP_SHELL_PROBE`
+  (`.php`, `.phtml`, `.phar`, `/wp-admin`). Closed the double-encoded traversal bypass
+  (`%252e%252e`). Exported `deterministicFallbackClassification()`.
+- **asguard-interceptor/src/aiService.ts**: replaced two independent 4000ms timers with a single
+  `AI_TIMEOUT_CEILING_MS = 8000` deadline shared by both provider legs via `fetchWithDeadline()`;
+  caller-supplied timeouts are clamped down and can never raise the ceiling. Degraded streaming
+  responses now emit a well-formed SSE frame instead of a bare JSON body.
+- **asguard-interceptor/src/index.ts**: consolidated the global blocklist interlock into one
+  parallel KV gate (`THREAT_CACHE` + `ASGUARD_BLACKLIST`) that runs before routing, rate limiting and
+  body parsing, returning `X-Asguard-Action`. Threat rejections now carry
+  `X-Asguard-Action: blocked-threat-engine` + `X-Asguard-Threat-Category`. Threaded `ctx` through
+  `analyzeThreat` into `logAIInference` so inference telemetry uses `ctx.waitUntil()`. Removed the
+  commented-out dead telemetry block.
+- **asguard-interceptor/src/telemetry.ts**: `dbUrl` derived from the resolved `supabaseUrl`
+  (fixes `undefined/rest/v1/threat_events` on `NEXT_PUBLIC_SUPABASE_URL`-only deployments); removed
+  the duplicated `ASGUARD_KV_BUFFER.put` on the failure path.
+- **asguard-interceptor/tests/hardening.test.ts** (new): 24 tests covering CGI injection (9
+  variants + benign non-hits), double-encoded traversal, PHP shell probes, both blocklist interlock
+  branches, and AI timeout isolation (JSON + SSE degraded frames).
+- **soc-cockpit/src/app/api/ingest/stream/route.ts**: rebuilt around `createSseChannel()` with 15s
+  `: keep-alive\n\n` heartbeats, `request.signal.aborted` handling at construction time, guarded
+  writes that self-close, and idempotent teardown. Added `validateUpstreamUrl()` SSRF guard on the
+  POST proxy target (scheme, credentials, loopback/RFC1918/link-local/unique-local, `.local`/
+  `.internal`, internal ports 6543/5432/8080/9000/6379/11211) returning 403 on rejection.
+- **soc-cockpit/src/components/LiveThreatFeed.tsx**: exponential backoff reconnection (1s → 30s
+  capped) with a unique channel name per attempt and a manual Reconnect control; real latency badge
+  (green ≤2s / amber ≤10s / red >10s / grey offline) driven by `Date.now() - event.timestamp` with a
+  5s staleness watchdog; `asText()`/`formatTimestamp()` null-coalescing on every rendered field;
+  wired `lastEventTimestamp` so gap recovery actually runs; applied the previously inert origin
+  filter; corrected KV expiry (seconds → ms).
+- **soc-cockpit/next.config.ts**: pinned `outputFileTracingRoot` to the package (dual lockfile was
+  making Next infer the monorepo root).
+- **soc-cockpit/package-lock.json**: regenerated — was out of sync with `package.json`
+  (`@hey-api/*`, `c12`, `commander@15`, `js-yaml@4.2.0` missing), which made `npm ci` fail with
+  `EUSAGE` and blocked CI. 1357 → 1390 entries; `npm ci` now completes.
+- **.github/workflows/ci.yml** (new): interceptor `tsc --noEmit` + `npm test` +
+  `wrangler deploy --dry-run`; cockpit `npm run lint` + `npm run build`. The repo previously had no
+  CI at all.
+- **README.md**: rewritten for the canonical Asguard SOC & WAF architecture — component roles,
+  request lifecycle, endpoint table, env vars, KV bindings, local dev, verification and deploy steps.
+  Legacy "ENGINEERING-BRIEFING--AXiM-Public-Frontend---Web3-6337 / Repository created by Greta"
+  boilerplate removed.
+- **Docs**: added `AGENTS_VERIFICATION.md`, `CHANGELOG.md`, `DEBUGGING_NOTES.md` (15 documented
+  defects with root causes); reconciled `plan.md`.
+- **Test isolation (flake fix)**: `npm test` was intermittently failing (1 run in 3). Two
+  independent defects: (a) module-level limiter maps (`rateLimitMap`, `penaltyLedger`,
+  `clientErrorThrottleMap`) leaked between cases, letting an earlier test push the 10-req/10s window
+  over the limit for a later one — added test-only `__resetEdgeStateForTests()` called from
+  `beforeEach`; (b) a backgrounded `logToSupabase` from an earlier case resolved against the next
+  case's `global.fetch` mock and overwrote the shared `fetchUrl` capture — that test now records
+  every call and polls for the one targeting the Supabase REST endpoint. Six consecutive clean runs.
+- **Cleanup**: removed committed runtime scratch `dev_pid.txt`, `nextjs.pid`, `test-results/` and
+  added them to `.gitignore`.
+
+Verification: interceptor `tsc --noEmit` clean · `npm test` 49/49 passing · `wrangler deploy
+--dry-run` clean with all 4 KV bindings · cockpit `npm run lint` clean · `npm run build` green, 13/13
+routes · `npm ci` completes from the regenerated lockfile.
+
 soc-cockpit/src/components/LiveThreatFeed.tsx: modified lines for date hydration and layout constraints
 soc-cockpit/src/components/Stream/LiveChat.tsx: modified lines to include online/offline listeners for reconnect
 soc-cockpit/src/app/api/ingest/stream/route.ts: TransformStream implementation added with 15s ping interval
