@@ -3,6 +3,65 @@
 All notable changes to the AXiM Asguard SOC & WAF are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); dates are UTC.
 
+## [Unreleased] — 2026-11-03 (Sprint 29)
+
+### Fixed
+
+- **The AI budget is now a real deadline, not two independent timers.** `AIClient.generate()` used
+  to hand each provider leg its own fresh `AI_TIMEOUT_CEILING_MS` (8s), so a hung DeepSeek followed
+  by a hung Anthropic cost ~16s — double the documented contract. Both legs now draw from one
+  absolute clock (`createDeadline()`); the primary leg is capped at
+  `PRIMARY_LEG_BUDGET_SHARE = 0.6` of the ceiling so failover always has budget left, and anything
+  still outstanding after 8s returns the deterministic fallback payload.
+- **The deadline survives the response body read.** `fetchWithDeadline()` cleared its abort timer as
+  soon as headers arrived, leaving `await response.text()` completely unbounded — a provider that
+  answered `200` and then stalled its body hung the classifier indefinitely. The timer now stays
+  armed until the body has actually been consumed (`requestWithinDeadline()` + `disarm()`).
+- **Telemetry rejected by Supabase is no longer discarded.** The failure paths buffered into
+  `TELEMETRY_FALLBACK_QUEUE`, which `wrangler.toml` does not declare, while
+  `flushBufferedTelemetry()` scanned `ASGUARD_TELEMETRY`. Nothing was ever written to the namespace
+  being read. `resolveFallbackQueue()` now prefers `TELEMETRY_FALLBACK_QUEUE`, then
+  `ASGUARD_KV_BUFFER` (the binding that actually exists), then `ASGUARD_TELEMETRY`, and both the
+  write and flush sides use it. A missing namespace is logged instead of failing silently.
+- **Buffered telemetry flushes to the right host.** `flushBufferedTelemetry()` still read only
+  `env.SUPABASE_URL`, so a `NEXT_PUBLIC_SUPABASE_URL`-only deployment replayed backlog to
+  `undefined/rest/v1/threat_events` — the same defect fixed on the write path in Sprint 28, one
+  function over. It now resolves both names, refuses to flush without a URL, and retains the entries
+  instead of deleting data it failed to deliver.
+- **Cockpit ingest no longer honours a published default token.** `/api/ingest` compared the bearer
+  against `process.env.ASGUARD_API_KEY || 'default_ingest_token'`; with the variable unset, anyone
+  could authenticate with a literal that is in the source tree and plant fabricated `verdict` /
+  `threat_score` rows in the operator dashboard. Unconfigured now returns
+  `503 ingest_not_configured`; mismatch returns `401`; the comparison no longer short-circuits on
+  length.
+- **`sendTelemetryToCockpit()` stops guessing a secret.** It used the same `default_ingest_token`
+  fallback, which against a fail-closed cockpit becomes a silent 401 retry loop. It now detects the
+  missing `ASGUARD_API_KEY`, logs it, and buffers the event for replay.
+- **Bounded the remaining unbounded telemetry legs.** The `AXIM_CORE_INGEST_URL` dispatch and the
+  backlog flush had no timeout of their own; both now use `TELEMETRY_WRITE_TIMEOUT_MS` (1500ms).
+
+### Added
+
+- **Automated coverage for the cockpit SSE route** (`soc-cockpit/tests/ingest-stream.test.ts`,
+  20 tests) — previously zero. Covers the `text/event-stream` headers, the 15s `: keep-alive`
+  cadence, clean close on client disconnect, immediate close when the request arrives already
+  aborted, thirteen SSRF rejections (loopback, RFC1918, link-local, metadata hosts, ULA, internal
+  ports, `file://`, embedded credentials) each asserting the upstream was never fetched, and
+  re-framing of a proxied upstream with its keep-alives stripped.
+- `vitest` in `soc-cockpit` (`npm test`) and a `Unit tests` step in the CI cockpit job, between lint
+  and build.
+- 7 new interceptor tests: body-read deadline bound, single shared budget across both legs, failover
+  budget reservation, and fallback-queue resolution / persistence / flush / no-URL guard.
+- `soc-cockpit/tests/ingest-auth.test.ts` (7 tests) pinning the fail-closed ingest contract,
+  including that the old `default_ingest_token` literal no longer authenticates anything.
+
+### Changed
+
+- `AIClient.generate()` additionally reports `deadlineMs` and `elapsedMs` so callers can assert the
+  budget without re-deriving it.
+- `Env` now declares `ASGUARD_KV_BUFFER`, an optional `TELEMETRY_FALLBACK_QUEUE`, and the
+  SUPABASE/AXIM ingest variables that the code already read.
+
 ## [Unreleased] — 2026-11-02 (Sprint 28)
 
 ### Added

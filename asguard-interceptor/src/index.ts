@@ -49,8 +49,12 @@ import { inspectRequest } from "./threatEngine";
 export interface Env {
   ASGUARD_BLACKLIST: KVNamespace;
   ASGUARD_TELEMETRY: KVNamespace;
+  /** Bound in wrangler.toml; holds telemetry writes Supabase rejected. */
+  ASGUARD_KV_BUFFER?: KVNamespace;
   THREAT_CACHE: KVNamespace;
-  TELEMETRY_FALLBACK_QUEUE: KVNamespace;
+  /** Optional alias for ASGUARD_KV_BUFFER; both are accepted by
+   *  resolveFallbackQueue(). */
+  TELEMETRY_FALLBACK_QUEUE?: KVNamespace;
   ASGUARD_API_KEY: string;
   ASGUARD_SERVICE_TOKEN?: string;
   TELEMETRY_INGEST_KEY?: string;
@@ -59,6 +63,12 @@ export interface Env {
   DEEPSEEK_BASE_URL?: string;
   DEEPSEEK_MODEL?: string;
   AXIM_SERVICE_ROLE_KEY?: string;
+  SUPABASE_URL?: string;
+  NEXT_PUBLIC_SUPABASE_URL?: string;
+  SUPABASE_SERVICE_ROLE_KEY?: string;
+  AXIM_CORE_INGEST_URL?: string;
+  AXIM_CORE_INGEST_KEY?: string;
+  COCKPIT_INGEST_URL?: string;
 }
 
 const corsHeaders = {

@@ -133,9 +133,10 @@ cd asguard-interceptor
 npm test
 npx wrangler deploy --dry-run
 
-# Cockpit: lint, Next.js build, then the OpenNext bundle + dry-run
+# Cockpit: lint, tests, Next.js build, then the OpenNext bundle + dry-run
 cd soc-cockpit
 npm run lint
+npm test
 npm run build
 npx opennextjs-cloudflare build
 npx wrangler deploy --dry-run
@@ -154,10 +155,14 @@ CI runs the same battery on every push and pull request — see `.github/workflo
 
 - **Everything is fail-closed at the perimeter.** If `ASGUARD_BLACKLIST` is unreachable the request
   is not silently allowed; KV read failures surface as an error rather than an open gate.
+- **Ingest has no default secret.** `/api/ingest` returns `503 ingest_not_configured` when
+  `ASGUARD_API_KEY` is unset, and `401` on a mismatch. There is no fallback token: an unconfigured
+  deployment refuses telemetry rather than accepting a published literal.
 - **Telemetry never blocks a response.** Every write is wrapped in `ctx.waitUntil()`; the caller
-  returns before the Supabase round-trip completes.
-- **AI is advisory, never load-bearing.** The 8-second deadline guarantees a bounded response even
-  when both providers are down.
+  returns before the Supabase round-trip completes. Rejected writes land in the bound
+  `ASGUARD_KV_BUFFER` namespace and are replayed by the cron trigger.
+- **AI is advisory, never load-bearing.** One 8-second deadline covers both provider legs *and*
+  their body reads, so a provider that sends headers and then stalls still degrades deterministically.
 - **Rotating a shared key** (`ASGUARD_API_KEY`, `ASGUARD_SERVICE_TOKEN`, `TELEMETRY_INGEST_KEY`)
   requires updating both Workers in the same window — the cockpit's event ingest will start
   returning `401` the moment the interceptor's key changes.
@@ -176,6 +181,8 @@ asguard-interceptor/     Edge WAF worker (TypeScript, Vitest)
   src/telemetry.ts         non-blocking telemetry dispatch, KV buffering, Supabase writes
   tests/                   interceptor.test.ts, hardening.test.ts
 soc-cockpit/             Next.js 15 SOC console (OpenNext → Cloudflare)
+  src/app/api/ingest/stream/  SSE channel: keep-alive, abort teardown, SSRF guard
+  tests/ingest-stream.test.ts SSE transport + SSRF regression suite (Vitest)
 supabase/                schema migrations and seed data
 docs/                    architecture assets
 ```

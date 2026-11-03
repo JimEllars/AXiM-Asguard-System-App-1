@@ -2,6 +2,155 @@
 
 Known defects, their root causes, and how they were resolved. Newest first.
 
+## 2026-11-03 — Sprint 29 review
+
+### 1. The "8-second timeout" was two 8-second timeouts, and neither covered the body
+
+Sprint 28 replaced two 4000ms timers with `AI_TIMEOUT_CEILING_MS = 8000` and a shared-looking
+`fetchWithDeadline()` helper, and both `plan.md` and the changelog described it as "a single
+8-second deadline shared by both provider legs". It was not shared: `generate()` called
+`fetchWithDeadline()` separately for DeepSeek and again for Anthropic, each time passing the full
+ceiling. A primary that hung to its limit followed by a failover that hung to its limit consumed
+~16s.
+
+There was a second, worse hole. `fetchWithDeadline()` was:
+
+```ts
+const timer = setTimeout(() => controller.abort(), timeoutMs);
+try {
+  return await fetch(url, { ...init, signal: controller.signal });
+} finally {
+  clearTimeout(timer);      // <- released once HEADERS arrive
+}
+```
+
+The timer is cleared when the promise from `fetch()` resolves — which happens as soon as response
+headers are received, long before the body is read. Every caller then did
+`await response.text()` with no deadline attached. A provider that answers `200 OK` with the right
+`Content-Type` and then never sends a body would hold the classifier open until the platform killed
+the isolate. The first was a documentation defect; the second was a live hang.
+
+**Fix:** `createDeadline()` returns an absolute epoch timestamp plus `remaining()`. Every leg —
+primary, failover, and each body read — draws from that one clock
+(`requestWithinDeadline(url, init, deadline, stage)`), and the abort timer is only released by an
+explicit `disarm()` in a `finally` that runs *after* the body has been consumed. Two behaviours fall
+out of it:
+
+- Total wall clock is bounded by the ceiling, which is what actually protects the request.
+- `PRIMARY_LEG_BUDGET_SHARE = 0.6` caps the primary leg at 60% of the ceiling. Without it, a hung
+  primary consumes the entire budget and the Anthropic failover is never dialled — the deadline
+  would be respected but the redundancy silently lost.
+
+**Regression coverage:** `bounds the body read, not just the header wait` (enqueues a `200` with a
+`ReadableStream` that never closes and asserts the degraded payload arrives inside the budget) and
+`spends one shared budget across both provider legs` (both legs hang; asserts two fetch calls and
+elapsed < ceiling × 1.5).
+
+### 2. Telemetry rejected by Supabase was written to a namespace nothing reads
+
+Four buffering sites in `telemetry.ts` wrote to `env.TELEMETRY_FALLBACK_QUEUE`:
+
+```ts
+if (env.TELEMETRY_FALLBACK_QUEUE) {
+  env.TELEMETRY_FALLBACK_QUEUE.put(`fallback_evt:${Date.now()}`, ...)
+}
+```
+
+`wrangler.toml` declares `ASGUARD_KV_BUFFER`, `ASGUARD_BLACKLIST`, `ASGUARD_TELEMETRY` and
+`THREAT_CACHE`. There is no `TELEMETRY_FALLBACK_QUEUE` binding anywhere in the repository. The
+guard `if (env.TELEMETRY_FALLBACK_QUEUE)` was therefore false in production, so the entire branch —
+the only thing standing between a Supabase outage and permanent event loss — never executed.
+
+Meanwhile `flushBufferedTelemetry()` read from `env.TELEMETRY_FALLBACK_QUEUE || env.ASGUARD_TELEMETRY`.
+So the reader was pointed at a namespace the writer never wrote to, and even the fallback was the
+wrong one: `sendTelemetryToCockpit()` buffered into `ASGUARD_KV_BUFFER`, which the flush never
+scanned. Three functions, three different ideas of where the buffer lives.
+
+**Root cause:** the binding was renamed at some point and only some call sites followed.
+
+**Fix:** one resolver, `resolveFallbackQueue(env)` — `TELEMETRY_FALLBACK_QUEUE` (kept for
+deployments that may have added it by hand) → `ASGUARD_KV_BUFFER` (the binding that exists) →
+`ASGUARD_TELEMETRY`. All writes go through `bufferFailedEvent()`, which logs loudly when no namespace
+is bound instead of skipping silently. The `Env` interface now declares the namespace so the compiler
+would have caught the mismatch.
+
+**Lesson:** an `if (env.BINDING)` guard around the *only* error-handling path is indistinguishable
+from correct code until the error actually happens. `wrangler deploy --dry-run` prints the real
+binding list — that output is the cheapest place to catch this class of bug.
+
+### 3. The backlog flush still had the `SUPABASE_URL`-only bug
+
+Sprint 28 fixed `logToSupabase()` to derive its URL from the resolved value, because a
+`NEXT_PUBLIC_SUPABASE_URL`-only deployment was POSTing to `undefined/rest/v1/threat_events`.
+`flushBufferedTelemetry()` — ten lines of the same shape, reading the same env — was missed:
+
+```ts
+const dbUrl = env.SUPABASE_URL ? `${env.SUPABASE_URL}/rest/v1/threat_events`
+                               : 'http://localhost:54321/rest/v1/threat_events';
+```
+
+With only the public name configured, every replayed backlog went to localhost, failed, and the
+`else` branch deleted nothing — but the flush logged a bare status code and returned, so the backlog
+grew. It now resolves both names, refuses to attempt a flush with no URL at all (retaining the
+entries), and bounds the request with `TELEMETRY_WRITE_TIMEOUT_MS`.
+
+### 4. Cockpit ingest authenticated against a token printed in the source tree
+
+```ts
+const expectedKey = process.env.ASGUARD_API_KEY || 'default_ingest_token';
+```
+
+If `ASGUARD_API_KEY` was unset on the cockpit deployment, the shared secret became the literal string
+`default_ingest_token` — which is committed to the repository and would be visible in any private
+repo, but in an *unset* deployment it is not a downgrade at all, it is a public password. That route
+writes rows into `threat_events`, the table behind the live threat feed, the severity filters and the
+operator dashboard. The attack is telemetry poisoning: inject `verdict: 'allow'` rows to bury real
+blocks, or `threat_score: 99` rows on an innocent IP to burn an analyst's afternoon — or to bait a
+`Drop IP` click that blacklists a legitimate customer.
+
+The interceptor's `sendTelemetryToCockpit()` used the same fallback, which made the pair *appear*
+consistent while both were unauthenticated.
+
+**Fix:** fail closed. No configured secret → `503 ingest_not_configured` with an explicit error log;
+mismatch → `401`. The comparison is `safeEqual()`, constant-time over the longer of the two inputs
+so a caller cannot infer the secret's length from response timing. The interceptor no longer guesses:
+it detects the missing key, logs it, and buffers the event for replay rather than entering a 401
+retry loop against a fail-closed cockpit.
+
+**Deployment consequence:** any environment that was relying on the default token will start
+returning `503` on ingest until `ASGUARD_API_KEY` is set on *both* Workers. That is the intended
+behaviour — but it is a breaking change for a misconfigured deployment, so it is called out in the
+README operating notes.
+
+### 5. The cockpit's SSE route had zero automated coverage
+
+`/api/ingest/stream` is the only route carrying a live operator data path, and the Sprint 28 rewrite
+(15s heartbeats, abort teardown, SSRF guard) was verified by hand. `soc-cockpit` had no test runner
+at all, and CI only ran `lint` + `build` for it, so a regression in the SSRF guard would have
+deployed silently.
+
+**Fix:** `vitest` added to `soc-cockpit` with 20 tests, and a `Unit tests` step in the CI cockpit job
+between lint and build. The SSRF cases assert `fetch` was never called, not merely that the status
+was `403` — a guard that fetches first and rejects after would pass the weaker assertion.
+
+### 6. Known-but-unfixed: cockpit ingest fans out to its own proxy route
+
+`/api/ingest` ends with:
+
+```ts
+await fetch(`${streamBase}/api/ingest/stream`, { method: 'POST', body: JSON.stringify({...validatedData, id}) })
+```
+
+But `POST /api/ingest/stream` is the *SSRF-validated proxy*: it requires `{ url, headers, body }` and
+returns `400 Bad Request` when `url` is absent. The broadcast therefore cannot succeed; the failure is
+swallowed by the surrounding `catch`, so the only symptom is a missing realtime push. It is also a
+synchronous `await` on the ingest hot path, so every ingest pays for a round-trip that always fails.
+
+A correct fan-out needs a publish/subscribe primitive that spans isolates — a Durable Object or a
+Queue — not `fetch` back into the same Worker. Deferred rather than half-implemented: an in-memory
+subscriber set would appear to work in local dev and silently miss every cross-isolate subscriber in
+production. Tracked as plan.md next priority 3.
+
 ## 2026-11-02 — Sprint 28 review
 
 ### 1. AI classifier timeout was 4s, not the documented 8s

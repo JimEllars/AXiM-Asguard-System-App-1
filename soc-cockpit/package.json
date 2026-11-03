@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "preview": "opennextjs-cloudflare build && wrangler dev",
-    "deploy": "opennextjs-cloudflare build && wrangler deploy"
+    "deploy": "opennextjs-cloudflare build && wrangler deploy",
+    "test": "vitest run"
   },
   "dependencies": {
     "@playwright/test": "^1.61.1",
@@ -39,6 +40,7 @@
     "eslint-config-next": "15.5.2",
     "tailwindcss": "^4",
     "typescript": "^5",
+    "vitest": "^1.6.1",
     "wrangler": "^4.109.0"
   }
 }
