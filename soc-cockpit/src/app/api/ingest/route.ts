@@ -2,6 +2,35 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ThreatEventSchema } from '../../../lib/schemas/threatEvent';
 import { createClient } from '@supabase/supabase-js';
 
+/**
+ * Constant-time comparison for the ingest bearer token.
+ *
+ * Length is folded into the accumulator rather than short-circuited so a caller
+ * cannot learn the secret's length from response timing.
+ */
+function safeEqual(a: string, b: string): boolean {
+  const length = Math.max(a.length, b.length);
+  let mismatch = a.length === b.length ? 0 : 1;
+  for (let i = 0; i < length; i++) {
+    mismatch |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+  }
+  return mismatch === 0;
+}
+
+/**
+ * Resolves the shared ingest secret.
+ *
+ * This used to default to the literal `default_ingest_token`, which meant an
+ * unconfigured deployment accepted `Authorization: Bearer default_ingest_token`
+ * from anyone on the internet — an attacker could plant fabricated
+ * `verdict`/`threat_score` rows straight into the operator dashboard. The
+ * perimeter now fails closed: no secret configured, no ingest.
+ */
+function resolveIngestKey(): string | null {
+  const configured = (process.env.ASGUARD_API_KEY || process.env.TELEMETRY_INGEST_KEY || '').trim();
+  return configured.length > 0 ? configured : null;
+}
+
 // Avoid initializing at the top level to prevent build-time crashes if env vars are missing
 function getSupabaseClient() {
   const supabaseUrl = process.env.SUPABASE_URL || 'http://localhost:54321';
@@ -15,7 +44,7 @@ export async function POST(request: NextRequest) {
   const startTime = Date.now();
   try {
     const authHeader = request.headers.get('authorization');
-    const expectedKey = process.env.ASGUARD_API_KEY || 'default_ingest_token';
+    const expectedKey = resolveIngestKey();
 
     const corsHeaders = {
       'Access-Control-Allow-Origin': '*',
@@ -27,23 +56,26 @@ export async function POST(request: NextRequest) {
       return new NextResponse(null, { status: 204, headers: corsHeaders });
     }
 
+    if (!expectedKey) {
+      // Fail closed: an unconfigured shared secret must never mean "accept all".
+      console.error(JSON.stringify({
+        level: 'error',
+        message: 'Ingest rejected: ASGUARD_API_KEY is not configured',
+        timestamp: new Date().toISOString(),
+      }));
+      return NextResponse.json(
+        { error: 'ingest_not_configured', code: 503 },
+        { status: 503, headers: corsHeaders },
+      );
+    }
+
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return NextResponse.json({ error: "unauthorized", code: 401 }, { status: 401, headers: corsHeaders });
     }
 
     const token = authHeader.substring(7);
 
-    // Constant time bitwise comparison for edge
-    let isMatch = token.length === expectedKey.length;
-    if (isMatch) {
-        for (let i = 0; i < expectedKey.length; i++) {
-           if (token[i] !== expectedKey[i]) {
-               isMatch = false;
-           }
-        }
-    }
-
-    if (!isMatch) {
+    if (!safeEqual(token, expectedKey)) {
       return NextResponse.json({ error: "unauthorized", code: 401 }, { status: 401, headers: corsHeaders });
     }
 

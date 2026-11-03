@@ -1,4 +1,173 @@
-# Agents Verification — Sprint 28 (2026-11-02)
+# Agents Verification — Sprint 29 (2026-11-03)
+
+Verification appendix for the daily Asguard SOC review. Every command below was executed locally on
+a Node v22.23.4 / npm 10.9.9 host before the branch was pushed.
+
+- Branch: `feat/asguard-sprint-29-ai-deadline-telemetry-fallback-sse-coverage`
+- Base commit: `fc9bcde` (origin/main — "feat(asguard): harden edge perimeter, isolate AI timeouts, and add CI (#163)")
+- Upstream sync: `git fetch origin main` + `git fetch --all --prune`; one commit on `origin/main` in
+  the preceding 24h (`fc9bcde`, merged 2026-11-02 22:57Z). No human hand-edits since. Six open PRs,
+  all Dependabot. Local branch rebased onto `fc9bcde` before any change.
+
+## Scope of this change set
+
+Sprint 28 landed the documented shape of the perimeter. This pass verified the *claims* against the
+live code and found three places where behaviour did not match the contract:
+
+1. The 8s AI budget was not a shared deadline — each provider leg got its own 8s timer, and the
+   timer was released before the response body was read.
+2. Telemetry rejected by Supabase was buffered into a KV binding that `wrangler.toml` does not
+   declare, so every failed write was silently discarded.
+3. The cockpit's ingest route authenticated against a hardcoded fallback token when
+   `ASGUARD_API_KEY` was unset, i.e. an unconfigured deployment accepted writes from anyone.
+
+## Files modified
+
+| File | Change | Lines |
+| --- | --- | --- |
+| `asguard-interceptor/src/aiService.ts` | Shared `Deadline` clock across both legs; `requestWithinDeadline()` keeps the abort timer armed until the body is consumed; `PRIMARY_LEG_BUDGET_SHARE = 0.6` reserves budget for failover; `degrade()` extracted | 211 → 306 |
+| `asguard-interceptor/src/telemetry.ts` | `resolveFallbackQueue()` (TELEMETRY_FALLBACK_QUEUE → ASGUARD_KV_BUFFER → ASGUARD_TELEMETRY), `bufferFailedEvent()`, `TELEMETRY_WRITE_TIMEOUT_MS`; bounded the AXIM Core ingest leg; `flushBufferedTelemetry()` now resolves `NEXT_PUBLIC_SUPABASE_URL` and refuses to flush without a URL; `sendTelemetryToCockpit()` no longer ships `default_ingest_token` | 469 → 545 |
+| `asguard-interceptor/src/index.ts` | `Env` declares `ASGUARD_KV_BUFFER`, optional `TELEMETRY_FALLBACK_QUEUE`, SUPABASE/AXIM ingest vars | 683 → 700 |
+| `asguard-interceptor/tests/hardening.test.ts` | +7 tests: body-read deadline bound, single shared budget, failover reservation, fallback-queue resolution/persistence/flush | 234 → 400 |
+| `soc-cockpit/src/app/api/ingest/route.ts` | Fail-closed ingest auth (`503 ingest_not_configured`), `safeEqual()` constant-time compare that does not leak length | 148 → 178 |
+| `soc-cockpit/tests/ingest-stream.test.ts` | New suite, 20 tests: transport headers, 15s heartbeat cadence, abort teardown, already-aborted request, 13 SSRF rejections, proxy re-framing | new, 175 |
+| `soc-cockpit/tests/ingest-auth.test.ts` | New suite, 7 tests: unset secret → 503, `default_ingest_token` refused, mismatched/missing/non-Bearer/prefix tokens → 401, valid token reaches payload validation | new, 107 |
+| `soc-cockpit/package.json` | `vitest` devDependency, `"test": "vitest run"` | +2 |
+| `soc-cockpit/package-lock.json` | Regenerated for the vitest tree (109 added, 0 removed, 1 transitive patch bump) | 1390 → 1499 entries |
+| `.github/workflows/ci.yml` | Cockpit job runs `npm test` between lint and build | 68 → 71 |
+| `README.md` | Documented the fail-closed ingest contract, the shared AI deadline, and the cockpit test suite | 197 → 208 |
+| `plan.md` | Sprint 29 recorded; next priorities re-ranked | 92 → 116 |
+| `CHANGELOG.md` | Sprint 29 entry | prepended |
+| `PROGRESS_LOG.txt` | Sprint 29 entry | prepended |
+| `DEBUGGING_NOTES.md` | Four new root-cause notes | prepended |
+| `.gitignore` | Repaired a literal `\n`-mangled line that broke three ignore patterns | 3 files |
+
+## Verification battery — verbatim output
+
+### 1. `asguard-interceptor` — typecheck
+
+```
+$ npx tsc --noEmit
+(no output — exit 0)
+```
+
+### 2. `asguard-interceptor` — unit and integration tests
+
+```
+$ npm test
+> asguard-interceptor@1.0.0 test
+> vitest run
+
+ RUN  v1.6.1 /workspace/review/axim-asguard/asguard-interceptor
+
+ ✓ tests/interceptor.test.ts  (25 tests) 135ms
+ ✓ tests/hardening.test.ts  (31 tests) 2644ms
+
+ Test Files  2 passed (2)
+      Tests  56 passed (56)
+   Duration  28.38s
+```
+
+### 3. `asguard-interceptor` — Wrangler deploy dry-run (binding validation)
+
+```
+$ npx wrangler deploy --dry-run --outdir /tmp/ic-dry-out2
+Total Upload: 167.36 KiB / gzip: 30.68 KiB
+Your Worker has access to the following bindings:
+env.ASGUARD_KV_BUFFER (new_buffer_id_here)                            KV Namespace
+env.ASGUARD_BLACKLIST (53ed082bcd0f465c94f08626c97160ca)              KV Namespace
+env.ASGUARD_TELEMETRY (9141c0fd3eb44d3c84375f418c716495)              KV Namespace
+env.THREAT_CACHE (new_threat_cache_id_here)                           KV Namespace
+env.ASGUARD_API_KEY ("")                                              Environment Variable
+env.ASGUARD_SERVICE_TOKEN ("")                                        Environment Variable
+
+--dry-run: exiting now.
+EXIT=0
+```
+
+Note: `ASGUARD_KV_BUFFER` is bound and is what `resolveFallbackQueue()` now targets. The two
+`new_*_id_here` placeholders remain (see plan.md next priority 2) — `--dry-run` accepts them, a real
+deploy will not.
+
+### 4. `soc-cockpit` — lint
+
+```
+$ npm run lint
+> soc-cockpit@0.1.0 lint
+> eslint
+
+(no findings — exit 0)
+```
+
+### 5. `soc-cockpit` — unit tests (new)
+
+```
+$ npm test
+> soc-cockpit@0.1.0 test
+> vitest run
+
+ RUN  v1.6.1 /workspace/review/axim-asguard/soc-cockpit
+
+ ✓ tests/ingest-stream.test.ts  (20 tests) 1195ms
+ ✓ tests/ingest-auth.test.ts  (7 tests) 156ms
+
+ Test Files  2 passed (2)
+      Tests  27 passed (27)
+   Duration  31.92s
+```
+
+### 6. `soc-cockpit` — build
+
+```
+$ NEXT_TELEMETRY_DISABLED=1 npm run build
+> next build
+
+ ✓ Compiled successfully in 9.6min
+   Linting and checking validity of types ...
+ ✓ Generating static pages (13/13)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                 Size  First Load JS
+┌ ƒ /                                    5.57 kB         189 kB
+├ ƒ /_not-found                             1 kB         118 kB
+├ ƒ /api/asguard/[...path]                 164 B         117 kB
+├ ƒ /api/chat                              164 B         117 kB
+├ ƒ /api/health                            164 B         117 kB
+├ ƒ /api/ingest                            164 B         117 kB
+├ ƒ /api/ingest/stream                     164 B         117 kB
+├ ƒ /api/ready                             164 B         117 kB
+├ ƒ /api/v1/threats/stream                 164 B         117 kB
+├ ƒ /api/v1/triage/dispatch                164 B         117 kB
+├ ƒ /auth/callback                         164 B         117 kB
+├ ƒ /stream                              6.16 kB         189 kB
+└ ƒ /submit                              3.15 kB         120 kB
+
+BUILD_EXIT=0
+```
+
+## Environment notes
+
+Two sandbox-specific conditions affected *how* the battery was run; neither changes the result.
+
+- `NODE_ENV=production` is exported in this sandbox, which makes `npm ci` omit devDependencies and
+  silently leaves `typescript`/`vitest`/`eslint` uninstalled. All installs here used
+  `NODE_ENV=development npm ci --include=dev`.
+- The workspace volume is 20 GB and was 91% full; the cockpit tree (1251 packages, `thirdweb` +
+  `x402` + `walletconnect`) exhausts it. The npm cache was cleared to make room. This is the reason
+  the cockpit build was verified on a cold tree rather than incrementally.
+
+## What was *not* verified locally
+
+- `npx opennextjs-cloudflare build` for the cockpit. It needs an additional ~1 GB of output and the
+  volume had 969 MB free after `next build`. Unchanged by this change set; CI and the deploy job
+  remain the gate.
+- The interceptor was not deployed. `--dry-run` validates the bundle and every binding but performs
+  no network call, so it cannot fail on credentials (this is plan.md next priority 4).
+
+---
+
+## Archive — Sprint 28 verification (2026-11-02)
 
 Verification appendix for the daily Asguard SOC review. Every command below was executed locally on
 a Node v22.23.4 / npm 10.9.9 host before the branch was pushed.

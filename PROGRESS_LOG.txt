@@ -1,3 +1,52 @@
+### 2026-11-03 08:35 EST — Sprint 29: AI Deadline Reality, Telemetry Fallback Repair & Cockpit SSE Coverage
+Branch: feat/asguard-sprint-29-ai-deadline-telemetry-fallback-sse-coverage (base fc9bcde)
+
+- **asguard-interceptor/src/aiService.ts**: replaced the two-8s-timers shape from Sprint 28 with a
+  single absolute `Deadline` clock. `requestWithinDeadline()` keeps its abort timer armed until the
+  response body has been consumed, so `response.text()` is bounded too — previously the timer was
+  cleared when headers landed and a provider that stalled its body hung the classifier forever.
+  `PRIMARY_LEG_BUDGET_SHARE = 0.6` caps the primary leg so a hung DeepSeek cannot starve the
+  Anthropic failover of budget; worst-case wall clock is now the ceiling (8s), not 16s. Extracted
+  `degrade()`; `generate()` returns `deadlineMs`/`elapsedMs` for observability.
+- **asguard-interceptor/src/telemetry.ts**: added `resolveFallbackQueue()` —
+  `TELEMETRY_FALLBACK_QUEUE` → `ASGUARD_KV_BUFFER` → `ASGUARD_TELEMETRY`. The Sprint 28 failure
+  paths wrote to `TELEMETRY_FALLBACK_QUEUE`, which `wrangler.toml` never declares, while
+  `flushBufferedTelemetry()` read `ASGUARD_TELEMETRY`; both sides were dead and every Supabase
+  rejection was dropped. All four buffering sites now go through `bufferFailedEvent()`. Backlog
+  flush resolves `NEXT_PUBLIC_SUPABASE_URL` as well as `SUPABASE_URL` (same defect as the write path
+  last sprint), refuses to flush without a URL, and keeps entries it could not deliver. Added
+  `TELEMETRY_WRITE_TIMEOUT_MS = 1500` to the AXIM Core ingest leg and the flush fetch.
+  `sendTelemetryToCockpit()` no longer falls back to the literal `default_ingest_token`.
+- **asguard-interceptor/src/index.ts**: `Env` extended with `ASGUARD_KV_BUFFER`,
+  optional `TELEMETRY_FALLBACK_QUEUE`, `SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_URL`/
+  `SUPABASE_SERVICE_ROLE_KEY`, `AXIM_CORE_INGEST_URL`/`AXIM_CORE_INGEST_KEY`, `COCKPIT_INGEST_URL`.
+- **asguard-interceptor/tests/hardening.test.ts**: +7 tests → 31 in the file, 56 across the suite.
+  New: body-read deadline bound (200 then a never-completing body still degrades inside budget);
+  one shared budget across both legs (two calls, elapsed < ceiling x 1.5); failover reservation
+  constant; fallback-queue resolution order; rejected write persisted to `ASGUARD_KV_BUFFER`;
+  flush reads from the bound namespace and hits the right URL; no-URL flush is a no-op that keeps
+  its entries.
+- **soc-cockpit/src/app/api/ingest/route.ts**: ingest auth fails closed. `ASGUARD_API_KEY ||
+  'default_ingest_token'` meant an unconfigured deployment authenticated anyone using a literal
+  from the source tree, allowing fabricated threat rows in the dashboard. Unconfigured → `503
+  ingest_not_configured`; mismatch → `401`; comparison is `safeEqual()`, constant-time without a
+  length short-circuit.
+- **soc-cockpit/tests/ingest-stream.test.ts** (new): 20 tests giving the SSE route its first
+  automated coverage — transport headers, 15s `: keep-alive` cadence under fake timers, close on
+  client abort, immediate close when the signal is already aborted, 13 SSRF rejections each
+  asserting `fetch` was never called, 400 on a missing `url`, and proxy re-framing that strips
+  upstream keep-alives.
+- **soc-cockpit/package.json** + lockfile: `vitest` devDependency and `"test": "vitest run"`
+  (lock regenerated: 109 added, 0 removed, `@types/estree` 1.0.9 → 1.0.10).
+- **.github/workflows/ci.yml**: cockpit job now runs `npm test` between lint and build.
+- **README.md / plan.md / CHANGELOG.md / DEBUGGING_NOTES.md / AGENTS_VERIFICATION.md**: reconciled.
+- **.gitignore** (root, cockpit, interceptor): repaired a literal `\n`-mangled line that had
+  swallowed three intended patterns into one junk entry.
+
+Verification: `tsc --noEmit` exit 0; interceptor 56/56 tests; `wrangler deploy --dry-run` exit 0 with
+all four KV bindings resolved; cockpit `npm run lint` clean, `npm test` 20/20,
+`NEXT_TELEMETRY_DISABLED=1 npm run build` exit 0 (13 routes).
+
 ### 2026-11-02 08:35 EST — Sprint 28: SSE Hardening, AI Timeout Isolation & Blocklist Interlock
 Branch: feat/asguard-sprint-28-ssse-hardening-blacklist-interlock (base 9aa2c5f)
 

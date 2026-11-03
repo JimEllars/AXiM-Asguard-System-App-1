@@ -62,6 +62,50 @@ async function hashClientIp(ip: string): Promise<string> {
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
 }
 
+/** Write budget for a single telemetry sink. Telemetry is best-effort by
+ *  design: a slow database must never hold an isolate open. */
+export const TELEMETRY_WRITE_TIMEOUT_MS = 1500;
+
+/**
+ * Resolves the KV namespace that holds writes Supabase rejected.
+ *
+ * The failure paths used to write to `TELEMETRY_FALLBACK_QUEUE` only, but that
+ * binding is not declared in `wrangler.toml` — the bound namespace is
+ * `ASGUARD_KV_BUFFER`. Every failed write was therefore dropped on the floor
+ * while `flushBufferedTelemetry()` scanned a namespace nothing ever wrote to.
+ * One resolver keeps the write side and the flush side pointed at the same
+ * namespace, whichever of the historical names the deployment provides.
+ */
+export function resolveFallbackQueue(env: any): KVNamespace | undefined {
+    return env?.TELEMETRY_FALLBACK_QUEUE || env?.ASGUARD_KV_BUFFER || env?.ASGUARD_TELEMETRY;
+}
+
+/** PUT with a bounded budget. Never rejects; a lost buffer entry is preferable
+ *  to an unhandled rejection inside `waitUntil`. */
+async function bufferFailedEvent(env: any, key: string, value: unknown, reason: string) {
+  const queue = resolveFallbackQueue(env);
+  if (!queue) {
+    console.error(JSON.stringify({
+      level: 'error',
+      message: 'No telemetry fallback namespace bound; dropping event',
+      reason,
+      timestamp: new Date().toISOString(),
+    }));
+    return;
+  }
+
+  try {
+    await queue.put(key, JSON.stringify(value));
+  } catch (e: any) {
+    console.error(JSON.stringify({
+      level: 'error',
+      message: 'KV Put Error',
+      error: e?.message || String(e),
+      timestamp: new Date().toISOString(),
+    }));
+  }
+}
+
 export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: any, request?: Request) {
   const executeLog = async () => {
     try {
@@ -89,13 +133,16 @@ export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: a
       let fallbackRes: Promise<any> = Promise.resolve();
       // Fallback Dispatch to central AXiM Core backend ingest
       if (env.AXIM_CORE_INGEST_URL) {
+          const coreController = new AbortController();
+          const coreTimeoutId = setTimeout(() => coreController.abort(), TELEMETRY_WRITE_TIMEOUT_MS);
           fallbackRes = fetch(env.AXIM_CORE_INGEST_URL, {
               method: 'POST',
               headers: {
                   'Content-Type': 'application/json',
                   'Authorization': `Bearer ${env.AXIM_CORE_INGEST_KEY || ''}`
               },
-              body: JSON.stringify(structuredPayload)
+              body: JSON.stringify(structuredPayload),
+              signal: coreController.signal as any
           }).catch(e => {
                console.error(JSON.stringify({
                    level: "warn",
@@ -103,14 +150,14 @@ export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: a
                    error: e.message,
                    timestamp: ts
                }));
-          });
+          }).finally(() => clearTimeout(coreTimeoutId));
       }
 
 
 
       // Add abort controller for 1500ms timeout
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 1500);
+      const timeoutId = setTimeout(() => controller.abort(), TELEMETRY_WRITE_TIMEOUT_MS);
 
       const aximServiceRoleKey = env.AXIM_SERVICE_ROLE_KEY || supabaseKey;
       // Use the already-resolved URL. Reading env.SUPABASE_URL directly here
@@ -176,9 +223,7 @@ export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: a
                  timestamp: new Date().toISOString()
              }));
              // Buffer locally on failure
-             if (env.TELEMETRY_FALLBACK_QUEUE) {
-                 env.TELEMETRY_FALLBACK_QUEUE.put(`fallback_evt:${Date.now()}`, JSON.stringify(eventPayload)).catch((e: any) => console.error("KV Put Error", e));
-             }
+             await bufferFailedEvent(env, `fallback_evt:${Date.now()}`, eventPayload, `supabase_${res.status}`);
           }
       } else {
           console.error(JSON.stringify({
@@ -188,9 +233,7 @@ export async function logToSupabase(payload: TelemetryPayload, env: any, ctx?: a
              timestamp: new Date().toISOString()
           }));
           // Buffer locally on failure
-          if (env.TELEMETRY_FALLBACK_QUEUE) {
-              env.TELEMETRY_FALLBACK_QUEUE.put(`fallback_evt:${Date.now()}`, JSON.stringify(eventPayload)).catch((e: any) => console.error("KV Put Error", e));
-          }
+          await bufferFailedEvent(env, `fallback_evt:${Date.now()}`, eventPayload, 'supabase_unreachable');
       }
 
     } catch (error: any) {
@@ -320,9 +363,27 @@ export type { AsguardTelemetryEvent };
 
 export async function sendTelemetryToCockpit(payload: AsguardTelemetryEvent, env: any, ctx?: any) {
   const url = env.COCKPIT_INGEST_URL || 'http://localhost:3000/api/ingest';
-  const token = env.ASGUARD_API_KEY || 'default_ingest_token';
+  const token = (env.ASGUARD_API_KEY || '').trim();
   const MAX_RETRIES = 3;
   const INITIAL_BACKOFF = 500;
+
+  // The cockpit now fails closed when its ingest secret is unset, so shipping a
+  // guessed literal only burns retries and hides the misconfiguration behind a
+  // 401 loop. Buffer the event and say what is wrong instead.
+  if (!token) {
+    console.error(JSON.stringify({
+      level: 'error',
+      message: 'Cockpit telemetry skipped: ASGUARD_API_KEY is not configured',
+      timestamp: new Date().toISOString(),
+    }));
+    await bufferFailedEvent(env, `fallback_evt:${Date.now()}`, {
+      type: 'telemetry_drop',
+      reason: 'missing_ingest_key',
+      payload,
+      timestamp: Date.now(),
+    }, 'missing_ingest_key');
+    return;
+  }
 
   let attempt = 0;
   let success = false;
@@ -360,13 +421,11 @@ export async function sendTelemetryToCockpit(payload: AsguardTelemetryEvent, env
     if (!success) {
         console.error("Failed to send telemetry to cockpit after max retries");
         // Buffer locally in KV on failure
-        if (env.ASGUARD_KV_BUFFER) {
-            env.ASGUARD_KV_BUFFER.put(`fallback_evt:${Date.now()}`, JSON.stringify({
-               type: 'telemetry_drop',
-               payload: payload,
-               timestamp: Date.now()
-            })).catch((e: any) => console.error("KV Buffer Put Error", e));
-        }
+        await bufferFailedEvent(env, `fallback_evt:${Date.now()}`, {
+            type: 'telemetry_drop',
+            payload: payload,
+            timestamp: Date.now()
+        }, 'cockpit_ingest_exhausted');
         // Push error to local buffer
         if (typeof (globalThis as any).localEdgeLoggingBuffer !== 'undefined') {
             (globalThis as any).localEdgeLoggingBuffer.push({
@@ -382,14 +441,12 @@ export async function sendTelemetryToCockpit(payload: AsguardTelemetryEvent, env
   if (ctx && ctx.waitUntil) {
     ctx.waitUntil(doSend().catch(e => {
        console.error("Unhandled error in telemetry sender", e);
-       if (env.ASGUARD_KV_BUFFER) {
-            env.ASGUARD_KV_BUFFER.put(`fallback_evt:${Date.now()}`, JSON.stringify({
-               type: 'telemetry_drop_unhandled',
-               error: String(e),
-               payload: payload,
-               timestamp: Date.now()
-            })).catch((e2: any) => console.error("KV Buffer Put Error", e2));
-       }
+       void bufferFailedEvent(env, `fallback_evt:${Date.now()}`, {
+           type: 'telemetry_drop_unhandled',
+           error: String(e),
+           payload: payload,
+           timestamp: Date.now()
+       }, 'cockpit_ingest_unhandled');
        if (typeof (globalThis as any).localEdgeLoggingBuffer !== 'undefined') {
            (globalThis as any).localEdgeLoggingBuffer.push({
                type: 'telemetry_drop_unhandled',
@@ -413,8 +470,8 @@ export async function sendTelemetryToCockpit(payload: AsguardTelemetryEvent, env
 }
 
 export async function flushBufferedTelemetry(env: any) {
-  if (!env.TELEMETRY_FALLBACK_QUEUE && !env.ASGUARD_TELEMETRY) return;
-  const queue = env.TELEMETRY_FALLBACK_QUEUE || env.ASGUARD_TELEMETRY;
+  const queue = resolveFallbackQueue(env);
+  if (!queue) return;
 
   try {
     const listResult = await queue.list({ prefix: 'fallback_evt:' });
@@ -443,10 +500,26 @@ export async function flushBufferedTelemetry(env: any) {
       return;
     }
 
-    const dbUrl = env.SUPABASE_URL ? `${env.SUPABASE_URL}/rest/v1/threat_events` : 'http://localhost:54321/rest/v1/threat_events';
+    // Same URL-resolution rule as the write path: a NEXT_PUBLIC_SUPABASE_URL-only
+    // deployment must not flush to `undefined/rest/v1/threat_events`.
+    const supabaseUrl = env.SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL;
+    if (!supabaseUrl) {
+      console.error(JSON.stringify({
+        level: 'error',
+        message: 'Cannot flush buffered telemetry: no Supabase URL configured',
+        bufferedKeys: keysToDelete.length,
+        timestamp: new Date().toISOString(),
+      }));
+      return;
+    }
+
+    const dbUrl = `${String(supabaseUrl).replace(/\/$/, '')}/rest/v1/threat_events`;
     const aximServiceRoleKey = env.AXIM_SERVICE_ROLE_KEY || env.SUPABASE_SERVICE_ROLE_KEY || 'dummy_key';
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), TELEMETRY_WRITE_TIMEOUT_MS);
     const res = await fetch(dbUrl, {
+      signal: controller.signal as any,
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -455,7 +528,7 @@ export async function flushBufferedTelemetry(env: any) {
         'Prefer': 'return=minimal'
       },
       body: JSON.stringify(payloads)
-    });
+    }).finally(() => clearTimeout(timeoutId));
 
     if (res.ok || res.status === 201 || res.status === 200) {
       // successfully flushed, delete keys

@@ -43,9 +43,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-.wrangler/
 *.log
 video/
 dist/
 .next/
-venv/\nvenv2/\n*.exe\n*.so\nnode_modules/
+venv/
+venv2/
+*.exe
+*.so
+node_modules/

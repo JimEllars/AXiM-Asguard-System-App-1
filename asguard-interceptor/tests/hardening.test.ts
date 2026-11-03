@@ -1,7 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import worker, { Env, __resetEdgeStateForTests } from "../src/index";
 import { inspectRequest } from "../src/threatEngine";
-import { AIClient, AI_TIMEOUT_CEILING_MS, FALLBACK_PROVIDER } from "../src/aiService";
+import { logToSupabase, flushBufferedTelemetry, resolveFallbackQueue } from "../src/telemetry";
+import {
+  AIClient,
+  AI_TIMEOUT_CEILING_MS,
+  PRIMARY_LEG_BUDGET_SHARE,
+  FALLBACK_PROVIDER,
+} from "../src/aiService";
 
 const originalFetch = global.fetch;
 
@@ -232,5 +238,153 @@ describe("AI classifier timeout isolation", () => {
     // resolveTimeout is private; assert via the observable constant contract
     expect((client as any).options.timeoutMs).toBe(60000);
     expect(Math.min(60000, AI_TIMEOUT_CEILING_MS)).toBe(8000);
+  });
+
+  /**
+   * Regression: the deadline used to be released the moment response headers
+   * landed, so `response.text()` could block forever. A provider that returns
+   * 200 and then stalls its body must still degrade inside the budget.
+   */
+  it("bounds the body read, not just the header wait", async () => {
+    global.fetch = vi.fn((_url: any, init: any) => {
+      const signal = init?.signal as AbortSignal | undefined;
+      // Headers arrive immediately; the body never completes.
+      const body = new ReadableStream({
+        start(controller) {
+          signal?.addEventListener("abort", () => {
+            const err: any = new Error("The operation was aborted");
+            err.name = "AbortError";
+            controller.error(err);
+          });
+        },
+      });
+      return Promise.resolve(
+        new Response(body, { status: 200, headers: { "Content-Type": "application/json" } }),
+      );
+    }) as any;
+
+    const client = new AIClient({ userId: "test-user", timeoutMs: 300 });
+    const started = Date.now();
+    const { provider, response } = await client.generate([
+      { role: "system", content: "analyse" },
+      { role: "user", content: "{}" },
+    ]);
+    const elapsed = Date.now() - started;
+
+    expect(provider).toBe(FALLBACK_PROVIDER);
+    expect(elapsed).toBeGreaterThanOrEqual(250);
+    expect(elapsed).toBeLessThan(2000);
+    expect(((await response.json()) as any).degraded).toBe(true);
+  });
+
+  /**
+   * Regression: each provider leg previously got its own fresh 8s timer, so a
+   * hung primary plus a hung failover cost ~16s. The ceiling is a single clock
+   * shared by both legs.
+   */
+  it("spends one shared budget across both provider legs", async () => {
+    let calls = 0;
+    global.fetch = vi.fn((_url: any, init: any) => {
+      calls += 1;
+      return new Promise((_resolve, reject) => {
+        const signal = init?.signal as AbortSignal | undefined;
+        signal?.addEventListener("abort", () => {
+          const err: any = new Error("The operation was aborted");
+          err.name = "AbortError";
+          reject(err);
+        });
+      });
+    }) as any;
+
+    const ceiling = 400;
+    const client = new AIClient({ userId: "test-user", timeoutMs: ceiling });
+    const started = Date.now();
+    const { provider } = await client.generate([{ role: "user", content: "hello" }]);
+    const elapsed = Date.now() - started;
+
+    expect(calls).toBe(2);
+    expect(provider).toBe(FALLBACK_PROVIDER);
+    // Two full budgets would be ~2x the ceiling; allow scheduling slack only.
+    expect(elapsed).toBeLessThan(ceiling * 1.5);
+  });
+
+  it("reserves budget for failover so a hung primary cannot starve it", () => {
+    expect(PRIMARY_LEG_BUDGET_SHARE).toBeGreaterThan(0);
+    expect(PRIMARY_LEG_BUDGET_SHARE).toBeLessThan(1);
+  });
+});
+
+describe("Telemetry fallback queue", () => {
+  afterEach(() => {
+    global.fetch = originalFetch;
+    vi.clearAllMocks();
+  });
+
+  it("resolves the namespace that wrangler actually binds", () => {
+    // wrangler.toml binds ASGUARD_KV_BUFFER; TELEMETRY_FALLBACK_QUEUE is not
+    // declared anywhere. Writes must land in the bound namespace.
+    const buffer = makeKV();
+    expect(resolveFallbackQueue({ ASGUARD_KV_BUFFER: buffer })).toBe(buffer);
+    expect(resolveFallbackQueue({ ASGUARD_TELEMETRY: buffer })).toBe(buffer);
+    expect(resolveFallbackQueue({})).toBeUndefined();
+  });
+
+  it("persists a rejected Supabase write into the bound buffer", async () => {
+    const buffer = makeKV();
+    global.fetch = vi.fn().mockResolvedValue(new Response("nope", { status: 500 })) as any;
+
+    await logToSupabase(
+      {
+        sourceIp: "198.51.100.9",
+        timestamp: Date.now(),
+        eventType: "threat.blocked",
+        severity: "critical",
+        actionTaken: "DROPPED",
+        appOrigin: "axim-asguard",
+        details: {},
+      } as any,
+      { SUPABASE_URL: "https://db.example.test", AXIM_SERVICE_ROLE_KEY: "k", ASGUARD_KV_BUFFER: buffer },
+      undefined,
+    );
+
+    expect(buffer.put).toHaveBeenCalledTimes(1);
+    const [key, value] = buffer.put.mock.calls[0];
+    expect(String(key).startsWith("fallback_evt:")).toBe(true);
+    expect(JSON.parse(value).source_ip).toBe("198.51.100.9");
+  });
+
+  it("flushes from the bound buffer instead of a namespace nothing writes to", async () => {
+    const buffered = JSON.stringify({ id: "e1", source_ip: "198.51.100.9" });
+    const buffer = makeKV({
+      list: vi.fn().mockResolvedValue({ keys: [{ name: "fallback_evt:1" }] }),
+      get: vi.fn().mockResolvedValue(buffered),
+    });
+    const fetchMock = vi.fn().mockResolvedValue(new Response("{}", { status: 201 }));
+    global.fetch = fetchMock as any;
+
+    await flushBufferedTelemetry({
+      ASGUARD_KV_BUFFER: buffer,
+      NEXT_PUBLIC_SUPABASE_URL: "https://db.example.test",
+      AXIM_SERVICE_ROLE_KEY: "k",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toBe("https://db.example.test/rest/v1/threat_events");
+    expect(buffer.delete).toHaveBeenCalledWith("fallback_evt:1");
+  });
+
+  it("does not flush to an undefined host when no Supabase URL is configured", async () => {
+    const buffer = makeKV({
+      list: vi.fn().mockResolvedValue({ keys: [{ name: "fallback_evt:2" }] }),
+      get: vi.fn().mockResolvedValue(JSON.stringify({ id: "e2" })),
+    });
+    const fetchMock = vi.fn();
+    global.fetch = fetchMock as any;
+
+    await flushBufferedTelemetry({ ASGUARD_KV_BUFFER: buffer, AXIM_SERVICE_ROLE_KEY: "k" });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    // Entry is retained so a later flush can still deliver it.
+    expect(buffer.delete).not.toHaveBeenCalled();
   });
 });
