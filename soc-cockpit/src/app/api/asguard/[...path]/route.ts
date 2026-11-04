@@ -12,6 +12,49 @@ function unavailableResponse() {
   );
 }
 
+type AdminAuth = "admin" | "forbidden" | "unauthenticated";
+
+/**
+ * Authorises an operator against the interceptor admin API.
+ *
+ * Corrected 2026-11-04. The previous gate accepted two values that are not
+ * caller credentials:
+ *
+ *   1. `x-user-role` — an *inbound request header*. `middleware.ts` sets that
+ *      header on the outgoing **response**, never on the request, so whatever a
+ *      client sends here reaches this handler untouched. `x-user-role:
+ *      super_user` from curl was therefore a super-user grant.
+ *   2. `AXIM_SERVICE_TOKEN` — *our own* outbound credential. It was OR-ed into
+ *      the gate, so merely having it configured (a required production
+ *      variable) authorised every request; the proxy then attached the token to
+ *      the upstream call on the caller's behalf.
+ *
+ * Together that left `GET/POST/DELETE /api/asguard/blocklist` reachable without
+ * any credential, so an anonymous caller could lift an edge block or enumerate
+ * the audit trail. Authorisation now rests solely on the signed session cookie:
+ * a JWT verified with `ASGUARD_JWT_SECRET` that carries
+ * `axim_internal_admin: true` — the same claim `app/layout.tsx` uses to decide
+ * whether the console renders at all. Everything else fails closed.
+ */
+async function authorizeAdmin(env: any): Promise<AdminAuth> {
+  const token = (await cookies()).get("asguard_auth_token")?.value;
+  const jwtSecret = env.ASGUARD_JWT_SECRET || process?.env?.ASGUARD_JWT_SECRET;
+
+  // No session and/or no signing key means we cannot prove anything.
+  if (!token || !jwtSecret) return "unauthenticated";
+
+  try {
+    const claims = jwt.verify(token, jwtSecret, { algorithms: ["HS256"] }) as {
+      axim_internal_admin?: boolean;
+    };
+    return claims.axim_internal_admin === true ? "admin" : "forbidden";
+  } catch {
+    // Bad signature, expired, or malformed — indistinguishable from anonymous
+    // on the wire, and deliberately so.
+    return "unauthenticated";
+  }
+}
+
 // Fallback handlers
 async function fallbackProxy(request: Request, targetPath: string, env: any) {
   if (targetPath === "telemetry") {
@@ -38,41 +81,21 @@ async function proxy(request: Request, context: { params: Promise<{ path: string
     // Fallback to process.env in local Node environment
     env = process?.env || {};
   }
-  const userRole = request.headers.get("x-user-role");
-  const isSuperUser = userRole === "super_user";
-
-  const token = (await cookies()).get("asguard_auth_token")?.value;
-  const jwtSecret = env.ASGUARD_JWT_SECRET || process?.env?.ASGUARD_JWT_SECRET;
+  // `serviceToken` is our credential to the interceptor, not the caller's. It is
+  // attached to the upstream request below and never used to authorise anyone.
   const serviceToken = env.AXIM_SERVICE_TOKEN || process?.env?.AXIM_SERVICE_TOKEN;
-
 
   const isDemoMode = env.NEXT_PUBLIC_DEMO_MODE === 'true' || process?.env?.NEXT_PUBLIC_DEMO_MODE === 'true' || env.NODE_ENV === 'development' || process?.env?.NODE_ENV === 'development';
 
-  const hasValidAuth = isSuperUser || (token && jwtSecret) || serviceToken;
+  const auth = await authorizeAdmin(env);
 
-  if (!hasValidAuth) {
+  if (auth !== "admin") {
     if (isDemoMode) {
       return fallbackProxy(request, targetPath, env);
     }
-    return new NextResponse("Unauthorized", { status: 401 });
-  }
-
-  if (!isSuperUser && token && jwtSecret) {
-    try {
-      const claims = jwt.verify(token, jwtSecret, { algorithms: ["HS256"] }) as {
-        axim_internal_admin?: boolean;
-      };
-      if (!claims.axim_internal_admin) {
-        if (isDemoMode) return fallbackProxy(request, targetPath, env);
-        return new NextResponse("Forbidden", { status: 403 });
-      }
-    } catch {
-      if (isDemoMode) return fallbackProxy(request, targetPath, env);
-      return new NextResponse("Unauthorized", { status: 401 });
-    }
-  } else if (!isSuperUser && !serviceToken && !token) {
-     if (isDemoMode) return fallbackProxy(request, targetPath, env);
-     return new NextResponse("Unauthorized", { status: 401 });
+    return new NextResponse(auth === "forbidden" ? "Forbidden" : "Unauthorized", {
+      status: auth === "forbidden" ? 403 : 401,
+    });
   }
 
 
@@ -84,7 +107,10 @@ async function proxy(request: Request, context: { params: Promise<{ path: string
   }
 
   const headers = new Headers();
-  headers.set("X-Asguard-Service-Token", serviceToken);
+  // Only ever attach a real credential: `set("…", undefined)` serialises to the
+  // literal string "undefined", which the interceptor would then treat as a
+  // (wrong) token instead of a missing one.
+  if (serviceToken) headers.set("X-Asguard-Service-Token", serviceToken);
   const contentType = request.headers.get("Content-Type");
   if (contentType) headers.set("Content-Type", contentType);
 

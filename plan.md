@@ -1,6 +1,38 @@
 # Asguard Sprint Plan
 
-Last reviewed: 2026-11-03 (Sprint 29)
+Last reviewed: 2026-11-04 (Sprint 30)
+
+## Completed in Sprint 30
+
+1. **The edge-admin proxy fails closed** (`soc-cockpit/src/app/api/asguard/[...path]/route.ts`)
+   - [x] Replaced `isSuperUser || (token && jwtSecret) || serviceToken` with a single
+         `authorizeAdmin()` that returns `admin | forbidden | unauthenticated`.
+   - [x] Dropped the `x-user-role` **request**-header grant. `middleware.ts` writes that header to
+         the outgoing *response*, so any value on the request came from the client — it was a
+         super-user grant to anyone with curl.
+   - [x] Dropped the `AXIM_SERVICE_TOKEN` disjunct. It is *our* credential to the interceptor, so
+         its presence authorised every caller and the proxy then attached it upstream.
+   - [x] Authorisation now requires a JWT verified with `ASGUARD_JWT_SECRET` carrying
+         `axim_internal_admin: true` — the same claim `app/layout.tsx` gates the console on, so
+         "can see the dashboard" and "can act through it" are the same set by construction.
+   - [x] `X-Asguard-Service-Token` is only attached when the variable is actually set
+         (`Headers.set(name, undefined)` sent the literal `"undefined"`).
+   - [x] 9 regression tests; 4 of them return `200` instead of `401` against the old code.
+2. **Threat-stream teardown** (`soc-cockpit/src/app/api/v1/threats/stream/route.ts`)
+   - [x] `req.signal.aborted` pre-check — a client that disconnected before the handler ran never
+         fired `abort`, so the 15 s interval ticked for the isolate's lifetime and the writer never
+         closed.
+   - [x] `cleanup` hoisted above `safeWrite` and made idempotent (interval + channel + writer
+         released once). It previously closed over a `const` declared below it — a TDZ trap.
+   - [x] Hydration loop and `subscribe()` abort-guarded; bootstrap rejection now tears down.
+   - [x] Transport headers aligned with the ingest route (`charset=utf-8`, `X-Accel-Buffering: no`).
+   - [x] 8 regression tests; 4 fail against the old code, one by timing out on the leaked stream.
+3. **Roadmap audit** — items 1-5 from Sprint 29's roadmap (`plan.md` Step 4) verified present in the
+   live code rather than assumed: SSE heartbeats at 15 s with abort-aware teardown, `LiveThreatFeed`
+   backoff 1 s → 30 s with latency badges and null-coalescing, `AI_TIMEOUT_CEILING_MS = 8000` with a
+   deterministic fallback, `ctx.waitUntil()` on every telemetry dispatch, and the blocklist interlock
+   running before routing. No code changes were needed; the gap was in the two surfaces above.
+4. **Open-PR audit** — 8 open PRs, all Dependabot. Four fail `npm ci` (see next priority 1).
 
 ## Completed in Sprint 29
 
@@ -57,41 +89,57 @@ Last reviewed: 2026-11-03 (Sprint 29)
 
 ## Next priorities
 
-1. **Set real KV namespace IDs.** `asguard-interceptor/wrangler.toml` still carries
+1. **Regenerate the four failing Dependabot lockfiles.** #169 (tinypool/vitest), #168 (vite/vitest),
+   #161 (zod 3 → 4) and #158 (`@opennextjs/cloudflare` 1.20.2) all fail `cockpit (lint + build)`
+   identically at `npm ci` in ~8 s with `Missing: zod@3.25.76 from lock file` — each branch was cut
+   from an older `main` and Dependabot rebuilt `soc-cockpit/package-lock.json` without the
+   intervening zod pin. `origin/main` itself is in sync. **#161 still needs doing separately**: zod 4
+   removes `z.string().ip()`, which `asguard-interceptor/src/telemetry.ts`'s
+   `TelemetryPayloadSchema` uses, so that bump has to move the schema with it and cannot be a
+   straight merge. The other three can go together as one lockfile-refresh change set.
+2. **Set real KV namespace IDs.** `asguard-interceptor/wrangler.toml` still carries
    `new_buffer_id_here` (`ASGUARD_KV_BUFFER`) and `new_threat_cache_id_here` (`THREAT_CACHE`).
    `--dry-run` accepts them; a real `wrangler deploy` will not. **Needs operator input** — the IDs
    come from the Cloudflare account.
-2. **Land the dependency refresh as one coordinated change.** Six Dependabot PRs are open.
-   #158's cockpit job fails at `Install dependencies` (stale lockfile on the branch, not a code
-   defect) — needs a rebase. #161 (`zod` 3 → 4) is breaking in a way that spans both components:
-   it removes `z.string().ip()`, which `asguard-interceptor/src/telemetry.ts`'s
-   `TelemetryPayloadSchema` uses, so the schema must move with it. Do that one separately, not as a
-   Dependabot merge. #164/#165 bump transitive/dev-only `qs` and `follow-redirects`; low value alone.
-3. **Real ingest → SSE fan-out.** `POST /api/ingest` still awaits a `fetch` back into
+3. **Pin `wrangler` in `asguard-interceptor`.** It is not a declared devDependency, so CI's
+   `npx wrangler deploy --dry-run` resolves whatever the registry serves that day (it passes, in
+   26 s). Adding it requires bumping `@cloudflare/workers-types` 4 → 5 to satisfy wrangler's peer
+   range, so it belongs in the same change set as (1).
+4. **Real ingest → SSE fan-out.** `POST /api/ingest` still awaits a `fetch` back into
    `/api/ingest/stream`, which is the SSRF-validated *proxy* route and answers `400` to the payload
    it is given. See DEBUGGING_NOTES Sprint 29 #6. The fix is a Durable Object (or Queue) publish
    path, not an in-memory subscriber set — isolates do not share memory.
-4. **Make `wrangler deploy --dry-run` blocking in CI** once `CLOUDFLARE_API_TOKEN` and
+5. **Make `wrangler deploy --dry-run` blocking in CI** once `CLOUDFLARE_API_TOKEN` and
    `CLOUDFLARE_ACCOUNT_ID` are repository secrets. It currently passes with empty secrets because
    `--dry-run` never authenticates.
-5. **Split `asguard-interceptor/src/index.ts`** (700 lines, one handler). Extract the admin routes
+6. **Tune the RCE heuristic before it pages someone.** `threatEngine.ts` matches on a bare `;`
+   or `|` anywhere in the path or query string, so a perfectly ordinary `?a=1;b=2` is classified
+   CRITICAL and answered with 403. That is fail-closed, which is why it was left alone, but it is
+   also a self-inflicted outage waiting for the first caller that uses a semicolon separator. Needs
+   a detection-tuning decision from the operator — see DEBUGGING_NOTES Sprint 30, observation 4.
+7. **Split `asguard-interceptor/src/index.ts`** (700 lines, one handler). Extract the admin routes
    (`/blocklist`, `/audit`, `/telemetry`) and the rate limiter into modules; the request pipeline is
    harder to unit test in isolation than it needs to be.
-6. **Replace the in-memory rate limiter** with a Durable Object or the Cloudflare Rate Limiting
+8. **Replace the in-memory rate limiter** with a Durable Object or the Cloudflare Rate Limiting
    binding. `rateLimitMap` is per-isolate, so protection is proportional to the number of live
    isolates rather than the size of the botnet.
-7. **`SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_URL` consolidation** — two names for one value has now
+9. **`SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_URL` consolidation** — two names for one value has now
    caused two outages (DEBUGGING_NOTES Sprint 28 #5 and Sprint 29 #3). Pick one at the boundary and
    resolve it once.
-8. **Edge-cache invalidation for `/blocklist`** — the 30s `Cache-Control` on the interceptor plus
-   the cockpit's 5s `s-maxage` means a manual drop can take ~35s to be visible to operators.
-9. **Client-side DNS resolution for the SSE proxy SSRF guard.** `validateUpstreamUrl()` rejects
-   literal private hosts, but a hostname that resolves to a private address (DNS rebinding) still
-   passes. Cloudflare Workers cannot resolve DNS before `fetch`, so this needs an allowlist of
-   egress hosts instead. The new test suite covers the literal-host cases; rebinding stays open.
-10. **Jitter on the realtime reconnect backoff.** `scheduleReconnect()` uses pure exponential
-    backoff (1s → 30s). Every cockpit instance that lost the socket at the same moment reconnects at
-    the same moment; add ±20% jitter.
+10. **Edge-cache invalidation for `/blocklist`** — the 30 s `Cache-Control` on the interceptor plus
+    the cockpit's 5 s `s-maxage` means a manual drop can take ~35 s to be visible to operators.
+11. **Client-side DNS resolution for the SSE proxy SSRF guard.** `validateUpstreamUrl()` rejects
+    literal private hosts, but a hostname that resolves to a private address (DNS rebinding) still
+    passes. Cloudflare Workers cannot resolve DNS before `fetch`, so this needs an allowlist of
+    egress hosts instead. The new test suite covers the literal-host cases; rebinding stays open.
+12. **Jitter on the realtime reconnect backoff.** `scheduleReconnect()` uses pure exponential
+    backoff (1 s → 30 s). Every cockpit instance that lost the socket at the same moment reconnects
+    at the same moment; add ±20% jitter.
+13. **Make the proxy's role model explicit.** `authorizeAdmin()` now trusts exactly one claim. If
+    the passport JWT ever carries a broader role taxonomy (`role: "super_user"`, scoped operator
+    roles), decide here which claims map to which proxy verbs — `GET` on `audit`/`telemetry` is a
+    read, `POST/DELETE` on `blocklist` is a write, and they probably should not require the same
+    principal.
 
 ## Standing constraints
 

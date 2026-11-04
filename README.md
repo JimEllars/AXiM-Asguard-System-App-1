@@ -59,8 +59,8 @@ request can still be judged by the rule engine.
 | `/submit` | Submission pipeline view. |
 | `/api/ingest` | Signed telemetry ingest (Zod-validated, constant-time bearer compare). |
 | `/api/ingest/stream` | SSE fan-out. 15s `: keep-alive` heartbeats, abort-aware teardown, SSRF-guarded upstream proxy. |
-| `/api/v1/threats/stream` | Realtime threat SSE channel backed by Supabase. |
-| `/api/asguard/[...path]` | Authenticated proxy to the interceptor (`blocklist`, `audit`, `telemetry`, `analysis`). |
+| `/api/v1/threats/stream` | Realtime threat SSE channel backed by Supabase. Same lifecycle contract as the ingest stream: 15s `: keep-alive`, `request.signal.aborted` pre-check (a client that left before the handler ran never fires `abort`), and single-shot teardown of the heartbeat, the realtime channel and the writer. |
+| `/api/asguard/[...path]` | Authenticated proxy to the interceptor (`blocklist`, `audit`, `telemetry`, `analysis`). Authorisation is a single check: the `asguard_auth_token` cookie verified against `ASGUARD_JWT_SECRET` must carry `axim_internal_admin: true` — the same claim `layout.tsx` gates the console on, so "can see the dashboard" and "can act through it" are the same set. No session → `401`, verified non-admin → `403`, and nothing reaches the interceptor before that. Neither the inbound `x-user-role` header nor `AXIM_SERVICE_TOKEN` (our own outbound credential) is treated as proof of anything. |
 | `/api/health`, `/api/ready` | Liveness and readiness probes. |
 
 `LiveThreatFeed.tsx` maintains the realtime subscription with exponential backoff (1s → 30s),
@@ -155,6 +155,10 @@ CI runs the same battery on every push and pull request — see `.github/workflo
 
 - **Everything is fail-closed at the perimeter.** If `ASGUARD_BLACKLIST` is unreachable the request
   is not silently allowed; KV read failures surface as an error rather than an open gate.
+- **Authorisation never rests on configuration or on an inbound header.** A route may only authorise
+  on a signed credential the caller presented. `AXIM_SERVICE_TOKEN` is what the cockpit presents *to*
+  the interceptor — it says nothing about who called the cockpit — and `x-user-role` is written by
+  `middleware.ts` to the outgoing *response*, so any value on the request came from the client.
 - **Ingest has no default secret.** `/api/ingest` returns `503 ingest_not_configured` when
   `ASGUARD_API_KEY` is unset, and `401` on a mismatch. There is no fallback token: an unconfigured
   deployment refuses telemetry rather than accepting a published literal.
@@ -182,7 +186,11 @@ asguard-interceptor/     Edge WAF worker (TypeScript, Vitest)
   tests/                   interceptor.test.ts, hardening.test.ts
 soc-cockpit/             Next.js 15 SOC console (OpenNext → Cloudflare)
   src/app/api/ingest/stream/  SSE channel: keep-alive, abort teardown, SSRF guard
-  tests/ingest-stream.test.ts SSE transport + SSRF regression suite (Vitest)
+  src/app/api/v1/threats/stream/  Realtime threat SSE: same lifecycle contract
+  src/app/api/asguard/[...path]/  Admin proxy: JWT-verified, fail-closed
+  tests/ingest-stream.test.ts     SSE transport + SSRF regression suite (Vitest)
+  tests/asguard-proxy-auth.test.ts Admin proxy authorisation suite (Vitest)
+  tests/threats-stream.test.ts    Threat-stream lifecycle suite (Vitest)
 supabase/                schema migrations and seed data
 docs/                    architecture assets
 ```

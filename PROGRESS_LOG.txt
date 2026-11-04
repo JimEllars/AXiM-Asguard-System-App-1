@@ -1,3 +1,60 @@
+### 2026-11-04 08:35 EST — Sprint 30: Fail-Closed Admin Proxy, Threat-Stream Teardown & Open-PR Audit
+Branch: fix/asguard-proxy-auth-fail-closed-and-sse-teardown (base 068320e)
+
+- **Baseline first.** Full battery run against origin/main before touching anything: interceptor
+  `tsc --noEmit` clean, `npm test` 56 passed, `wrangler deploy --dry-run` passed with all four KV
+  bindings; cockpit `npm run lint` clean, `npm test` 27 passed, `npm run build` passed. Nothing was
+  broken on arrival, so no repair freeze was needed. The build looks like a hang on this host — it
+  spends 13-20 min in "Creating an optimized production build" under 82% CPU steal — but it
+  completes.
+- **soc-cockpit/src/app/api/asguard/[...path]/route.ts**: the admin proxy was fail-open. The gate
+  was `isSuperUser || (token && jwtSecret) || serviceToken`, and both of the first and last terms
+  were wrong in the same direction. `isSuperUser` came from `request.headers.get("x-user-role")`,
+  but `middleware.ts` sets that header on the outgoing *response*, so a client-supplied value
+  reached the handler untouched — `x-user-role: super_user` from curl was a full grant.
+  `serviceToken` was the server's own `AXIM_SERVICE_TOKEN`, OR-ed into the gate, so on any
+  provisioned deployment every unauthenticated request passed and the proxy then attached our
+  service credential to the upstream interceptor call. Net: credential-free
+  `GET/POST/DELETE /api/asguard/blocklist`. Replaced the whole block with `authorizeAdmin()`:
+  verify the `asguard_auth_token` cookie with `ASGUARD_JWT_SECRET`, require
+  `axim_internal_admin === true` (the same claim `layout.tsx` gates the console on). No token or no
+  secret → 401, verified non-admin → 403, bad signature → 401. `serviceToken` is now only the
+  outbound credential and is attached only when set — `Headers.set(k, undefined)` would otherwise
+  send the literal "undefined".
+- **soc-cockpit/src/app/api/v1/threats/stream/route.ts**: this is the second SSE channel (global
+  threat map / operator chat) and it had kept the pre-hardening lifecycle that
+  `api/ingest/stream/route.ts` shed in Sprint 28. No `req.signal.aborted` pre-check meant a client
+  that disconnected before the handler ran never fired `abort`: the 15s keep-alive interval ticked
+  for the isolate's lifetime, the writer never closed, and a Supabase realtime channel was opened
+  for a caller that had already gone. `cleanup` was also a `const` arrow declared *after* the
+  `safeWrite` callback referencing it — a TDZ trap, not a guard. Hoisted it above its callers and
+  made it idempotent (interval + channel + writer released exactly once), added the aborted
+  pre-check, guarded the hydration loop and `subscribe()` on `isClosed`, gave the bootstrap chain a
+  rejection path to teardown, and aligned the transport headers with the ingest route
+  (`charset=utf-8`, `X-Accel-Buffering: no`).
+- **soc-cockpit/tests/asguard-proxy-auth.test.ts** (new, 9 tests): anonymous request rejected *with*
+  `AXIM_SERVICE_TOKEN` configured; forged `x-user-role` rejected with and without an unsigned
+  cookie; JWT signed with the wrong key → 401; missing `ASGUARD_JWT_SECRET` → 401; verified
+  non-admin → 403; verified admin reaches the interceptor and the body round-trips; the service
+  token appears upstream only after authorisation; unlisted path → 404 with no fetch.
+- **soc-cockpit/tests/threats-stream.test.ts** (new, 8 tests): transport headers, ascending
+  hydration order (oldest first), 15s `: keep-alive` under fake timers, already-aborted request
+  closes immediately, abort releases the channel and closes the stream, repeated aborts stay
+  single-shot, no channel opened for a departed client.
+- **Both suites were run against the origin/main routes to prove they fail for the stated reason.**
+  Proxy: 4/9 fail with `expected 200 to be 401`. Threat stream: 4/8 fail, one by timing out with
+  "stream read timed out — teardown never ran", which is the leak itself. No vacuous tests.
+- **Cockpit suite 27 → 44 tests.** Lint clean, build green (13 third-party warning inside
+  thirdweb → coinbase cdp-sdk is pre-existing on main).
+- **Open-PR audit**: 8 open PRs, all Dependabot, none human. #169, #168, #161, #158 fail
+  `cockpit (lint + build)` identically at `npm ci` in ~8s with `Missing: zod@3.25.76 from lock file`
+  — their lockfiles were rebuilt from older bases. #165, #164, #162, #159 are CLEAN. Regenerating
+  four lockfiles is a dependency change set of its own; logged as plan.md priority 1 rather than
+  mixed into a security fix.
+- **Documentation**: README (proxy auth path + threats-stream lifecycle), plan.md (Sprint 30
+  recorded, priorities re-ranked), CHANGELOG, this log, DEBUGGING_NOTES (two root causes), and
+  AGENTS_VERIFICATION.md (Sprint 30 appendix, Sprint 29 archived below it).
+
 ### 2026-11-03 08:35 EST — Sprint 29: AI Deadline Reality, Telemetry Fallback Repair & Cockpit SSE Coverage
 Branch: feat/asguard-sprint-29-ai-deadline-telemetry-fallback-sse-coverage (base fc9bcde)
 

@@ -3,6 +3,58 @@
 All notable changes to the AXiM Asguard SOC & WAF are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); dates are UTC.
 
+## [Unreleased] — 2026-11-04 (Sprint 30)
+
+### Security
+
+- **The cockpit's edge-admin proxy is no longer fail-open.** `/api/asguard/[...path]` fronts
+  `GET/POST/DELETE /api/asguard/blocklist` — the calls that block an IP at the edge, lift an
+  existing block, and export the audit trail. Its gate read
+  `isSuperUser || (token && jwtSecret) || serviceToken` and accepted two things that are not caller
+  credentials. `isSuperUser` was derived from the `x-user-role` **request** header, which
+  `middleware.ts` only ever writes to the outgoing *response*, so anything a client sent reached the
+  handler verbatim and `x-user-role: super_user` was a super-user grant. `serviceToken` was our own
+  outbound `AXIM_SERVICE_TOKEN`, so simply having it configured — a required production variable —
+  authorised every request, and the proxy then attached that token to the upstream call on the
+  caller's behalf. Either bypass alone exposed blocklist writes; together they made a credential-free
+  `POST /api/asguard/blocklist` reachable. Authorisation now rests on one proof: a JWT in the
+  `asguard_auth_token` cookie, verified with `ASGUARD_JWT_SECRET`, carrying
+  `axim_internal_admin: true` — the same claim `app/layout.tsx` uses to decide whether the console
+  renders. No session or no secret → `401`; verified but not an admin → `403`; everything else is
+  rejected before any upstream fetch.
+- **`AXIM_SERVICE_TOKEN` is used only as what it is.** It is attached to the outbound interceptor
+  request after the caller has been authorised, and only when it is actually set —
+  `Headers.set(name, undefined)` serialises to the literal string `"undefined"`, which the
+  interceptor would have compared as a wrong token instead of reading as absent.
+
+### Fixed
+
+- **`/api/v1/threats/stream` no longer leaks an isolate-long heartbeat.** The second SSE channel in
+  the cockpit was hardened later than `api/ingest/stream/route.ts` and kept the older lifecycle. It
+  had no `req.signal.aborted` pre-check, so a client that disconnected before the handler ran never
+  fired an `abort` event: the 15 s keep-alive interval ticked for the lifetime of the isolate, the
+  writer never closed, and a realtime Supabase channel was opened for a caller that had already
+  gone. It now checks the flag rather than only the listener, exactly as the ingest route does.
+- **Threat-stream teardown is single-shot and cannot double-close.** `cleanup` was a `const` arrow
+  declared *after* the `safeWrite` callback that called it — a temporal-dead-zone trap rather than a
+  working guard. It is hoisted above its callers and made idempotent, releasing the interval, the
+  realtime channel and the writer exactly once. Repeated aborts are harmless, and a rejected
+  bootstrap now tears down instead of leaving the channel orphaned.
+- **Hydration and subscription both respect a closed stream.** The hydration loop stops writing the
+  moment teardown runs, and `subscribe()` returns early rather than creating a channel for a
+  departed client.
+- **The threats stream advertises the same transport guarantees as the ingest stream**: explicit
+  `charset=utf-8`, `Cache-Control: no-cache, no-transform` and `X-Accel-Buffering: no`.
+
+### Added
+
+- `soc-cockpit/tests/asguard-proxy-auth.test.ts` — 9 tests pinning the fail-closed admin contract.
+  Four of them return `200` instead of `401` against the previous implementation.
+- `soc-cockpit/tests/threats-stream.test.ts` — 8 tests covering transport headers, ascending
+  hydration order, the 15 s heartbeat, and the four teardown paths. Four fail against the previous
+  implementation, one by timing out on the leaked stream.
+- Cockpit suite: 27 → 44 tests. Interceptor suite unchanged at 56 (no interceptor source changed).
+
 ## [Unreleased] — 2026-11-03 (Sprint 29)
 
 ### Fixed
