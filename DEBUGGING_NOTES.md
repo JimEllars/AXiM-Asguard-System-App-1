@@ -2,6 +2,148 @@
 
 Known defects, their root causes, and how they were resolved. Newest first.
 
+## 2026-11-04 — Sprint 30 review
+
+### 1. The cockpit's admin proxy authorised the caller with the *server's* credential
+
+`/api/asguard/[...path]` is a thin authenticated passthrough to the interceptor's admin surface:
+`blocklist` (list / block / unblock / purge), `audit`, `telemetry`, `analysis`. Every destructive
+edge action an operator can take from the console goes through it. Its gate was:
+
+```ts
+const userRole = request.headers.get("x-user-role");
+const isSuperUser = userRole === "super_user";
+const serviceToken = env.AXIM_SERVICE_TOKEN || process?.env?.AXIM_SERVICE_TOKEN;
+const hasValidAuth = isSuperUser || (token && jwtSecret) || serviceToken;
+```
+
+Both non-cookie terms are wrong, and for the same underlying reason: neither is proof about the
+*caller*.
+
+`x-user-role` is an **inbound request header**. `middleware.ts` does
+`response.headers.set("x-user-role", "super_user")` — on the response. Request headers are copied
+into the forwarded request object by `NextResponse.next({ request })`, never populated from the
+response, so whatever a client puts in `x-user-role` arrives at this handler verbatim.
+`curl -H 'x-user-role: super_user' https://asguard.axim.us.com/api/asguard/blocklist` was a full
+super-user session.
+
+`AXIM_SERVICE_TOKEN` is **our own outbound credential**. It is what the cockpit presents *to* the
+interceptor. OR-ing it into the authorisation gate means the gate is satisfied by configuration
+rather than by the caller: any deployment that has the variable set — i.e. every correct deployment
+— let every request through, and then line 87 attached that same token to the upstream call,
+completing the impersonation.
+
+Either defect alone exposes blocklist writes. Together, a credential-free
+`POST /api/asguard/blocklist` reached the edge and could unblock an attacker's IP or enumerate the
+audit trail. The second branch also made the "verified but not admin → 403" check unreachable when
+no cookie was present, so the failure looked like success.
+
+Fixed by replacing the gate with a single `authorizeAdmin()` that returns
+`admin | forbidden | unauthenticated` from one source of truth: the `asguard_auth_token` cookie,
+verified with `ASGUARD_JWT_SECRET`, requiring `axim_internal_admin === true`. That is deliberately
+the same claim `app/layout.tsx` already uses to decide whether the console renders at all — so the
+set of principals who can *see* the dashboard and the set who can *act* through it are now
+identical by construction. `serviceToken` remains in the file, but only as the value of the
+`X-Asguard-Service-Token` header on the outbound request, and only when non-empty.
+
+**Generalisable rule for this codebase:** an edge/route handler may only authorise on (a) a signed
+credential the caller presented, or (b) a header a trusted hop wrote and that the platform guarantees
+is unforgeable. Nothing else. In particular, never let a value that the application itself *owns*
+appear on the left-hand side of an authorisation disjunction.
+
+### 2. `x-user-role` is a response header being read as if it were a request header
+
+The concrete mechanism behind (1), worth recording separately because the same pattern can recur on
+any route. `middleware.ts` ends with:
+
+```ts
+response.headers.set("x-user-role", "super_user");
+response.headers.set("x-user-email", userEmail);
+return response;
+```
+
+Those are informational headers for the browser and for downstream logging. Any route handler that
+does `request.headers.get("x-user-role")` is reading a value it never wrote — and the only writer
+left is the client. If an internal hop does need to convey a verified identity to a handler, the
+supported way is to set it on the *request* headers the middleware forwards:
+
+```ts
+const headers = new Headers(request.headers);
+headers.set("x-user-role", "super_user");   // only after verifying the session
+return NextResponse.next({ request: { headers } });
+```
+
+…and even then the value must be treated as trusted only because the platform guarantees clients
+cannot inject it. Next.js does not strip incoming `x-*` headers, so today it cannot be trusted at
+all; that is why the proxy now derives the role from the JWT instead of from any header.
+
+### 3. The second SSE channel never got the lifecycle fix the first one did
+
+`api/ingest/stream/route.ts` was hardened in Sprint 28 with an `abort` listener *and* a
+`request.signal.aborted` pre-check, and the reason was written into the comment:
+
+```ts
+// `signal.aborted` covers the case where the disconnect happened before the
+// listener was attached, which is common on Cloudflare Workers.
+```
+
+`api/v1/threats/stream/route.ts` is the sibling channel — same 15s heartbeat, same
+`TransformStream` + writer shape — and it was left on the old pattern:
+
+```ts
+const intervalId = setInterval(sendKeepAlive, 15000);
+const cleanup = async () => { ... };
+req.signal.addEventListener('abort', cleanup);
+```
+
+Two consequences. First, no pre-check: a request that arrived already aborted never fires `abort`,
+so `cleanup` never runs, the interval ticks forever inside the isolate and the writer is never
+closed. On Workers this is a slow resource leak that also keeps one Supabase realtime channel
+subscribed per orphaned request. Second, `cleanup` is a `const` binding declared *after* `safeWrite`
+closes over it — the callback can only be called after initialisation in practice, so it never
+threw, but it is a temporal-dead-zone trap rather than a guard and it made teardown order
+unreadable.
+
+Fixed by hoisting `cleanup` above all callers, making it idempotent, checking
+`req.signal.aborted` before attaching the listener, and guarding both the hydration loop and
+`subscribe()` on `isClosed`. The regression suite pins all of it — against the previous code, the
+"already disconnected" case fails by timing out on a stream that never closes.
+
+**Lesson:** when a hardening pattern exists in one route, grep for its siblings. `grep -rn
+"setInterval\|TransformStream" soc-cockpit/src/app/api` finds them in one command.
+
+### 4. Observation, not fixed: a bare `;` is a CRITICAL RCE finding
+
+Recorded rather than changed, because it is a detection-tuning decision and not a defect.
+
+`threatEngine.ts` classifies with:
+
+```ts
+const rcePatterns = /;|\||&&|`|\$\(|bin\/sh|bin\/bash|nc\s+-e|powershell/i;
+```
+
+The first three alternatives are unanchored single characters. Any path or query string containing
+a `;`, a `|` or a `&&` is therefore `REMOTE_CODE_EXECUTION` / CRITICAL, and `index.ts` answers 403
+for CRITICAL without asking the AI classifier. `?a=1;b=2` — the RFC 3986 matrix-parameter form and
+a common separator in Java and PHP URLs — never reaches the origin. So does any search query
+containing a pipe.
+
+This is fail-closed, so it is not a vulnerability; it is an availability risk and a false-positive
+generator that will look like an attack in the telemetry. The fix is to require the shell
+metacharacter to appear in a position that implies command composition (adjacent to a known binary,
+or following a parameter that is clearly being shelled out to by the upstream), or to demote the
+bare-character forms to HIGH and let the rule engine's score decide. Either way it changes what the
+perimeter blocks, so it belongs to the operator.
+
+### 5. Observation, not fixed: the edge never inspects request bodies
+
+Not a finding — noted so the next reviewer does not re-derive it. `inspectRequest()` inspects the
+URL and the request headers but never the body, so payloads that only exist in a POST body (SQLi in
+a JSON field, prompt injection in a chat message) are not seen by the edge. That is by design: the
+interceptor is documented as a stateless perimeter check that runs before body parsing, and the
+`/analysis` route is where content gets a classifier. If body inspection is ever wanted it needs a
+size cap and a streaming parser, not `.text()`.
+
 ## 2026-11-03 — Sprint 29 review
 
 ### 1. The "8-second timeout" was two 8-second timeouts, and neither covered the body

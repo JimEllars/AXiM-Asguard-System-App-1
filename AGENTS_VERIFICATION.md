@@ -1,4 +1,294 @@
-# Agents Verification — Sprint 29 (2026-11-03)
+# Agents Verification — Sprint 30 (2026-11-04)
+
+Verification appendix for the daily Asguard SOC review. Every command below was executed locally on
+a Node v22.23.4 / npm 10.9.9 host before the branch was pushed.
+
+- Branch: `fix/asguard-proxy-auth-fail-closed-and-sse-teardown`
+- Base commit: `068320e` (origin/main — "fix(asguard): enforce a real AI deadline, persist rejected
+  telemetry, and cover the cockpit SSE route (#166)")
+- Upstream sync: `git fetch origin main` + `git fetch --all --prune`. Exactly one commit landed on
+  `origin/main` in the preceding 24h (`068320e`, merged 2026-11-03 17:20Z) and it is the base we
+  branched from, so no rebase was required. Eight open PRs, all Dependabot. No human hand-edits
+  beyond that merge.
+
+## Scope of this change set
+
+Sprint 29 verified the interceptor's contract and closed the ingest/auth gaps. This pass re-ran the
+full battery first (both components were green) and then read the two remaining unguarded surfaces.
+Both turned out to be real:
+
+1. **The cockpit's admin proxy was fail-open.** `/api/asguard/[...path]` authorises the writes that
+   block and unblock IPs at the edge. Its gate was
+   `isSuperUser || (token && jwtSecret) || serviceToken`, where `isSuperUser` came from the
+   caller-controlled `x-user-role` **request** header and `serviceToken` was the server's own
+   `AXIM_SERVICE_TOKEN`. On any correctly provisioned deployment that last disjunct is always
+   truthy, so an anonymous caller reached the interceptor with our service credential attached.
+   Two independent bypasses, one gate.
+2. **`/api/v1/threats/stream` kept the pre-hardening SSE lifecycle.** Unlike
+   `api/ingest/stream/route.ts` it had no `req.signal.aborted` pre-check, so a client that
+   disconnected before the handler ran left the 15 s keep-alive interval ticking and never closed
+   the writer; `safeWrite` also closed over `cleanup` before it was initialised.
+
+## Files modified
+
+| File | Change | Lines |
+| --- | --- | --- |
+| `soc-cockpit/src/app/api/asguard/[...path]/route.ts` | New `authorizeAdmin()` — the only authorisation path; derives access from a JWT verified with `ASGUARD_JWT_SECRET` carrying `axim_internal_admin: true`. Dropped the `x-user-role` request-header grant and the `AXIM_SERVICE_TOKEN` disjunct. `serviceToken` is now used solely as the outbound credential and is only attached when actually set | 168 → 194 |
+| `soc-cockpit/src/app/api/v1/threats/stream/route.ts` | `req.signal.aborted` pre-check; `cleanup` hoisted above `safeWrite` and made idempotent (interval, channel and writer released exactly once); hydration loop and `subscribe()` abort-guarded; bootstrap rejection path now tears down; added `X-Accel-Buffering: no` and an explicit charset | 105 → 146 |
+| `soc-cockpit/tests/asguard-proxy-auth.test.ts` | New suite, 9 tests — anonymous request rejected **with** `AXIM_SERVICE_TOKEN` configured, forged `x-user-role` rejected with and without a cookie, wrong-key JWT, missing secret, non-admin JWT → 403, verified admin passes through, service token attached only after authorisation, unlisted path → 404 | new, 194 |
+| `soc-cockpit/tests/threats-stream.test.ts` | New suite, 8 tests — stream headers, ascending hydration order, 15 s keep-alive, already-aborted request closes immediately, abort releases the channel and closes the stream, repeated aborts stay single-shot, no channel opened for a departed client | new, 219 |
+| `README.md` | Documented the proxy's single authorisation path (and the two things it no longer trusts) plus the threats-stream lifecycle | 208 → 214 |
+| `plan.md` | Sprint 30 recorded; next priorities re-ranked | 116 → 141 |
+| `CHANGELOG.md` | Sprint 30 entry | prepended |
+| `PROGRESS_LOG.txt` | Sprint 30 entry | prepended |
+| `DEBUGGING_NOTES.md` | Two new root-cause notes + one carry-over | prepended |
+
+## Verification battery — verbatim output
+
+### 1. `asguard-interceptor` — typecheck
+
+```
+$ npx tsc --noEmit
+TSC_OK
+```
+
+### 2. `asguard-interceptor` — unit and integration tests
+
+```
+$ npm test
+> asguard-interceptor@1.0.0 test
+> vitest run
+
+ ✓ tests/interceptor.test.ts  (25 tests) 2959ms
+ ✓ tests/hardening.test.ts  (31 tests) 1759ms
+
+ Test Files  2 passed (2)
+      Tests  56 passed (56)
+   Duration  38.24s
+```
+
+### 3. `asguard-interceptor` — Wrangler deploy dry-run (binding validation)
+
+```
+$ npx wrangler deploy --dry-run
+Total Upload: 167.36 KiB / gzip: 30.68 KiB
+Your Worker has access to the following bindings:
+env.ASGUARD_KV_BUFFER (new_buffer_id_here)                            KV Namespace
+env.ASGUARD_BLACKLIST (53ed082bcd0f465c94f08626c97160ca)              KV Namespace
+env.ASGUARD_TELEMETRY (9141c0fd3eb44d3c84375f418c716495)              KV Namespace
+env.THREAT_CACHE (new_threat_cache_id_here)                           KV Namespace
+env.SUPABASE_URL ("")                                                 Environment Variable
+env.SUPABASE_SERVICE_ROLE_KEY ("")                                    Environment Variable
+env.ASGUARD_API_KEY ("")                                              Environment Variable
+env.COCKPIT_INGEST_URL ("")                                           Environment Variable
+env.ASGUARD_SERVICE_TOKEN ("")                                        Environment Variable
+env.TELEMETRY_INGEST_KEY ("")                                         Environment Variable
+env.DEEPSEEK_API_KEY ("")                                             Environment Variable
+env.ANTHROPIC_API_KEY ("")                                            Environment Variable
+env.DEEPSEEK_BASE_URL ("")                                            Environment Variable
+env.DEEPSEEK_MODEL ("")                                               Environment Variable
+env.AXIM_SERVICE_ROLE_KEY ("")                                        Environment Variable
+
+--dry-run: exiting now.
+```
+
+All four KV bindings resolve. The two `new_*_id_here` placeholders remain (see plan.md next
+priority 2) — `--dry-run` accepts them, a real deploy will not.
+
+### 4. `soc-cockpit` — lint
+
+```
+$ npm run lint
+> soc-cockpit@0.1.0 lint
+> eslint
+
+(no findings — exit 0)
+```
+
+### 5. `soc-cockpit` — unit tests (27 → 44)
+
+```
+$ npm test
+> soc-cockpit@0.1.0 test
+> vitest run
+
+ RUN  v1.6.1 /workspace/review/axim-asguard/soc-cockpit
+
+ ✓ tests/threats-stream.test.ts  (8 tests) 1195ms
+ ✓ tests/asguard-proxy-auth.test.ts  (9 tests) 1281ms
+ ✓ tests/ingest-stream.test.ts  (20 tests) 225ms
+ ✓ tests/ingest-auth.test.ts  (7 tests) 15ms
+
+ Test Files  4 passed (4)
+      Tests  44 passed (44)
+   Duration  18.00s
+```
+
+### 6. `soc-cockpit` — build (post-change)
+
+```
+$ npm run build
+   ▲ Next.js 15.5.18
+
+ ⚠ Compiled with warnings in 47.7min
+   Linting and checking validity of types ...
+   Collecting page data ...
+ ⚠ Using edge runtime on a page currently disables static generation for that page
+ ✓ Generating static pages (13/13)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                 Size  First Load JS
+┌ ƒ /                                    5.57 kB         189 kB
+├ ƒ /_not-found                             1 kB         118 kB
+├ ƒ /api/asguard/[...path]                 164 B         117 kB
+├ ƒ /api/chat                              164 B         117 kB
+├ ƒ /api/health                            164 B         117 kB
+├ ƒ /api/ingest                            164 B         117 kB
+├ ƒ /api/ingest/stream                     164 B         117 kB
+├ ƒ /api/ready                             164 B         117 kB
+├ ƒ /api/v1/threats/stream                 164 B         117 kB
+├ ƒ /api/v1/triage/dispatch                164 B         117 kB
+├ ƒ /auth/callback                         164 B         117 kB
+├ ƒ /stream                              6.16 kB         189 kB
+├ ƒ /submit                              3.15 kB         120 kB
+
+ƒ Middleware                             95.5 kB
+```
+
+The single warning is a third-party `Critical dependency: the request of a dependency is an
+expression` inside `thirdweb → @base-org/account → @coinbase/cdp-sdk → ox`. It is present on
+`origin/main` and is not introduced here.
+
+## Why this cannot lock an operator out
+
+The obvious risk in tightening an auth gate is that it refuses someone who was legitimately getting
+in. This change cannot, because it is the *same* predicate the console already uses to render:
+
+`app/layout.tsx` reads the same cookie, verifies it with the same secret and the same algorithm, and
+requires the same claim:
+
+```ts
+const token = cookieStore.get("asguard_auth_token")?.value;
+jwtSecret = getCloudflareContext()?.env?.ASGUARD_JWT_SECRET ?? process.env.ASGUARD_JWT_SECRET;
+const decoded = jwt.verify(token, jwtSecret, { algorithms: ["HS256"] });
+if (decoded.axim_internal_admin === true) hasAccess = true;
+```
+
+`authorizeAdmin()` performs exactly those four steps. So the set of principals who can *reach* the
+proxy is, by construction, the set who can already *see* the dashboard and make the browser calls
+`LiveThreatFeed` issues to it. Anyone who can currently open the console keeps working; anyone who
+cannot was previously reaching the proxy by one of the two bypasses.
+
+The one deployment that does change behaviour is a console reached through `NEXT_PUBLIC_DEMO_MODE`
+or `NODE_ENV=development` — both still short-circuit to `fallbackProxy()` before the gate, unchanged.
+
+## Proving the fixes actually fix something
+
+Both suites were run against the `origin/main` versions of the routes before being accepted, to
+confirm they fail for the reason claimed rather than passing vacuously.
+
+### Fail-open proxy — 4 of 9 fail on `origin/main`
+
+```
+$ git checkout origin/main -- "soc-cockpit/src/app/api/asguard/[...path]/route.ts"
+$ npx vitest run tests/asguard-proxy-auth.test.ts
+
+ FAIL  > rejects an anonymous request even when AXIM_SERVICE_TOKEN is configured
+       AssertionError: expected 200 to be 401
+ FAIL  > does not treat the inbound x-user-role header as a credential
+       AssertionError: expected 200 to be 401
+ FAIL  > rejects a forged x-user-role header sent alongside an unsigned cookie
+       AssertionError: expected 200 to be 401
+ FAIL  > fails closed when ASGUARD_JWT_SECRET is not configured
+       AssertionError: expected 200 to be 401
+
+      Tests  4 failed | 5 passed (9)
+```
+
+`200`, not `401` — an unauthenticated `GET /api/asguard/blocklist` returned the live edge
+blocklist and an unauthenticated `POST` was forwarded to the interceptor.
+
+### SSE lifecycle — 4 of 8 fail on `origin/main`
+
+```
+$ git checkout origin/main -- soc-cockpit/src/app/api/v1/threats/stream/route.ts
+$ npx vitest run tests/threats-stream.test.ts
+
+ FAIL  > advertises an unbuffered, non-cacheable event stream
+       AssertionError: expected null to be 'no'
+ FAIL  > closes immediately when the client disconnected before the handler ran
+       AssertionError: promise rejected "Error: stream read timed out — teardown never ran"
+ FAIL  > never subscribes when the client vanished mid-hydration
+       AssertionError: expected 1 to be +0
+ FAIL  > does not start a realtime channel when the client is already gone
+
+      Tests  4 failed | 4 passed (8)
+```
+
+The read timeout is the leak itself: on `origin/main` the already-aborted stream never closes.
+
+## Baseline health audit (pre-change, on `origin/main`)
+
+| Check | Result |
+| --- | --- |
+| `soc-cockpit` `npm run lint` | clean |
+| `soc-cockpit` `npm test` | 27 passed |
+| `soc-cockpit` `npm run build` | passed (20.4 min, cold run, before any change) |
+| `asguard-interceptor` `npx tsc --noEmit` | clean |
+| `asguard-interceptor` `npm test` | 56 passed |
+| `asguard-interceptor` `npx wrangler deploy --dry-run` | passed, 4 KV bindings |
+
+Nothing was broken on arrival, so Step 3 of the runbook did not require a repair freeze.
+
+## Open-PR audit
+
+Eight Dependabot PRs, none from a human. Four are `UNSTABLE` on `cockpit (lint + build)`: **#169**
+(tinypool/vitest), **#168** (vite/vitest), **#161** (zod 3 → 4), **#158**
+(`@opennextjs/cloudflare` 1.20.2). All four fail identically at `npm ci` in ~8 s, not at lint or
+build:
+
+```
+npm error Missing: zod@3.25.76 from lock file   (repeated)
+npm error Clean install a project
+```
+
+Their `soc-cockpit/package-lock.json` is out of sync with `soc-cockpit/package.json` because each
+branch was cut from an older `main` and Dependabot rebuilt the lockfile without the intervening
+zod pin. Fixing them means regenerating four lockfiles; that is a separate change set and would
+have mixed dependency churn into a security fix, so it is logged as the top follow-up in `plan.md`
+rather than bundled here. `origin/main` itself is in sync — CI on #166 was green.
+
+The other four (#165 follow-redirects, #164 qs, #162 undici/wrangler, #159 vite) report `CLEAN`.
+
+## Carried-over follow-ups (unchanged, tracked in plan.md)
+
+- `wrangler` is not a declared devDependency of `asguard-interceptor`, so CI's
+  `npx wrangler deploy --dry-run` resolves it at job time. It works (interceptor job: 26 s) but the
+  version is unpinned. Fixing it means bumping `@cloudflare/workers-types` 4 → 5 to satisfy
+  wrangler's peer, which is a dependency change of its own.
+- `ASGUARD_KV_BUFFER` and `THREAT_CACHE` still carry `new_*_id_here` placeholders in
+  `wrangler.toml`.
+- The `rcePatterns` rule in `threatEngine.ts` treats a bare `;` or `|` in the path or query string
+  as CRITICAL. That is fail-closed by design but will 403 legitimate traffic such as `?a=1;b=2`.
+  Tightening it is a detection-tuning decision, so it is documented in `DEBUGGING_NOTES.md` for the
+  operator rather than changed unilaterally.
+
+## Environment notes
+
+- The host has 3.9 GB RAM and was heavily contended throughout this run (`load average` held at
+  5-9, `%st` — CPU steal — sat at 82%). The first `npm run build` attempt was killed by a 900 s tool
+  timeout at the "Creating an optimized production build" stage and looked exactly like a hang; it
+  was not. The same build completed in 20.4 min before any change and 47.7 min after, with the
+  allocation to the webpack worker running at 0.1-13% CPU and climbing steadily throughout. Nothing
+  in the change set touches the webpack graph. **The runbook's build gate needs a multi-hour timeout
+  on this host** — a 15-minute timeout will produce a false "broken build" verdict.
+- `wrangler` is not installed in `asguard-interceptor/node_modules`; the dry-run was executed via
+  `npx --yes wrangler@4.109.0`, matching what CI does.
+
+---
+
+## Archive — Sprint 29 (2026-11-03)
 
 Verification appendix for the daily Asguard SOC review. Every command below was executed locally on
 a Node v22.23.4 / npm 10.9.9 host before the branch was pushed.

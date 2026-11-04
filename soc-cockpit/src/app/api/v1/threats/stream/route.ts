@@ -3,6 +3,16 @@ import { createClient } from '@supabase/supabase-js';
 
 export const runtime = 'edge';
 
+/** Heartbeat cadence. Cloudflare and most LBs cut idle SSE connections at ~60s. */
+const KEEP_ALIVE_INTERVAL_MS = 15000;
+
+const SSE_HEADERS = {
+  'Content-Type': 'text/event-stream; charset=utf-8',
+  'Cache-Control': 'no-cache, no-transform',
+  'Connection': 'keep-alive',
+  'X-Accel-Buffering': 'no',
+};
+
 function getSupabaseClient() {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || 'http://localhost:54321';
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.AXIM_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || 'dummy_key_for_build';
@@ -18,38 +28,70 @@ export async function GET(req: Request) {
     const supabase = getSupabaseClient();
 
     let isClosed = false;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    /**
+     * Idempotent teardown. Every exit path funnels through here so the heartbeat
+     * interval, the realtime channel and the writer are released exactly once.
+     *
+     * Declared before `safeWrite` rather than after it: the old ordering closed
+     * over `cleanup` from a callback that could in principle run first, which is
+     * a temporal-dead-zone trap rather than a working guard.
+     */
+    const cleanup = async () => {
+        if (isClosed) return;
+        isClosed = true;
+
+        if (intervalId) {
+            clearInterval(intervalId);
+            intervalId = null;
+        }
+
+        if (channel) {
+            const pending = channel;
+            channel = null;
+            try {
+                await supabase.removeChannel(pending);
+            } catch (e) {
+                console.error('Channel teardown failed', e);
+            }
+        }
+
+        try {
+            await writer.close();
+        } catch (e) {
+            /* already closed by the consumer, or the client is gone */
+        }
+    };
 
     const safeWrite = async (data: string) => {
         if (isClosed) return;
         try {
             await writer.write(encoder.encode(data));
         } catch (e) {
+            // The consumer vanished between the guard and the write.
             console.error('Stream write error', e);
-            cleanup();
+            await cleanup();
         }
     };
 
-    const sendKeepAlive = async () => {
-        await safeWrite(': keep-alive\n\n');
-    };
+    // A client that disconnected before this handler ran leaves `aborted` already
+    // true and no `abort` event will ever fire — the listener below would never
+    // run, the keep-alive interval would tick for the isolate's lifetime and the
+    // writer would never close. Check the flag, not just the listener.
+    if (req.signal.aborted) {
+        await cleanup();
+        return new NextResponse(stream.readable, { headers: SSE_HEADERS });
+    }
 
-    const intervalId = setInterval(sendKeepAlive, 15000);
+    req.signal.addEventListener('abort', () => {
+        void cleanup();
+    });
 
-    let channel: ReturnType<typeof supabase.channel> | null = null;
-
-    const cleanup = async () => {
-        if (isClosed) return;
-        isClosed = true;
-        clearInterval(intervalId);
-        if (channel) {
-            supabase.removeChannel(channel).catch(console.error);
-        }
-        try {
-            await writer.close();
-        } catch(e) {}
-    };
-
-    req.signal.addEventListener('abort', cleanup);
+    intervalId = setInterval(() => {
+        void safeWrite(': keep-alive\n\n');
+    }, KEEP_ALIVE_INTERVAL_MS);
 
     // Initial hydration
     const hydrate = async () => {
@@ -68,6 +110,7 @@ export async function GET(req: Request) {
 
             if (data) {
                 for (const event of [...data].reverse()) {
+                    if (isClosed) return;
                     await safeWrite(`data: ${JSON.stringify(event)}\n\n`);
                 }
             }
@@ -77,12 +120,13 @@ export async function GET(req: Request) {
     };
 
     const subscribe = () => {
+        if (isClosed) return;
         channel = supabase.channel('public:threat_events')
             .on(
                 'postgres_changes',
                 { event: 'INSERT', schema: 'public', table: 'threat_events' },
                 (payload) => {
-                    safeWrite(`data: ${JSON.stringify(payload.new)}\n\n`).catch(console.error);
+                    void safeWrite(`data: ${JSON.stringify(payload.new)}\n\n`);
                 }
             )
             .subscribe((status) => {
@@ -93,13 +137,10 @@ export async function GET(req: Request) {
     };
 
     // Run hydration then subscribe
-    hydrate().then(subscribe).catch(console.error);
-
-    return new Response(stream.readable, {
-        headers: {
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache, no-transform',
-            'Connection': 'keep-alive',
-        },
+    hydrate().then(subscribe).catch((e) => {
+        console.error('Threat stream bootstrap failed', e);
+        void cleanup();
     });
+
+    return new NextResponse(stream.readable, { headers: SSE_HEADERS });
 }
